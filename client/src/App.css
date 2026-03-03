@@ -1,42 +1,73 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+:root {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+* {
+  box-sizing: border-box;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+body {
+  margin: 0;
+  background: #f4f7fb;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.app {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
 }
 
 .card {
-  padding: 2em;
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
 }
 
-.read-the-docs {
-  color: #888;
+h1 {
+  margin: 0 0 16px;
+  font-size: 24px;
+}
+
+form {
+  display: grid;
+  gap: 10px;
+}
+
+input,
+button {
+  height: 42px;
+  border-radius: 8px;
+  border: 1px solid #d8dfeb;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+button {
+  border: none;
+  background: #1e63ff;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.link-btn {
+  background: transparent;
+  color: #1e63ff;
+  padding: 0;
+  height: auto;
+}
+
+.error {
+  margin: 0;
+  color: #c92222;
+  font-size: 13px;
 }
