@@ -25,17 +25,29 @@ function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode }) {
 
   return (
     <div className="card">
+      <p className="eyebrow">{telegramMode ? 'Telegram Access' : 'SPARK Finance'}</p>
       <h1>{telegramMode ? 'Log in to continue' : 'Login'}</h1>
+      <p className="card-subtitle">
+        {telegramMode
+          ? 'Use your existing SPARK account to connect this Telegram identity.'
+          : 'Review receipts, approvals, and finance activity from a single workspace.'}
+      </p>
       {notice && <p className="notice">{notice}</p>}
       <form onSubmit={handleSubmit}>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" required />
-        <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" type="password" required />
+        <label className="field">
+          <span className="field-label">Email</span>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@spark.ai" type="email" required />
+        </label>
+        <label className="field">
+          <span className="field-label">Password</span>
+          <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" type="password" required />
+        </label>
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={loading}>
           {loading ? 'Signing in...' : telegramMode ? 'Login and link Telegram' : 'Login'}
         </button>
       </form>
-      <p>
+      <p className="auth-footer">
         No account? <button type="button" className="link-btn" onClick={onSwitchToSignup}>Sign up</button>
       </p>
     </div>

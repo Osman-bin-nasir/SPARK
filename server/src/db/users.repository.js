@@ -26,6 +26,18 @@ async function findUserByEmail(email) {
   return rows[0] || null;
 }
 
+async function findUserByTelegramId(telegramId) {
+  const { rows } = await pool.query(
+    `SELECT id, email, password_hash, telegram_id, created_at
+     FROM users
+     WHERE telegram_id = $1
+     LIMIT 1`,
+    [telegramId]
+  );
+
+  return rows[0] || null;
+}
+
 async function findUserById(id) {
   const { rows } = await pool.query(
     `SELECT id, email, password_hash, telegram_id, created_at
@@ -38,12 +50,25 @@ async function findUserById(id) {
   return rows[0] || null;
 }
 
-async function createUser({ email, passwordHash }) {
+async function createUser({ email, passwordHash, telegramId = null }) {
   const { rows } = await pool.query(
-    `INSERT INTO users (email, password_hash)
-     VALUES ($1, $2)
+    `INSERT INTO users (email, password_hash, telegram_id)
+     VALUES ($1, $2, $3)
      RETURNING id, email, telegram_id, created_at`,
-    [email, passwordHash]
+    [email, passwordHash, telegramId]
+  );
+
+  return mapUser(rows[0]);
+}
+
+async function completeTelegramUserRegistration({ userId, email, passwordHash }) {
+  const { rows } = await pool.query(
+    `UPDATE users
+     SET email = $1,
+         password_hash = $2
+     WHERE id = $3
+     RETURNING id, email, telegram_id, created_at`,
+    [email, passwordHash, userId]
   );
 
   return mapUser(rows[0]);
@@ -105,9 +130,11 @@ async function linkTelegramToUser({ userId, telegramId }) {
 }
 
 module.exports = {
+  completeTelegramUserRegistration,
   createUser,
   findUserByEmail,
   findUserById,
+  findUserByTelegramId,
   linkTelegramToUser,
   mapUser
 };

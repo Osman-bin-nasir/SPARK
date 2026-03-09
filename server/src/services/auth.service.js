@@ -72,20 +72,50 @@ async function register(payload) {
   const body = payload || {};
   const email = normalizeEmail(body.email);
   validatePassword(body.password);
+  const telegramToken = typeof body.telegram_token === 'string' ? body.telegram_token.trim() : '';
+  const telegramId = telegramToken
+    ? normalizeTelegramId(verifyTelegramLoginToken(telegramToken).telegram_id)
+    : null;
 
-  const existingUser = await usersRepository.findUserByEmail(email);
+  const [existingUser, telegramUser] = await Promise.all([
+    usersRepository.findUserByEmail(email),
+    telegramId ? usersRepository.findUserByTelegramId(telegramId) : Promise.resolve(null)
+  ]);
 
-  if (existingUser) {
+  if (existingUser && (!telegramUser || existingUser.id !== telegramUser.id)) {
     throw new HttpError(409, 'email already exists');
   }
 
   try {
     const passwordHash = await bcrypt.hash(body.password, 12);
-    const user = await usersRepository.createUser({ email, passwordHash });
+
+    if (telegramUser) {
+      if (telegramUser.email && telegramUser.password_hash) {
+        throw new HttpError(409, 'This Telegram account is already linked. Please log in instead');
+      }
+
+      if (telegramUser.email && telegramUser.email !== email) {
+        throw new HttpError(409, 'This Telegram account is already reserved for another email');
+      }
+
+      const user = await usersRepository.completeTelegramUserRegistration({
+        userId: telegramUser.id,
+        email,
+        passwordHash
+      });
+
+      return buildAuthResponse(user);
+    }
+
+    const user = await usersRepository.createUser({ email, passwordHash, telegramId });
 
     return buildAuthResponse(user);
   } catch (error) {
     if (error.code === '23505') {
+      if (String(error.constraint || '').includes('telegram')) {
+        throw new HttpError(409, 'This Telegram account is already linked to another user');
+      }
+
       throw new HttpError(409, 'email already exists');
     }
 

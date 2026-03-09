@@ -133,11 +133,23 @@ function App() {
 
   function handleAuthSuccess(result) {
     const accessToken = result.access_token || result.token;
+    const shouldClearTelegramToken = pendingTelegramToken && result.user?.telegram_id;
 
     setToken(accessToken);
     setUser(result.user);
     localStorage.setItem('token', accessToken);
     localStorage.setItem('user', JSON.stringify(result.user));
+
+    if (shouldClearTelegramToken) {
+      sessionStorage.removeItem(TELEGRAM_TOKEN_STORAGE_KEY);
+      setPendingTelegramToken('');
+      setStatus('Telegram account linked successfully.');
+
+      if (window.location.pathname === '/telegram-login') {
+        window.history.replaceState({}, '', '/');
+      }
+    }
+
     setScreen('dashboard');
   }
 
@@ -157,6 +169,7 @@ function App() {
           notice={status}
           onSuccess={handleAuthSuccess}
           onSwitchToLogin={() => setScreen('login')}
+          telegramToken={pendingTelegramToken}
           telegramMode={telegramMode}
         />
       );
