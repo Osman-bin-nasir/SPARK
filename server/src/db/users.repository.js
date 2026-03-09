@@ -1,0 +1,113 @@
+const { pool } = require('./pool');
+const { HttpError } = require('../utils/http-error');
+
+function mapUser(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    email: row.email,
+    telegram_id: row.telegram_id,
+    created_at: row.created_at
+  };
+}
+
+async function findUserByEmail(email) {
+  const { rows } = await pool.query(
+    `SELECT id, email, password_hash, telegram_id, created_at
+     FROM users
+     WHERE LOWER(email) = LOWER($1)
+     LIMIT 1`,
+    [email]
+  );
+
+  return rows[0] || null;
+}
+
+async function findUserById(id) {
+  const { rows } = await pool.query(
+    `SELECT id, email, password_hash, telegram_id, created_at
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [id]
+  );
+
+  return rows[0] || null;
+}
+
+async function createUser({ email, passwordHash }) {
+  const { rows } = await pool.query(
+    `INSERT INTO users (email, password_hash)
+     VALUES ($1, $2)
+     RETURNING id, email, telegram_id, created_at`,
+    [email, passwordHash]
+  );
+
+  return mapUser(rows[0]);
+}
+
+async function linkTelegramToUser({ userId, telegramId }) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows: userRows } = await client.query(
+      `SELECT id, email, telegram_id, created_at
+       FROM users
+       WHERE id = $1
+       FOR UPDATE`,
+      [userId]
+    );
+
+    const user = userRows[0];
+
+    if (!user) {
+      throw new HttpError(404, 'User not found');
+    }
+
+    if (user.telegram_id && String(user.telegram_id) !== String(telegramId)) {
+      throw new HttpError(409, 'This web account is already linked to another Telegram account');
+    }
+
+    const { rows: conflictRows } = await client.query(
+      `SELECT id
+       FROM users
+       WHERE telegram_id = $1
+         AND id <> $2
+       LIMIT 1`,
+      [telegramId, userId]
+    );
+
+    if (conflictRows[0]) {
+      throw new HttpError(409, 'This Telegram account is already linked to another user');
+    }
+
+    const { rows } = await client.query(
+      `UPDATE users
+       SET telegram_id = $1
+       WHERE id = $2
+       RETURNING id, email, telegram_id, created_at`,
+      [telegramId, userId]
+    );
+
+    await client.query('COMMIT');
+    return mapUser(rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = {
+  createUser,
+  findUserByEmail,
+  findUserById,
+  linkTelegramToUser,
+  mapUser
+};

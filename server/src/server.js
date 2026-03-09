@@ -1,9 +1,10 @@
 const app = require('./app');
-const { env } = require('./config/env');
-const { initDb } = require('./config/db');
+const { env, validateEnv } = require('./config/env');
+const { initDb } = require('./db/init');
 
 async function start() {
   try {
+    validateEnv();
     await initDb();
     app.listen(env.port, () => {
       console.log(`Server running on port ${env.port}`);
