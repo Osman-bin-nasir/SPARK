@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { post } from '../../services/http';
 import { endpoints } from '../../services/endpoints';
 
-function LoginPage({ onSuccess, onSwitchToSignup }) {
+function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,12 +25,15 @@ function LoginPage({ onSuccess, onSwitchToSignup }) {
 
   return (
     <div className="card">
-      <h1>Login</h1>
+      <h1>{telegramMode ? 'Log in to continue' : 'Login'}</h1>
+      {notice && <p className="notice">{notice}</p>}
       <form onSubmit={handleSubmit}>
         <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" required />
         <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" type="password" required />
         {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={loading}>{loading ? 'Signing in...' : 'Login'}</button>
+        <button type="submit" disabled={loading}>
+          {loading ? 'Signing in...' : telegramMode ? 'Login and link Telegram' : 'Login'}
+        </button>
       </form>
       <p>
         No account? <button type="button" className="link-btn" onClick={onSwitchToSignup}>Sign up</button>

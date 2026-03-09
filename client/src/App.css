@@ -71,3 +71,12 @@ button:disabled {
   color: #c92222;
   font-size: 13px;
 }
+
+.notice {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #eef4ff;
+  color: #214b9b;
+  font-size: 13px;
+}

@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { post } from '../../services/http';
 import { endpoints } from '../../services/endpoints';
 
-function SignupPage({ onSuccess, onSwitchToLogin }) {
-  const [name, setName] = useState('');
+function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,7 +14,7 @@ function SignupPage({ onSuccess, onSwitchToLogin }) {
     setLoading(true);
 
     try {
-      const result = await post(endpoints.signup, { name, email, password });
+      const result = await post(endpoints.register, { email, password });
       onSuccess(result);
     } catch (err) {
       setError(err.message);
@@ -26,9 +25,9 @@ function SignupPage({ onSuccess, onSwitchToLogin }) {
 
   return (
     <div className="card">
-      <h1>Create account</h1>
+      <h1>{telegramMode ? 'Create account to continue' : 'Create account'}</h1>
+      {notice && <p className="notice">{notice}</p>}
       <form onSubmit={handleSubmit}>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" required />
         <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" required />
         <input
           value={password}
@@ -39,7 +38,9 @@ function SignupPage({ onSuccess, onSwitchToLogin }) {
           minLength={8}
         />
         {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Sign up'}</button>
+        <button type="submit" disabled={loading}>
+          {loading ? 'Creating...' : telegramMode ? 'Sign up and link Telegram' : 'Sign up'}
+        </button>
       </form>
       <p>
         Already have an account? <button type="button" className="link-btn" onClick={onSwitchToLogin}>Login</button>
