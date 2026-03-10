@@ -1,22 +1,170 @@
 const { pool } = require('./pool');
 
 async function initDb() {
-  // Enable pgcrypto for gen_random_uuid()
   await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto;');
+  await pool.query('CREATE EXTENSION IF NOT EXISTS vector;');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
-      id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-      email         TEXT        UNIQUE,
+      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email         TEXT UNIQUE,
       first_name    TEXT,
       password_hash TEXT,
-      telegram_id   BIGINT      UNIQUE,
-      created_at    TIMESTAMP   NOT NULL DEFAULT NOW()
+      telegram_id   BIGINT UNIQUE,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
-  // Index for sorting/filtering by signup date
+  await pool.query(`
+    ALTER TABLE users
+    ALTER COLUMN created_at SET DEFAULT NOW();
+  `);
+
   await pool.query('CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at);');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower_unique ON users (LOWER(email)) WHERE email IS NOT NULL;');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS organizations (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name       TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS organization_members (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role            TEXT NOT NULL CHECK (role IN ('founder', 'admin', 'member')),
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (organization_id, user_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS google_integrations (
+      id                         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id            UUID NOT NULL UNIQUE REFERENCES organizations(id) ON DELETE CASCADE,
+      owner_user_id              UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      google_email               TEXT NOT NULL,
+      refresh_token_ciphertext   BYTEA NOT NULL,
+      refresh_token_iv           BYTEA NOT NULL,
+      refresh_token_tag          BYTEA NOT NULL,
+      drive_root_folder_id       TEXT NOT NULL UNIQUE,
+      created_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id             UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      amount                      NUMERIC(14, 2) NOT NULL,
+      vendor                      TEXT NOT NULL,
+      transaction_type            TEXT NOT NULL CHECK (transaction_type IN ('expense', 'income', 'salary')),
+      category                    TEXT NOT NULL,
+      transaction_date            DATE NOT NULL,
+      confidence_score            NUMERIC(5, 4),
+      duplicate_of_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,
+      duplicate_score             NUMERIC(4, 3) CHECK (duplicate_score IS NULL OR (duplicate_score >= 0 AND duplicate_score <= 1)),
+      status                      TEXT NOT NULL CHECK (status IN ('auto_verified', 'pending_review')),
+      created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS documents (
+      id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      drive_file_id  TEXT NOT NULL,
+      drive_folder_id TEXT NOT NULL,
+      original_name  TEXT NOT NULL,
+      stored_name    TEXT NOT NULL,
+      file_type      TEXT NOT NULL,
+      content_hash   CHAR(64) NOT NULL,
+      uploaded_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (organization_id, content_hash)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS transaction_embeddings (
+      transaction_id UUID PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE,
+      embedding      VECTOR(384) NOT NULL,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS embedding_jobs (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      transaction_id  UUID NOT NULL UNIQUE REFERENCES transactions(id) ON DELETE CASCADE,
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      status          TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+      attempt_count   INT NOT NULL DEFAULT 0,
+      max_attempts    INT NOT NULL DEFAULT 5,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_error      TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ingestion_jobs (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      source          TEXT NOT NULL CHECK (source IN ('telegram')),
+      file_name       TEXT NOT NULL,
+      status          TEXT NOT NULL CHECK (status IN ('processing', 'completed', 'failed')),
+      error_message   TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at    TIMESTAMPTZ
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orphan_drive_files (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      drive_file_id   TEXT NOT NULL,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      cleanup_status  TEXT NOT NULL DEFAULT 'pending' CHECK (cleanup_status IN ('pending', 'deleted', 'failed'))
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id        UUID REFERENCES users(id) ON DELETE SET NULL,
+      transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+      action         TEXT NOT NULL,
+      previous_value JSONB,
+      new_value      JSONB,
+      "timestamp"    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS approvals (
+      id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      transaction_id UUID NOT NULL UNIQUE REFERENCES transactions(id) ON DELETE CASCADE,
+      approved_by    UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      approved_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_members_user_org ON organization_members (user_id, organization_id);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_transactions_org_date ON transactions (organization_id, transaction_date DESC);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_transactions_org_type_status ON transactions (organization_id, transaction_type, status);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_transaction_id ON documents (transaction_id);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_drive_file_id ON documents (drive_file_id);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_embedding_jobs_status_next_attempt ON embedding_jobs (status, next_attempt_at);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_status_created_at ON ingestion_jobs (status, created_at);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_orphan_drive_files_cleanup_status_created_at ON orphan_drive_files (cleanup_status, created_at);');
 }
 
 module.exports = { initDb };

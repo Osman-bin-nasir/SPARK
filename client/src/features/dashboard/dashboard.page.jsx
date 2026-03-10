@@ -1,4 +1,4 @@
-function DashboardPage({ user, token, onLogout, status }) {
+function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
   return (
     <div className="card">
       <p className="eyebrow">SPARK Console</p>
@@ -21,7 +21,10 @@ function DashboardPage({ user, token, onLogout, status }) {
           <strong>{token ? 'Active' : 'Missing'}</strong>
         </div>
       </div>
-      <button className="secondary-btn" onClick={onLogout}>Logout</button>
+      <div className="actions-row">
+        <button className="secondary-btn" onClick={onOpenIntegrations}>Settings · Integrations</button>
+        <button className="secondary-btn" onClick={onLogout}>Logout</button>
+      </div>
     </div>
   );
 }

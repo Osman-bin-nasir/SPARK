@@ -41,6 +41,18 @@ function signTelegramLoginToken(telegramId) {
   );
 }
 
+function signGoogleOauthState(payload) {
+  return jwt.sign(
+    {
+      sub: payload.userId,
+      organization_id: payload.organizationId,
+      type: 'google-oauth-state'
+    },
+    env.googleOauthStateSecret,
+    { expiresIn: env.googleOauthStateExpiresIn }
+  );
+}
+
 function verifyAccessToken(token) {
   const payload = jwt.verify(token, env.jwtSecret);
   assertTokenType(payload, 'access');
@@ -59,16 +71,24 @@ function verifyTelegramLoginToken(token) {
   return payload;
 }
 
+function verifyGoogleOauthState(token) {
+  const payload = jwt.verify(token, env.googleOauthStateSecret);
+  assertTokenType(payload, 'google-oauth-state');
+  return payload;
+}
+
 function signToken(payload) {
   return jwt.sign(payload, env.jwtSecret, { expiresIn: env.accessTokenExpiresIn });
 }
 
 module.exports = {
+  signGoogleOauthState,
   signAccessToken,
   signRefreshToken,
   signTelegramLoginToken,
   signToken,
   verifyAccessToken,
+  verifyGoogleOauthState,
   verifyRefreshToken,
   verifyTelegramLoginToken
 };

@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import './App.css';
 import LoginPage from './features/login/login.page';
 import SignupPage from './features/signup/signup.page';
 import DashboardPage from './features/dashboard/dashboard.page';
+import IntegrationsPage from './pages/Integrations';
 import { post } from './services/http';
 import { endpoints } from './services/endpoints';
 
@@ -18,12 +20,12 @@ function getPendingTelegramToken() {
   return params.get('token') || sessionStorage.getItem(TELEGRAM_TOKEN_STORAGE_KEY) || '';
 }
 
-function getInitialScreen(hasSessionToken, hasTelegramToken) {
+function getInitialScreen(hasSessionToken, hasTelegramToken, pathname) {
   if (hasSessionToken) {
     return 'dashboard';
   }
 
-  if (window.location.pathname === '/telegram-login') {
+  if (pathname === '/telegram-login') {
     return hasTelegramToken ? 'signup' : 'login';
   }
 
@@ -31,12 +33,16 @@ function getInitialScreen(hasSessionToken, hasTelegramToken) {
 }
 
 function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const initialToken = localStorage.getItem('token') || '';
   const initialTelegramToken = getPendingTelegramToken();
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [user, setUser] = useState(getStoredUser);
   const [pendingTelegramToken, setPendingTelegramToken] = useState(initialTelegramToken);
-  const [screen, setScreen] = useState(() => getInitialScreen(Boolean(initialToken), Boolean(initialTelegramToken)));
+  const [screen, setScreen] = useState(() =>
+    getInitialScreen(Boolean(initialToken), Boolean(initialTelegramToken), window.location.pathname)
+  );
   const [status, setStatus] = useState(
     initialTelegramToken ? 'Finish signup or login to link your Telegram account.' : ''
   );
@@ -44,7 +50,7 @@ function App() {
   const telegramMode = Boolean(pendingTelegramToken);
 
   useEffect(() => {
-    if (window.location.pathname !== '/telegram-login') {
+    if (location.pathname !== '/telegram-login') {
       return;
     }
 
@@ -54,32 +60,38 @@ function App() {
 
     if (telegramToken) {
       sessionStorage.setItem(TELEGRAM_TOKEN_STORAGE_KEY, telegramToken);
-      setPendingTelegramToken(telegramToken);
-      setStatus('Finish signup or login to link your Telegram account.');
       url.searchParams.delete('token');
       const nextUrl = url.searchParams.size > 0 ? `${url.pathname}?${url.searchParams.toString()}` : url.pathname;
       window.history.replaceState({}, '', nextUrl);
+      queueMicrotask(() => {
+        setPendingTelegramToken(telegramToken);
+        setStatus('Finish signup or login to link your Telegram account.');
 
-      if (!localStorage.getItem('token')) {
-        setScreen('signup');
-      }
+        if (!localStorage.getItem('token')) {
+          setScreen('signup');
+        }
+      });
 
       return;
     }
 
     if (storedTelegramToken) {
-      setPendingTelegramToken(storedTelegramToken);
-      setStatus('Finish signup or login to link your Telegram account.');
+      queueMicrotask(() => {
+        setPendingTelegramToken(storedTelegramToken);
+        setStatus('Finish signup or login to link your Telegram account.');
 
-      if (!localStorage.getItem('token')) {
-        setScreen('signup');
-      }
+        if (!localStorage.getItem('token')) {
+          setScreen('signup');
+        }
+      });
 
       return;
     }
 
-    setStatus('Telegram link is missing or expired. Request a new link from the bot.');
-  }, []);
+    queueMicrotask(() => {
+      setStatus('Telegram link is missing or expired. Request a new link from the bot.');
+    });
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!token || !pendingTelegramToken) {
@@ -107,8 +119,8 @@ function App() {
         setPendingTelegramToken('');
         setStatus('Telegram account linked successfully.');
 
-        if (window.location.pathname === '/telegram-login') {
-          window.history.replaceState({}, '', '/');
+        if (location.pathname === '/telegram-login') {
+          navigate('/', { replace: true });
         }
       } catch (error) {
         if (!isActive) {
@@ -129,7 +141,7 @@ function App() {
     return () => {
       isActive = false;
     };
-  }, [pendingTelegramToken, token]);
+  }, [location.pathname, navigate, pendingTelegramToken, token]);
 
   function handleAuthSuccess(result) {
     const accessToken = result.access_token || result.token;
@@ -139,18 +151,22 @@ function App() {
     setUser(result.user);
     localStorage.setItem('token', accessToken);
     localStorage.setItem('user', JSON.stringify(result.user));
+    setScreen('dashboard');
 
     if (shouldClearTelegramToken) {
       sessionStorage.removeItem(TELEGRAM_TOKEN_STORAGE_KEY);
       setPendingTelegramToken('');
       setStatus('Telegram account linked successfully.');
-
-      if (window.location.pathname === '/telegram-login') {
-        window.history.replaceState({}, '', '/');
-      }
+      navigate('/', { replace: true });
+      return;
     }
 
-    setScreen('dashboard');
+    if (location.pathname === '/integrations') {
+      navigate('/integrations', { replace: true });
+      return;
+    }
+
+    navigate('/', { replace: true });
   }
 
   function handleLogout() {
@@ -160,36 +176,60 @@ function App() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setScreen(pendingTelegramToken ? 'signup' : 'login');
+    navigate(pendingTelegramToken ? '/telegram-login' : '/', { replace: true });
   }
 
-  const content = useMemo(() => {
-    if (screen === 'signup') {
-      return (
-        <SignupPage
-          notice={status}
-          onSuccess={handleAuthSuccess}
-          onSwitchToLogin={() => setScreen('login')}
-          telegramToken={pendingTelegramToken}
-          telegramMode={telegramMode}
+  const authContent = screen === 'signup' ? (
+    <SignupPage
+      notice={status}
+      onSuccess={handleAuthSuccess}
+      onSwitchToLogin={() => setScreen('login')}
+      telegramToken={pendingTelegramToken}
+      telegramMode={telegramMode}
+    />
+  ) : (
+    <LoginPage
+      notice={status}
+      onSuccess={handleAuthSuccess}
+      onSwitchToSignup={() => setScreen('signup')}
+      telegramMode={telegramMode}
+    />
+  );
+
+  const dashboardContent = (
+    <DashboardPage
+      onLogout={handleLogout}
+      onOpenIntegrations={() => navigate('/integrations')}
+      status={status}
+      token={token}
+      user={user}
+    />
+  );
+
+  return (
+    <main className="app">
+      <Routes>
+        <Route
+          path="/integrations"
+          element={
+            token ? (
+              <IntegrationsPage
+                onBack={() => navigate('/')}
+                onLogout={handleLogout}
+                token={token}
+                user={user}
+              />
+            ) : (
+              authContent
+            )
+          }
         />
-      );
-    }
-
-    if (screen === 'dashboard' && token) {
-      return <DashboardPage onLogout={handleLogout} status={status} token={token} user={user} />;
-    }
-
-    return (
-      <LoginPage
-        notice={status}
-        onSuccess={handleAuthSuccess}
-        onSwitchToSignup={() => setScreen('signup')}
-        telegramMode={telegramMode}
-      />
-    );
-  }, [screen, status, telegramMode, token, user]);
-
-  return <main className="app">{content}</main>;
+        <Route path="/telegram-login" element={token ? dashboardContent : authContent} />
+        <Route path="/" element={token ? dashboardContent : authContent} />
+        <Route path="*" element={<Navigate replace to={token ? '/' : '/'} />} />
+      </Routes>
+    </main>
+  );
 }
 
 export default App;

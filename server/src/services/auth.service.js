@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const usersRepository = require('../db/users.repository');
+const organizationsRepository = require('../db/organizations.repository');
 const {
   signAccessToken,
   signRefreshToken,
@@ -56,7 +57,26 @@ function normalizeTelegramId(telegramId) {
   return value;
 }
 
-function buildAuthResponse(user) {
+function decorateUser(user, memberships) {
+  const organizations = memberships.map((membership) => ({
+    id: membership.organization_id,
+    name: membership.organization_name,
+    role: membership.role
+  }));
+
+  return {
+    ...user,
+    organizations,
+    default_organization_id: organizations[0]?.id || null
+  };
+}
+
+async function buildAuthResponse(user) {
+  const memberships = await organizationsRepository.ensureDefaultOrganizationForUser({
+    userId: user.id,
+    email: user.email
+  });
+  const hydratedUser = decorateUser(user, memberships);
   const accessToken = signAccessToken(user);
   const refreshToken = signRefreshToken(user);
 
@@ -64,7 +84,7 @@ function buildAuthResponse(user) {
     access_token: accessToken,
     refresh_token: refreshToken,
     token: accessToken,
-    user
+    user: hydratedUser
   };
 }
 
@@ -176,10 +196,14 @@ async function linkTelegramAccount({ userId, token }) {
   const telegramId = normalizeTelegramId(tokenPayload.telegram_id);
   try {
     const user = await usersRepository.linkTelegramToUser({ userId, telegramId });
+    const memberships = await organizationsRepository.ensureDefaultOrganizationForUser({
+      userId: user.id,
+      email: user.email
+    });
 
     return {
       message: 'Telegram account linked successfully',
-      user
+      user: decorateUser(user, memberships)
     };
   } catch (error) {
     if (error.code === '23505') {

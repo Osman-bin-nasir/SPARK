@@ -258,6 +258,12 @@ button:disabled {
   line-height: 1.4;
 }
 
+.actions-row {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
 @media (max-width: 540px) {
   .app {
     padding: 18px;

@@ -1,23 +1,30 @@
 import { API_BASE_URL } from './endpoints';
 
-export async function post(path, body, options = {}) {
-  if (!API_BASE_URL) {
-    throw new Error('VITE_API_BASE_URL is not configured');
-  }
-
+function buildHeaders(options = {}) {
   const headers = {
-    'Content-Type': 'application/json',
     ...options.headers
   };
+
+  if (options.contentType !== false) {
+    headers['Content-Type'] = options.contentType || 'application/json';
+  }
 
   if (options.token) {
     headers.Authorization = `Bearer ${options.token}`;
   }
 
+  return headers;
+}
+
+async function request(path, options = {}) {
+  if (!API_BASE_URL) {
+    throw new Error('VITE_API_BASE_URL is not configured');
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body)
+    method: options.method || 'GET',
+    headers: buildHeaders(options),
+    body: options.body
   });
 
   const data = await response.json().catch(() => ({}));
@@ -29,4 +36,20 @@ export async function post(path, body, options = {}) {
   }
 
   return data;
+}
+
+export async function get(path, options = {}) {
+  return request(path, {
+    ...options,
+    method: 'GET',
+    contentType: false
+  });
+}
+
+export async function post(path, body, options = {}) {
+  return request(path, {
+    ...options,
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
 }
