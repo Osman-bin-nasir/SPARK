@@ -177,5 +177,6 @@ module.exports = {
   ensureFolderPath,
   ensureSparkOrganizationRootFolder,
   exchangeCodeForTokens,
-  resolveGoogleEmail
+  resolveGoogleEmail,
+  uploadFile
 };
