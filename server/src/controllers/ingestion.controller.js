@@ -4,14 +4,20 @@ const { parseMultipartRequest } = require('../utils/multipart');
 
 async function ingestDocument(req, res, next) {
   try {
-    if (!req.rawBody) {
+    const multipart = req.multipart || (
+      req.rawBody
+        ? await parseMultipartRequest({
+            headers: req.headers,
+            bodyBuffer: req.rawBody
+          })
+        : null
+    );
+
+    if (!multipart) {
       throw new HttpError(400, 'Signed webhook body is missing');
     }
 
-    const { fields, files } = await parseMultipartRequest({
-      headers: req.headers,
-      bodyBuffer: req.rawBody
-    });
+    const { fields, files } = multipart;
 
     let payload = {};
 

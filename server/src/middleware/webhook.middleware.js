@@ -1,11 +1,12 @@
 const crypto = require('crypto');
 const { assertWebhookEnv, env } = require('../config/env');
 const { HttpError } = require('../utils/http-error');
+const { parseMultipartRequest } = require('../utils/multipart');
 
-function verifySparkSignature(signature, bodyBuffer) {
+function verifySparkSignature(signature, payload) {
   const expected = crypto
     .createHmac('sha256', env.webhookSecret)
-    .update(bodyBuffer)
+    .update(payload)
     .digest('hex');
 
   const normalized = String(signature || '').trim();
@@ -58,8 +59,22 @@ async function verifySignedWebhook(req, _res, next) {
     req.on('end', () => {
       try {
         req.rawBody = Buffer.concat(chunks);
-        verifySparkSignature(signature, req.rawBody);
-        next();
+        parseMultipartRequest({
+          headers: req.headers,
+          bodyBuffer: req.rawBody
+        })
+          .then((multipart) => {
+            const payload = multipart.fields?.payload;
+
+            if (typeof payload !== 'string' || !payload) {
+              throw new HttpError(400, 'payload is required');
+            }
+
+            verifySparkSignature(signature, payload);
+            req.multipart = multipart;
+            next();
+          })
+          .catch(next);
       } catch (error) {
         next(error);
       }
