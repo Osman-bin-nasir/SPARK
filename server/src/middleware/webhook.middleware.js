@@ -28,15 +28,25 @@ function verifySparkSignature(signature, payload) {
   }
 }
 
+function requireSignedWebhookHeaders(req) {
+  assertWebhookEnv();
+
+  const signature = req.get('x-spark-signature');
+
+  if (!signature) {
+    throw new HttpError(401, 'X-Spark-Signature header is required');
+  }
+
+  if (!req.get('x-organization-id')) {
+    throw new HttpError(400, 'X-Organization-Id header is required');
+  }
+
+  return signature;
+}
+
 async function verifySignedWebhook(req, _res, next) {
   try {
-    assertWebhookEnv();
-
-    const signature = req.get('x-spark-signature');
-
-    if (!signature) {
-      throw new HttpError(401, 'X-Spark-Signature header is required');
-    }
+    const signature = requireSignedWebhookHeaders(req);
 
     if (!req.is('multipart/form-data')) {
       throw new HttpError(415, 'Content-Type must be multipart/form-data');
@@ -88,6 +98,30 @@ async function verifySignedWebhook(req, _res, next) {
   }
 }
 
+function verifySignedJsonWebhook(req, _res, next) {
+  try {
+    const signature = requireSignedWebhookHeaders(req);
+
+    if (!req.is('application/json')) {
+      throw new HttpError(415, 'Content-Type must be application/json');
+    }
+
+    if (!Buffer.isBuffer(req.rawBody) || req.rawBody.length === 0) {
+      throw new HttpError(400, 'Signed webhook body is missing');
+    }
+
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      throw new HttpError(400, 'Request body must be a JSON object');
+    }
+
+    verifySparkSignature(signature, req.rawBody);
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
+  verifySignedJsonWebhook,
   verifySignedWebhook
 };

@@ -42,6 +42,20 @@ async function ingestDocument(req, res, next) {
   }
 }
 
+async function ingestText(req, res, next) {
+  try {
+    const result = await ingestionService.ingestText({
+      organizationId: req.get('x-organization-id'),
+      payload: req.body
+    });
+
+    res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
-  ingestDocument
+  ingestDocument,
+  ingestText
 };

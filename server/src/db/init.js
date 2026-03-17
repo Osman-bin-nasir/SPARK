@@ -79,14 +79,66 @@ async function initDb() {
       id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
       organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-      drive_file_id  TEXT NOT NULL,
-      drive_folder_id TEXT NOT NULL,
+      storage_kind   TEXT NOT NULL DEFAULT 'google_drive',
+      drive_file_id  TEXT,
+      drive_folder_id TEXT,
       original_name  TEXT NOT NULL,
       stored_name    TEXT NOT NULL,
       file_type      TEXT NOT NULL,
       content_hash   CHAR(64) NOT NULL,
+      text_content   TEXT,
       uploaded_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT documents_storage_kind_check CHECK (storage_kind IN ('google_drive', 'inline_text')),
+      CONSTRAINT documents_storage_fields_check CHECK (
+        (
+          storage_kind = 'google_drive'
+          AND drive_file_id IS NOT NULL
+          AND drive_folder_id IS NOT NULL
+          AND text_content IS NULL
+        )
+        OR
+        (
+          storage_kind = 'inline_text'
+          AND drive_file_id IS NULL
+          AND drive_folder_id IS NULL
+          AND text_content IS NOT NULL
+        )
+      ),
       UNIQUE (organization_id, content_hash)
+    );
+  `);
+
+  await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS storage_kind TEXT;');
+  await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS text_content TEXT;');
+  await pool.query('UPDATE documents SET storage_kind = \'google_drive\' WHERE storage_kind IS NULL;');
+  await pool.query('ALTER TABLE documents ALTER COLUMN storage_kind SET DEFAULT \'google_drive\';');
+  await pool.query('ALTER TABLE documents ALTER COLUMN storage_kind SET NOT NULL;');
+  await pool.query('ALTER TABLE documents ALTER COLUMN drive_file_id DROP NOT NULL;');
+  await pool.query('ALTER TABLE documents ALTER COLUMN drive_folder_id DROP NOT NULL;');
+  await pool.query('ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_storage_kind_check;');
+  await pool.query(`
+    ALTER TABLE documents
+    ADD CONSTRAINT documents_storage_kind_check
+    CHECK (storage_kind IN ('google_drive', 'inline_text'));
+  `);
+  await pool.query('ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_storage_fields_check;');
+  await pool.query(`
+    ALTER TABLE documents
+    ADD CONSTRAINT documents_storage_fields_check
+    CHECK (
+      (
+        storage_kind = 'google_drive'
+        AND drive_file_id IS NOT NULL
+        AND drive_folder_id IS NOT NULL
+        AND text_content IS NULL
+      )
+      OR
+      (
+        storage_kind = 'inline_text'
+        AND drive_file_id IS NULL
+        AND drive_folder_id IS NULL
+        AND text_content IS NOT NULL
+      )
     );
   `);
 
@@ -117,13 +169,20 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS ingestion_jobs (
       id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-      source          TEXT NOT NULL CHECK (source IN ('telegram')),
+      source          TEXT NOT NULL CONSTRAINT ingestion_jobs_source_check CHECK (source IN ('telegram', 'text')),
       file_name       TEXT NOT NULL,
       status          TEXT NOT NULL CHECK (status IN ('processing', 'completed', 'failed')),
       error_message   TEXT,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       completed_at    TIMESTAMPTZ
     );
+  `);
+
+  await pool.query('ALTER TABLE ingestion_jobs DROP CONSTRAINT IF EXISTS ingestion_jobs_source_check;');
+  await pool.query(`
+    ALTER TABLE ingestion_jobs
+    ADD CONSTRAINT ingestion_jobs_source_check
+    CHECK (source IN ('telegram', 'text'));
   `);
 
   await pool.query(`

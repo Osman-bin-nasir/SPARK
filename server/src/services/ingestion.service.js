@@ -14,6 +14,7 @@ const { HttpError } = require('../utils/http-error');
 const { normalizeComparableText } = require('../utils/vendor');
 
 const ALLOWED_TRANSACTION_TYPES = ['expense', 'income', 'salary'];
+const INLINE_TEXT_ORIGINAL_NAME = 'inline-text.txt';
 
 function hashBuffer(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
@@ -28,45 +29,45 @@ function toIsoYear(value) {
   return String(new Date(value).getUTCFullYear());
 }
 
-function validatePayload(payload) {
-  if (!payload || typeof payload !== 'object') {
-    throw new HttpError(400, 'payload is required');
+function validatePayload(payload, { source, fieldPrefix = 'payload.', objectLabel = 'payload' }) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new HttpError(400, `${objectLabel} is required`);
   }
 
   const amount = Number(payload.amount);
 
   if (!Number.isFinite(amount) || amount <= 0) {
-    throw new HttpError(400, 'payload.amount must be a positive number');
+    throw new HttpError(400, `${fieldPrefix}amount must be a positive number`);
   }
 
   const vendor = String(payload.vendor || '').trim();
 
   if (!vendor) {
-    throw new HttpError(400, 'payload.vendor is required');
+    throw new HttpError(400, `${fieldPrefix}vendor is required`);
   }
 
   const transactionType = String(payload.transaction_type || '').trim();
 
   if (!ALLOWED_TRANSACTION_TYPES.includes(transactionType)) {
-    throw new HttpError(400, 'payload.transaction_type must be expense, income, or salary');
+    throw new HttpError(400, `${fieldPrefix}transaction_type must be expense, income, or salary`);
   }
 
   const category = String(payload.category || '').trim();
 
   if (!category) {
-    throw new HttpError(400, 'payload.category is required');
+    throw new HttpError(400, `${fieldPrefix}category is required`);
   }
 
   const transactionDate = String(payload.transaction_date || '').trim();
 
   if (!transactionDate || Number.isNaN(Date.parse(transactionDate))) {
-    throw new HttpError(400, 'payload.transaction_date must be a valid date');
+    throw new HttpError(400, `${fieldPrefix}transaction_date must be a valid date`);
   }
 
   const submittedByUserId = String(payload.submitted_by_user_id || '').trim();
 
   if (!submittedByUserId) {
-    throw new HttpError(400, 'payload.submitted_by_user_id is required');
+    throw new HttpError(400, `${fieldPrefix}submitted_by_user_id is required`);
   }
 
   const confidenceScore = payload.confidence_score === undefined || payload.confidence_score === null
@@ -74,11 +75,11 @@ function validatePayload(payload) {
     : Number(payload.confidence_score);
 
   if (confidenceScore !== null && (!Number.isFinite(confidenceScore) || confidenceScore < 0 || confidenceScore > 1)) {
-    throw new HttpError(400, 'payload.confidence_score must be between 0 and 1');
+    throw new HttpError(400, `${fieldPrefix}confidence_score must be between 0 and 1`);
   }
 
   return {
-    source: 'telegram',
+    source,
     amount: amount.toFixed(2),
     vendor,
     transaction_type: transactionType,
@@ -87,6 +88,23 @@ function validatePayload(payload) {
     submitted_by_user_id: submittedByUserId,
     confidence_score: confidenceScore,
     raw_extraction: payload.raw_extraction || null
+  };
+}
+
+function validateTextPayload(payload) {
+  const normalizedPayload = validatePayload(payload, {
+    source: 'text',
+    fieldPrefix: '',
+    objectLabel: 'request body'
+  });
+
+  if (typeof payload.text !== 'string' || !payload.text.trim()) {
+    throw new HttpError(400, 'text is required');
+  }
+
+  return {
+    ...normalizedPayload,
+    text: payload.text
   };
 }
 
@@ -149,12 +167,141 @@ async function findDuplicateMatch({ organizationId, amount, transactionDate, tra
   return topCandidate;
 }
 
+async function prepareIngestion({ organizationId, normalizedPayload, contentHash }) {
+  const membership = await organizationsRepository.findMembership({
+    userId: normalizedPayload.submitted_by_user_id,
+    organizationId
+  });
+
+  if (!membership) {
+    throw new HttpError(403, 'submitted_by_user_id does not belong to the organization');
+  }
+
+  const duplicateDocument = await transactionsRepository.findExactDuplicateDocument({
+    organizationId,
+    contentHash
+  });
+
+  if (duplicateDocument) {
+    throw new HttpError(409, 'An identical document already exists for this organization');
+  }
+
+  const duplicateMatch = await findDuplicateMatch({
+    organizationId,
+    amount: normalizedPayload.amount,
+    transactionDate: normalizedPayload.transaction_date,
+    transactionType: normalizedPayload.transaction_type,
+    vendor: normalizedPayload.vendor
+  });
+
+  return {
+    transactionId: crypto.randomUUID(),
+    documentId: crypto.randomUUID(),
+    embeddingJobId: crypto.randomUUID(),
+    duplicateMatch,
+    contentHash
+  };
+}
+
+async function createTransactionAndDocument({
+  organizationId,
+  normalizedPayload,
+  ingestionJobId,
+  transactionId,
+  documentId,
+  embeddingJobId,
+  duplicateMatch,
+  document
+}) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const transaction = await transactionsRepository.insertTransactionWithDocumentAndJobs({
+      transaction: {
+        id: transactionId,
+        organization_id: organizationId,
+        amount: normalizedPayload.amount,
+        vendor: normalizedPayload.vendor,
+        transaction_type: normalizedPayload.transaction_type,
+        category: normalizedPayload.category,
+        transaction_date: normalizedPayload.transaction_date,
+        confidence_score: normalizedPayload.confidence_score,
+        duplicate_of_transaction_id: duplicateMatch?.transaction_id || null,
+        duplicate_score: duplicateMatch?.duplicate_score || null,
+        status: duplicateMatch ? 'pending_review' : 'auto_verified'
+      },
+      document: {
+        id: documentId,
+        transaction_id: transactionId,
+        organization_id: organizationId,
+        storage_kind: document.storage_kind,
+        drive_file_id: document.drive_file_id || null,
+        drive_folder_id: document.drive_folder_id || null,
+        original_name: document.original_name,
+        stored_name: document.stored_name,
+        file_type: document.file_type,
+        content_hash: document.content_hash,
+        text_content: document.text_content || null
+      },
+      embeddingJob: {
+        id: embeddingJobId,
+        transaction_id: transactionId,
+        organization_id: organizationId,
+        status: 'pending',
+        attempt_count: 0,
+        max_attempts: 5
+      },
+      auditLog: {
+        id: crypto.randomUUID(),
+        user_id: normalizedPayload.submitted_by_user_id,
+        transaction_id: transactionId,
+        action: 'transaction.created',
+        previous_value: null,
+        new_value: {
+          vendor: normalizedPayload.vendor,
+          amount: normalizedPayload.amount,
+          transaction_type: normalizedPayload.transaction_type,
+          category: normalizedPayload.category,
+          transaction_date: normalizedPayload.transaction_date,
+          duplicate_of_transaction_id: duplicateMatch?.transaction_id || null,
+          duplicate_score: duplicateMatch?.duplicate_score || null
+        }
+      }
+    }, client);
+
+    await ingestionRepository.markIngestionJobCompleted(ingestionJobId, client);
+    await client.query('COMMIT');
+
+    return {
+      ingestion_job_id: ingestionJobId,
+      transaction_id: transaction.id,
+      document_id: documentId,
+      embedding_status: 'pending'
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function markIngestionJobFailedSafely(ingestionJobId, error) {
+  try {
+    await ingestionRepository.markIngestionJobFailed(ingestionJobId, error.message);
+  } catch (_markFailedError) {
+    // Preserve the original ingestion failure if job tracking cannot be updated.
+  }
+}
+
 async function ingestDocument({ organizationId, payload, file }) {
   if (!organizationId) {
     throw new HttpError(400, 'X-Organization-Id header is required');
   }
 
-  const normalizedPayload = validatePayload(payload);
+  const normalizedPayload = validatePayload(payload, { source: 'telegram' });
   const ingestionJob = await ingestionRepository.createIngestionJob({
     id: crypto.randomUUID(),
     organizationId,
@@ -167,37 +314,14 @@ async function ingestDocument({ organizationId, payload, file }) {
       throw new HttpError(400, 'file is required');
     }
 
-    const membership = await organizationsRepository.findMembership({
-      userId: normalizedPayload.submitted_by_user_id,
-      organizationId
-    });
-
-    if (!membership) {
-      throw new HttpError(403, 'submitted_by_user_id does not belong to the organization');
-    }
-
-    const { drive, integration } = await googleDriveService.getOrganizationDriveClient(organizationId);
     const contentHash = hashBuffer(file.buffer);
-    const duplicateDocument = await transactionsRepository.findExactDuplicateDocument({
+    const prepared = await prepareIngestion({
       organizationId,
+      normalizedPayload,
       contentHash
     });
 
-    if (duplicateDocument) {
-      throw new HttpError(409, 'An identical document already exists for this organization');
-    }
-
-    const transactionId = crypto.randomUUID();
-    const documentId = crypto.randomUUID();
-    const embeddingJobId = crypto.randomUUID();
-    const duplicateMatch = await findDuplicateMatch({
-      organizationId,
-      amount: normalizedPayload.amount,
-      transactionDate: normalizedPayload.transaction_date,
-      transactionType: normalizedPayload.transaction_type,
-      vendor: normalizedPayload.vendor
-    });
-
+    const { drive, integration } = await googleDriveService.getOrganizationDriveClient(organizationId);
     const driveFolderId = await ensureFolderPath(drive, integration.drive_root_folder_id, [
       'documents',
       toIsoYear(normalizedPayload.transaction_date),
@@ -207,7 +331,7 @@ async function ingestDocument({ organizationId, payload, file }) {
 
     const storedName = buildStoredFileName({
       transactionDate: normalizedPayload.transaction_date,
-      transactionId,
+      transactionId: prepared.transactionId,
       transactionType: normalizedPayload.transaction_type,
       vendor: normalizedPayload.vendor,
       originalName: file.filename
@@ -221,74 +345,27 @@ async function ingestDocument({ organizationId, payload, file }) {
       buffer: file.buffer
     });
 
-    const client = await pool.connect();
-
     try {
-      await client.query('BEGIN');
-
-      const transaction = await transactionsRepository.insertTransactionWithDocumentAndJobs({
-        transaction: {
-          id: transactionId,
-          organization_id: organizationId,
-          amount: normalizedPayload.amount,
-          vendor: normalizedPayload.vendor,
-          transaction_type: normalizedPayload.transaction_type,
-          category: normalizedPayload.category,
-          transaction_date: normalizedPayload.transaction_date,
-          confidence_score: normalizedPayload.confidence_score,
-          duplicate_of_transaction_id: duplicateMatch?.transaction_id || null,
-          duplicate_score: duplicateMatch?.duplicate_score || null,
-          status: duplicateMatch ? 'pending_review' : 'auto_verified'
-        },
+      return await createTransactionAndDocument({
+        organizationId,
+        normalizedPayload,
+        ingestionJobId: ingestionJob.id,
+        transactionId: prepared.transactionId,
+        documentId: prepared.documentId,
+        embeddingJobId: prepared.embeddingJobId,
+        duplicateMatch: prepared.duplicateMatch,
         document: {
-          id: documentId,
-          transaction_id: transactionId,
-          organization_id: organizationId,
+          storage_kind: 'google_drive',
           drive_file_id: uploadedFile.id,
           drive_folder_id: driveFolderId,
           original_name: file.filename,
           stored_name: storedName,
           file_type: file.mimeType || 'application/octet-stream',
-          content_hash: contentHash
-        },
-        embeddingJob: {
-          id: embeddingJobId,
-          transaction_id: transactionId,
-          organization_id: organizationId,
-          status: 'pending',
-          attempt_count: 0,
-          max_attempts: 5
-        },
-        auditLog: {
-          id: crypto.randomUUID(),
-          user_id: normalizedPayload.submitted_by_user_id,
-          transaction_id: transactionId,
-          action: 'transaction.created',
-          previous_value: null,
-          new_value: {
-            vendor: normalizedPayload.vendor,
-            amount: normalizedPayload.amount,
-            transaction_type: normalizedPayload.transaction_type,
-            category: normalizedPayload.category,
-            transaction_date: normalizedPayload.transaction_date,
-            duplicate_of_transaction_id: duplicateMatch?.transaction_id || null,
-            duplicate_score: duplicateMatch?.duplicate_score || null
-          }
+          content_hash: contentHash,
+          text_content: null
         }
-      }, client);
-
-      await ingestionRepository.markIngestionJobCompleted(ingestionJob.id, client);
-      await client.query('COMMIT');
-
-      return {
-        ingestion_job_id: ingestionJob.id,
-        transaction_id: transaction.id,
-        document_id: documentId,
-        embedding_status: 'pending'
-      };
+      });
     } catch (dbError) {
-      await client.query('ROLLBACK');
-
       try {
         await deleteFile(drive, uploadedFile.id);
       } catch (_deleteError) {
@@ -304,20 +381,68 @@ async function ingestDocument({ organizationId, payload, file }) {
       }
 
       throw dbError;
-    } finally {
-      client.release();
     }
   } catch (error) {
-    try {
-      await ingestionRepository.markIngestionJobFailed(ingestionJob.id, error.message);
-    } catch (_markFailedError) {
-      // Preserve the original ingestion failure if job tracking cannot be updated.
-    }
+    await markIngestionJobFailedSafely(ingestionJob.id, error);
+    throw error;
+  }
+}
 
+async function ingestText({ organizationId, payload }) {
+  if (!organizationId) {
+    throw new HttpError(400, 'X-Organization-Id header is required');
+  }
+
+  const normalizedPayload = validateTextPayload(payload);
+  const ingestionJob = await ingestionRepository.createIngestionJob({
+    id: crypto.randomUUID(),
+    organizationId,
+    source: normalizedPayload.source,
+    fileName: INLINE_TEXT_ORIGINAL_NAME
+  });
+
+  try {
+    const textBuffer = Buffer.from(normalizedPayload.text, 'utf8');
+    const contentHash = hashBuffer(textBuffer);
+    const prepared = await prepareIngestion({
+      organizationId,
+      normalizedPayload,
+      contentHash
+    });
+    const storedName = buildStoredFileName({
+      transactionDate: normalizedPayload.transaction_date,
+      transactionId: prepared.transactionId,
+      transactionType: normalizedPayload.transaction_type,
+      vendor: normalizedPayload.vendor,
+      originalName: INLINE_TEXT_ORIGINAL_NAME
+    });
+
+    return await createTransactionAndDocument({
+      organizationId,
+      normalizedPayload,
+      ingestionJobId: ingestionJob.id,
+      transactionId: prepared.transactionId,
+      documentId: prepared.documentId,
+      embeddingJobId: prepared.embeddingJobId,
+      duplicateMatch: prepared.duplicateMatch,
+      document: {
+        storage_kind: 'inline_text',
+        drive_file_id: null,
+        drive_folder_id: null,
+        original_name: INLINE_TEXT_ORIGINAL_NAME,
+        stored_name: storedName,
+        file_type: 'text/plain',
+        content_hash: contentHash,
+        text_content: normalizedPayload.text
+      }
+    });
+  } catch (error) {
+    await markIngestionJobFailedSafely(ingestionJob.id, error);
     throw error;
   }
 }
 
 module.exports = {
-  ingestDocument
+  ingestDocument,
+  ingestText
 };

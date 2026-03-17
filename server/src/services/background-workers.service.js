@@ -10,8 +10,13 @@ let embeddingWorkerRunning = false;
 let orphanCleanupRunning = false;
 let embeddingInterval = null;
 let orphanCleanupInterval = null;
+const MAX_EMBEDDING_TEXT_CHARS = 4000;
 
 function buildEmbeddingSourceText(source) {
+  const inlineText = typeof source.text_content === 'string'
+    ? source.text_content.slice(0, MAX_EMBEDDING_TEXT_CHARS)
+    : '';
+
   return [
     `vendor: ${source.vendor || ''}`,
     `transaction_type: ${source.transaction_type || ''}`,
@@ -19,7 +24,8 @@ function buildEmbeddingSourceText(source) {
     `amount: ${source.amount || ''}`,
     `transaction_date: ${source.transaction_date || ''}`,
     `original_name: ${source.original_name || ''}`,
-    `stored_name: ${source.stored_name || ''}`
+    `stored_name: ${source.stored_name || ''}`,
+    `text_content: ${inlineText}`
   ].join('\n');
 }
 

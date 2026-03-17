@@ -131,25 +131,29 @@ async function insertTransactionWithDocumentAndJobs(
        id,
        transaction_id,
        organization_id,
+       storage_kind,
        drive_file_id,
        drive_folder_id,
        original_name,
        stored_name,
        file_type,
        content_hash,
+       text_content,
        uploaded_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, NOW()))`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, NOW()))`,
     [
       document.id,
       document.transaction_id,
       document.organization_id,
+      document.storage_kind,
       document.drive_file_id,
       document.drive_folder_id,
       document.original_name,
       document.stored_name,
       document.file_type,
       document.content_hash,
+      document.text_content || null,
       document.uploaded_at || null
     ]
   );
@@ -304,10 +308,10 @@ async function listTransactions(
 async function findTransactionById({ organizationId, transactionId }, client = pool) {
   const { rows } = await client.query(
     `SELECT t.id,
-            t.organization_id,
-            t.amount,
-            t.vendor,
-            t.transaction_type,
+           t.organization_id,
+           t.amount,
+           t.vendor,
+           t.transaction_type,
             t.category,
             t.transaction_date,
             t.confidence_score,
@@ -316,12 +320,14 @@ async function findTransactionById({ organizationId, transactionId }, client = p
             t.status,
             t.created_at,
             d.id AS document_id,
+            d.storage_kind,
             d.drive_file_id,
             d.drive_folder_id,
             d.original_name,
             d.stored_name,
             d.file_type,
             d.content_hash,
+            d.text_content,
             d.uploaded_at,
             a.id AS approval_id,
             a.approved_by,
@@ -346,12 +352,14 @@ async function findTransactionById({ organizationId, transactionId }, client = p
     document: row.document_id
       ? {
           id: row.document_id,
+          storage_kind: row.storage_kind,
           drive_file_id: row.drive_file_id,
           drive_folder_id: row.drive_folder_id,
           original_name: row.original_name,
           stored_name: row.stored_name,
           file_type: row.file_type,
           content_hash: row.content_hash,
+          text_content: row.storage_kind === 'inline_text' ? row.text_content : null,
           uploaded_at: row.uploaded_at
         }
       : null,
@@ -486,7 +494,8 @@ async function findTransactionEmbeddingSource(transactionId, client = pool) {
             t.amount,
             t.transaction_date,
             d.original_name,
-            d.stored_name
+            d.stored_name,
+            d.text_content
      FROM transactions t
      LEFT JOIN documents d ON d.transaction_id = t.id
      WHERE t.id = $1
