@@ -10,6 +10,13 @@ const router = express.Router();
 
 router.get('/connect', optionalAuth, googleDriveController.connect);
 router.get('/callback', googleDriveController.callback);
+router.post(
+  '/connect-url',
+  requireAuth,
+  requireOrganizationMembership,
+  requireOrganizationRole(['founder', 'admin']),
+  googleDriveController.connectUrl
+);
 router.get(
   '/status',
   requireAuth,

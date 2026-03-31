@@ -50,6 +50,29 @@ function App() {
   const telegramMode = Boolean(pendingTelegramToken);
 
   useEffect(() => {
+    function handleAuthUpdated(event) {
+      setToken(event.detail?.token || localStorage.getItem('token') || '');
+      setUser(event.detail?.user || getStoredUser());
+    }
+
+    function handleAuthExpired() {
+      setToken('');
+      setUser(null);
+      setStatus(pendingTelegramToken ? 'Finish signup or login to link your Telegram account.' : '');
+      setScreen(pendingTelegramToken ? 'signup' : 'login');
+      navigate(pendingTelegramToken ? '/telegram-login' : '/', { replace: true });
+    }
+
+    window.addEventListener('spark-auth-updated', handleAuthUpdated);
+    window.addEventListener('spark-auth-expired', handleAuthExpired);
+
+    return () => {
+      window.removeEventListener('spark-auth-updated', handleAuthUpdated);
+      window.removeEventListener('spark-auth-expired', handleAuthExpired);
+    };
+  }, [navigate, pendingTelegramToken]);
+
+  useEffect(() => {
     if (location.pathname !== '/telegram-login') {
       return;
     }
@@ -145,11 +168,13 @@ function App() {
 
   function handleAuthSuccess(result) {
     const accessToken = result.access_token || result.token;
+    const refreshToken = result.refresh_token || '';
     const shouldClearTelegramToken = pendingTelegramToken && result.user?.telegram_id;
 
     setToken(accessToken);
     setUser(result.user);
     localStorage.setItem('token', accessToken);
+    localStorage.setItem('refresh_token', refreshToken);
     localStorage.setItem('user', JSON.stringify(result.user));
     setScreen('dashboard');
 
@@ -174,6 +199,7 @@ function App() {
     setUser(null);
     setStatus(pendingTelegramToken ? 'Finish signup or login to link your Telegram account.' : '');
     localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
     setScreen(pendingTelegramToken ? 'signup' : 'login');
     navigate(pendingTelegramToken ? '/telegram-login' : '/', { replace: true });

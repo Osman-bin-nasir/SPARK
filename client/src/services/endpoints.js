@@ -6,6 +6,8 @@ export const endpoints = {
   register: '/auth/register',
   signup: '/auth/signup',
   login: '/auth/login',
+  refresh: '/auth/refresh',
   linkTelegram: '/auth/link-telegram',
-  googleDriveStatus: '/google-drive/status'
+  googleDriveStatus: '/google-drive/status',
+  googleDriveConnectUrl: '/google-drive/connect-url'
 };

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { API_BASE_URL, endpoints } from '../services/endpoints';
-import { get } from '../services/http';
+import { endpoints } from '../services/endpoints';
+import { get, post } from '../services/http';
 
 function IntegrationsPage({ token, user, onBack, onLogout }) {
   const [searchParams] = useSearchParams();
@@ -58,13 +58,33 @@ function IntegrationsPage({ token, user, onBack, onLogout }) {
     };
   }, [organizationId, token]);
 
-  function connectDrive() {
+  async function connectDrive() {
     if (!organizationId) {
       setError('No organization is selected for this account.');
       return;
     }
 
-    window.location.href = `${API_BASE_URL}/google-drive/connect?organization_id=${encodeURIComponent(organizationId)}`;
+    try {
+      setError('');
+      const result = await post(
+        endpoints.googleDriveConnectUrl,
+        {},
+        {
+          token,
+          headers: {
+            'X-Organization-Id': organizationId
+          }
+        }
+      );
+
+      if (!result.url) {
+        throw new Error('Google Drive connect URL is missing');
+      }
+
+      window.location.href = result.url;
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   }
 
   return (

@@ -29,6 +29,26 @@ async function connect(req, res, next) {
   }
 }
 
+async function connectUrl(req, res, next) {
+  try {
+    const organizationId = req.get('x-organization-id');
+
+    if (!organizationId) {
+      res.status(400).json({ error: 'X-Organization-Id header is required' });
+      return;
+    }
+
+    const url = await googleDriveService.createConnectUrl({
+      userId: req.auth.userId,
+      organizationId
+    });
+
+    res.status(200).json({ url });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function callback(req, res) {
   try {
     const result = await googleDriveService.handleOauthCallback({
@@ -57,5 +77,6 @@ async function status(req, res, next) {
 module.exports = {
   callback,
   connect,
+  connectUrl,
   status
 };
