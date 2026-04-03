@@ -182,10 +182,6 @@ async function prepareIngestion({ organizationId, normalizedPayload, contentHash
     contentHash
   });
 
-  if (duplicateDocument) {
-    throw new HttpError(409, 'An identical document already exists for this organization');
-  }
-
   const duplicateMatch = await findDuplicateMatch({
     organizationId,
     amount: normalizedPayload.amount,
@@ -198,8 +194,23 @@ async function prepareIngestion({ organizationId, normalizedPayload, contentHash
     transactionId: crypto.randomUUID(),
     documentId: crypto.randomUUID(),
     embeddingJobId: crypto.randomUUID(),
+    duplicateDocument,
     duplicateMatch,
     contentHash
+  };
+}
+
+async function completeDuplicateIngestion({ ingestionJobId, duplicateDocument }) {
+  await ingestionRepository.markIngestionJobCompleted(ingestionJobId);
+
+  return {
+    ingestion_job_id: ingestionJobId,
+    transaction_id: duplicateDocument.transaction_id,
+    document_id: duplicateDocument.document_id,
+    embedding_status: null,
+    ingested: false,
+    is_duplicate: true,
+    message: 'An identical document already exists for this organization'
   };
 }
 
@@ -278,7 +289,9 @@ async function createTransactionAndDocument({
       ingestion_job_id: ingestionJobId,
       transaction_id: transaction.id,
       document_id: documentId,
-      embedding_status: 'pending'
+      embedding_status: 'pending',
+      ingested: true,
+      is_duplicate: false
     };
   } catch (error) {
     await client.query('ROLLBACK');
@@ -320,6 +333,13 @@ async function ingestDocument({ organizationId, payload, file }) {
       normalizedPayload,
       contentHash
     });
+
+    if (prepared.duplicateDocument) {
+      return completeDuplicateIngestion({
+        ingestionJobId: ingestionJob.id,
+        duplicateDocument: prepared.duplicateDocument
+      });
+    }
 
     const { drive, integration } = await googleDriveService.getOrganizationDriveClient(organizationId);
     const driveFolderId = await ensureFolderPath(drive, integration.drive_root_folder_id, [
@@ -409,6 +429,14 @@ async function ingestText({ organizationId, payload }) {
       normalizedPayload,
       contentHash
     });
+
+    if (prepared.duplicateDocument) {
+      return completeDuplicateIngestion({
+        ingestionJobId: ingestionJob.id,
+        duplicateDocument: prepared.duplicateDocument
+      });
+    }
+
     const storedName = buildStoredFileName({
       transactionDate: normalizedPayload.transaction_date,
       transactionId: prepared.transactionId,
