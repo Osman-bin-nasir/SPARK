@@ -1,14 +1,14 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import './App.css';
 import LoginPage from './features/login/login.page';
 import SignupPage from './features/signup/signup.page';
-import DashboardPage from './features/dashboard/dashboard.page';
 import IntegrationsPage from './pages/Integrations';
 import { post } from './services/http';
 import { endpoints } from './services/endpoints';
 
 const TELEGRAM_TOKEN_STORAGE_KEY = 'spark.telegram-link-token';
+const DashboardPage = lazy(() => import('./features/dashboard/dashboard.page'));
 
 function getStoredUser() {
   const raw = localStorage.getItem('user');
@@ -223,17 +223,21 @@ function App() {
   );
 
   const dashboardContent = (
-    <DashboardPage
-      onLogout={handleLogout}
-      onOpenIntegrations={() => navigate('/integrations')}
-      status={status}
-      token={token}
-      user={user}
-    />
+    <Suspense fallback={<div className="card">Loading dashboard...</div>}>
+      <DashboardPage
+        onLogout={handleLogout}
+        onOpenIntegrations={() => navigate('/integrations')}
+        status={status}
+        token={token}
+        user={user}
+      />
+    </Suspense>
   );
 
+  const isDashboardSurface = token && location.pathname !== '/integrations';
+
   return (
-    <main className="app">
+    <main className={isDashboardSurface ? 'app app-dashboard' : 'app'}>
       <Routes>
         <Route
           path="/integrations"

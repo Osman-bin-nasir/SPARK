@@ -56,6 +56,11 @@ body::before {
   padding: 24px;
 }
 
+.app-dashboard {
+  display: block;
+  padding: 28px 24px 48px;
+}
+
 .card {
   position: relative;
   width: 100%;
@@ -267,6 +272,10 @@ button:disabled {
 @media (max-width: 540px) {
   .app {
     padding: 18px;
+  }
+
+  .app-dashboard {
+    padding: 18px 14px 28px;
   }
 
   .card {

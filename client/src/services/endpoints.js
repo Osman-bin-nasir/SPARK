@@ -8,6 +8,9 @@ export const endpoints = {
   login: '/auth/login',
   refresh: '/auth/refresh',
   linkTelegram: '/auth/link-telegram',
+  dashboard: '/dashboard',
+  dashboardConfig: '/dashboard/config',
+  dashboardBudgets: '/dashboard/budgets',
   googleDriveStatus: '/google-drive/status',
   googleDriveConnectUrl: '/google-drive/connect-url'
 };

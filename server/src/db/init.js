@@ -58,6 +58,28 @@ async function initDb() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS finance_settings (
+      organization_id              UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+      opening_cash_balance         NUMERIC(14, 2) NOT NULL CHECK (opening_cash_balance >= 0),
+      opening_cash_effective_date  DATE NOT NULL,
+      created_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS category_budgets (
+      id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id     UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      category            TEXT NOT NULL,
+      normalized_category TEXT NOT NULL,
+      monthly_limit       NUMERIC(14, 2) NOT NULL CHECK (monthly_limit > 0),
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS transactions (
       id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       organization_id             UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -217,6 +239,8 @@ async function initDb() {
   `);
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_members_user_org ON organization_members (user_id, organization_id);');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_category_budgets_org_normalized_category ON category_budgets (organization_id, normalized_category);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_category_budgets_org_category ON category_budgets (organization_id, category);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_transactions_org_date ON transactions (organization_id, transaction_date DESC);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_transactions_org_type_status ON transactions (organization_id, transaction_type, status);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_transaction_id ON documents (transaction_id);');
