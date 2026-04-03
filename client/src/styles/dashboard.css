@@ -27,6 +27,12 @@
   gap: 12px;
 }
 
+.finance-org-switcher {
+  min-width: 240px;
+  display: grid;
+  gap: 8px;
+}
+
 .finance-org-pill {
   min-width: 132px;
   border: 1px solid rgba(124, 245, 214, 0.14);
@@ -160,6 +166,10 @@
 .finance-panel {
   grid-column: span 6;
   padding: 22px;
+}
+
+.finance-panel-full {
+  grid-column: span 12;
 }
 
 .finance-panel:nth-child(1) {
@@ -322,6 +332,86 @@
   gap: 12px;
 }
 
+.finance-team-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.finance-join-link-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.finance-join-code {
+  font-size: 1.8rem;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+
+.finance-join-link-value {
+  display: block;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(105, 210, 255, 0.16);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: rgba(8, 16, 30, 0.72);
+  color: #c7f6ff;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.finance-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.finance-member-list {
+  display: grid;
+  gap: 10px;
+}
+
+.finance-member-list-head,
+.finance-member-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) 120px 120px;
+  gap: 12px;
+  align-items: center;
+}
+
+.finance-member-list-head {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.finance-member-row {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.finance-member-row strong {
+  display: block;
+  font-size: 0.98rem;
+}
+
+.finance-member-row p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 .finance-budget-table-head,
 .finance-budget-row {
   display: grid;
@@ -376,6 +466,9 @@
   }
 
   .finance-breakdown-layout,
+  .finance-team-layout,
+  .finance-member-list-head,
+  .finance-member-row,
   .finance-budget-table-head,
   .finance-budget-row {
     grid-template-columns: 1fr;

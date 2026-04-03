@@ -12,6 +12,7 @@ const env = {
   accessTokenExpiresIn: process.env.ACCESS_TOKEN_EXPIRES_IN || '15m',
   refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d',
   telegramLoginExpiresIn: '10m',
+  telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME || '',
   appBaseUrl,
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',

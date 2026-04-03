@@ -1,4 +1,5 @@
 const { pool } = require('./pool');
+const organizationsRepository = require('./organizations.repository');
 
 async function initDb() {
   await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto;');
@@ -27,9 +28,26 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS organizations (
       id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       name       TEXT NOT NULL,
+      join_code  TEXT NOT NULL DEFAULT LOWER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 10)),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS join_code TEXT;');
+  await pool.query(
+    `ALTER TABLE organizations
+     ALTER COLUMN join_code
+     SET DEFAULT LOWER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 10));`
+  );
+  await pool.query(
+    `UPDATE organizations
+     SET join_code = NULL
+     WHERE join_code IS NOT NULL
+       AND BTRIM(join_code) = ''`
+  );
+  await organizationsRepository.ensureOrganizationJoinCodes(pool);
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_join_code_unique ON organizations (join_code);');
+  await pool.query('ALTER TABLE organizations ALTER COLUMN join_code SET NOT NULL;');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS organization_members (
@@ -239,6 +257,7 @@ async function initDb() {
   `);
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_members_user_org ON organization_members (user_id, organization_id);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_members_org_created_at ON organization_members (organization_id, created_at);');
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_category_budgets_org_normalized_category ON category_budgets (organization_id, normalized_category);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_category_budgets_org_category ON category_budgets (organization_id, category);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_transactions_org_date ON transactions (organization_id, transaction_date DESC);');

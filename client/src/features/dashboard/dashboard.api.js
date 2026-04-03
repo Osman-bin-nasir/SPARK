@@ -1,5 +1,5 @@
 import { endpoints } from '../../services/endpoints';
-import { get, put } from '../../services/http';
+import { get, post, put } from '../../services/http';
 
 function buildOrganizationOptions(token, organizationId) {
   return {
@@ -29,4 +29,12 @@ export function getDashboardBudgets({ token, organizationId }) {
 
 export function updateDashboardBudgets({ token, organizationId, payload }) {
   return put(endpoints.dashboardBudgets, payload, buildOrganizationOptions(token, organizationId));
+}
+
+export function getOrganizationTeam({ token, organizationId }) {
+  return get(endpoints.organizationsTeam, buildOrganizationOptions(token, organizationId));
+}
+
+export function regenerateOrganizationJoinCode({ token, organizationId }) {
+  return post(endpoints.organizationsRegenerateJoinCode, {}, buildOrganizationOptions(token, organizationId));
 }

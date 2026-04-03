@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { endpoints } from '../services/endpoints';
 import { get, post } from '../services/http';
+import { endpoints } from '../services/endpoints';
 
-function IntegrationsPage({ token, user, onBack, onLogout }) {
+function IntegrationsPage({ activeOrganizationId, onBack, onLogout, onSelectOrganization, token, user }) {
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [driveStatus, setDriveStatus] = useState({ connected: false });
 
-  const organizationId = user?.default_organization_id || user?.organizations?.[0]?.id || '';
+  const organizationId = activeOrganizationId || user?.default_organization_id || user?.organizations?.[0]?.id || '';
+  const organizations = user?.organizations || [];
   const driveParam = searchParams.get('drive');
   const driveMessage = searchParams.get('message');
 
@@ -98,6 +99,19 @@ function IntegrationsPage({ token, user, onBack, onLogout }) {
       {driveParam === 'connected' && <p className="notice">Google Drive connected successfully.</p>}
       {driveParam === 'error' && <p className="error">{driveMessage || 'Google Drive connection failed.'}</p>}
       {error && <p className="error">{error}</p>}
+
+      {organizations.length > 0 && (
+        <label className="field">
+          <span className="field-label">Active Organization</span>
+          <select value={organizationId} onChange={(event) => onSelectOrganization(event.target.value)}>
+            {organizations.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} · {item.role}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="dashboard-grid">
         <div className="metric">

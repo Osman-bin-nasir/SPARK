@@ -28,7 +28,7 @@ function verifySparkSignature(signature, payload) {
   }
 }
 
-function requireSignedWebhookHeaders(req) {
+function requireSignedWebhookHeaders(req, { requireOrganizationId = true } = {}) {
   assertWebhookEnv();
 
   const signature = req.get('x-spark-signature');
@@ -37,11 +37,34 @@ function requireSignedWebhookHeaders(req) {
     throw new HttpError(401, 'X-Spark-Signature header is required');
   }
 
-  if (!req.get('x-organization-id')) {
+  if (requireOrganizationId && !req.get('x-organization-id')) {
     throw new HttpError(400, 'X-Organization-Id header is required');
   }
 
   return signature;
+}
+
+function verifySignedJsonPayload(req, next, options = {}) {
+  try {
+    const signature = requireSignedWebhookHeaders(req, options);
+
+    if (!req.is('application/json')) {
+      throw new HttpError(415, 'Content-Type must be application/json');
+    }
+
+    if (!Buffer.isBuffer(req.rawBody) || req.rawBody.length === 0) {
+      throw new HttpError(400, 'Signed webhook body is missing');
+    }
+
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      throw new HttpError(400, 'Request body must be a JSON object');
+    }
+
+    verifySparkSignature(signature, req.rawBody);
+    next();
+  } catch (error) {
+    next(error);
+  }
 }
 
 async function verifySignedWebhook(req, _res, next) {
@@ -99,29 +122,15 @@ async function verifySignedWebhook(req, _res, next) {
 }
 
 function verifySignedJsonWebhook(req, _res, next) {
-  try {
-    const signature = requireSignedWebhookHeaders(req);
+  verifySignedJsonPayload(req, next, { requireOrganizationId: true });
+}
 
-    if (!req.is('application/json')) {
-      throw new HttpError(415, 'Content-Type must be application/json');
-    }
-
-    if (!Buffer.isBuffer(req.rawBody) || req.rawBody.length === 0) {
-      throw new HttpError(400, 'Signed webhook body is missing');
-    }
-
-    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
-      throw new HttpError(400, 'Request body must be a JSON object');
-    }
-
-    verifySparkSignature(signature, req.rawBody);
-    next();
-  } catch (error) {
-    next(error);
-  }
+function verifySignedJsonWebhookWithoutOrganization(req, _res, next) {
+  verifySignedJsonPayload(req, next, { requireOrganizationId: false });
 }
 
 module.exports = {
   verifySignedJsonWebhook,
+  verifySignedJsonWebhookWithoutOrganization,
   verifySignedWebhook
 };

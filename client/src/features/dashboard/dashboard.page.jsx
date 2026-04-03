@@ -17,6 +17,8 @@ import {
   getDashboardBudgets,
   getDashboardConfig,
   getDashboardSnapshot,
+  getOrganizationTeam,
+  regenerateOrganizationJoinCode,
   updateDashboardBudgets,
   updateDashboardConfig
 } from './dashboard.api';
@@ -65,6 +67,18 @@ function formatPercent(value) {
   return `${Number(value).toFixed(1)}%`;
 }
 
+function formatShortDate(value) {
+  if (!value) {
+    return 'Unknown';
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  }).format(new Date(value));
+}
+
 function formatMonthLabel(value) {
   return value.replace(' months', 'M');
 }
@@ -83,9 +97,9 @@ function MetricCard({ label, value, helper }) {
   );
 }
 
-function Panel({ title, subtitle, children, actions }) {
+function Panel({ actions, children, className = '', subtitle, title }) {
   return (
-    <section className="finance-panel">
+    <section className={`finance-panel ${className}`.trim()}>
       <div className="finance-panel-header">
         <div>
           <h2>{title}</h2>
@@ -107,10 +121,39 @@ function EmptyState({ title, body }) {
   );
 }
 
-function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
-  const organizationId = user?.default_organization_id || user?.organizations?.[0]?.id || '';
-  const organization = user?.organizations?.find((item) => item.id === organizationId) || null;
+function OrganizationSwitcher({ onSelectOrganization, organizationId, organizations }) {
+  if (!organizations.length) {
+    return null;
+  }
+
+  return (
+    <label className="finance-org-switcher">
+      <span className="field-label">Workspace</span>
+      <select value={organizationId} onChange={(event) => onSelectOrganization(event.target.value)}>
+        {organizations.map((organization) => (
+          <option key={organization.id} value={organization.id}>
+            {organization.name} · {organization.role}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function DashboardPage({
+  activeOrganizationId,
+  onLogout,
+  onOpenIntegrations,
+  onSelectOrganization,
+  status,
+  token,
+  user
+}) {
+  const organizations = user?.organizations || [];
+  const organizationId = activeOrganizationId || user?.default_organization_id || organizations[0]?.id || '';
+  const organization = organizations.find((item) => item.id === organizationId) || null;
   const canManageFinance = ['founder', 'admin'].includes(organization?.role || '');
+  const isFounder = organization?.role === 'founder';
 
   const [months, setMonths] = useState(6);
   const [snapshot, setSnapshot] = useState(null);
@@ -120,6 +163,7 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
     opening_cash_effective_date: ''
   });
   const [budgets, setBudgets] = useState({ items: [] });
+  const [team, setTeam] = useState(null);
   const [cashForm, setCashForm] = useState({
     opening_cash_balance: '',
     opening_cash_effective_date: ''
@@ -127,14 +171,19 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
   const [budgetDrafts, setBudgetDrafts] = useState([createBudgetDraft()]);
   const [loadingSnapshot, setLoadingSnapshot] = useState(true);
   const [loadingSetup, setLoadingSetup] = useState(true);
+  const [loadingTeam, setLoadingTeam] = useState(false);
   const [error, setError] = useState('');
+  const [teamError, setTeamError] = useState('');
   const [cashMessage, setCashMessage] = useState('');
   const [budgetMessage, setBudgetMessage] = useState('');
+  const [teamMessage, setTeamMessage] = useState('');
   const [savingCash, setSavingCash] = useState(false);
   const [savingBudgets, setSavingBudgets] = useState(false);
+  const [regeneratingJoinCode, setRegeneratingJoinCode] = useState(false);
 
   useEffect(() => {
     if (!token || !organizationId) {
+      setSnapshot(null);
       setLoadingSnapshot(false);
       return;
     }
@@ -152,17 +201,13 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
           months
         });
 
-        if (!isActive) {
-          return;
+        if (isActive) {
+          setSnapshot(result);
         }
-
-        setSnapshot(result);
       } catch (requestError) {
-        if (!isActive) {
-          return;
+        if (isActive) {
+          setError(requestError.message);
         }
-
-        setError(requestError.message);
       } finally {
         if (isActive) {
           setLoadingSnapshot(false);
@@ -179,6 +224,13 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
 
   useEffect(() => {
     if (!token || !organizationId) {
+      setConfig({
+        configured: false,
+        opening_cash_balance: null,
+        opening_cash_effective_date: ''
+      });
+      setBudgets({ items: [] });
+      setBudgetDrafts([createBudgetDraft()]);
       setLoadingSetup(false);
       return;
     }
@@ -210,11 +262,9 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
         setBudgets(budgetResult);
         setBudgetDrafts(createBudgetDrafts(budgetResult.items || []));
       } catch (requestError) {
-        if (!isActive) {
-          return;
+        if (isActive) {
+          setError(requestError.message);
         }
-
-        setError(requestError.message);
       } finally {
         if (isActive) {
           setLoadingSetup(false);
@@ -228,6 +278,48 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
       isActive = false;
     };
   }, [organizationId, token]);
+
+  useEffect(() => {
+    if (!token || !organizationId || !isFounder) {
+      setTeam(null);
+      setTeamError('');
+      setTeamMessage('');
+      setLoadingTeam(false);
+      return;
+    }
+
+    let isActive = true;
+
+    async function loadTeam() {
+      try {
+        setLoadingTeam(true);
+        setTeamError('');
+
+        const result = await getOrganizationTeam({
+          token,
+          organizationId
+        });
+
+        if (isActive) {
+          setTeam(result);
+        }
+      } catch (requestError) {
+        if (isActive) {
+          setTeamError(requestError.message);
+        }
+      } finally {
+        if (isActive) {
+          setLoadingTeam(false);
+        }
+      }
+    }
+
+    loadTeam();
+
+    return () => {
+      isActive = false;
+    };
+  }, [isFounder, organizationId, token]);
 
   async function refreshSnapshot() {
     const result = await getDashboardSnapshot({
@@ -315,6 +407,59 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
     }
   }
 
+  async function handleRegenerateJoinCode() {
+    if (!isFounder) {
+      return;
+    }
+
+    try {
+      setRegeneratingJoinCode(true);
+      setTeamMessage('');
+      setTeamError('');
+
+      const result = await regenerateOrganizationJoinCode({
+        token,
+        organizationId
+      });
+
+      setTeam((current) => (
+        current
+          ? {
+              ...current,
+              organization: result.organization
+            }
+          : {
+              organization: result.organization,
+              members: []
+            }
+      ));
+      setTeamMessage('Telegram join link regenerated.');
+    } catch (requestError) {
+      setTeamError(requestError.message);
+    } finally {
+      setRegeneratingJoinCode(false);
+    }
+  }
+
+  async function handleCopyJoinLink() {
+    if (!team?.organization) {
+      return;
+    }
+
+    try {
+      const valueToCopy = team.organization.join_link || team.organization.join_code;
+
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error('Clipboard is not available in this browser');
+      }
+
+      await navigator.clipboard.writeText(valueToCopy);
+      setTeamMessage(team.organization.join_link ? 'Telegram join link copied.' : 'Join code copied.');
+    } catch (requestError) {
+      setTeamError(requestError.message);
+    }
+  }
+
   function handleBudgetDraftChange(id, field, value) {
     setBudgetDrafts((current) =>
       current.map((item) => (item.id === id ? { ...item, [field]: value } : item))
@@ -364,6 +509,11 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
           </p>
         </div>
         <div className="finance-header-actions">
+          <OrganizationSwitcher
+            onSelectOrganization={onSelectOrganization}
+            organizationId={organizationId}
+            organizations={organizations}
+          />
           <div className="finance-org-pill">
             <span>Role</span>
             <strong>{organization?.role || 'member'}</strong>
@@ -422,10 +572,7 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
       </section>
 
       <section className="finance-dashboard-grid">
-        <Panel
-          title="Expense Trend"
-          subtitle={`Outflow across the last ${months} months`}
-        >
+        <Panel title="Expense Trend" subtitle={`Outflow across the last ${months} months`}>
           {busy ? (
             <div className="finance-loading">Loading dashboard data…</div>
           ) : unavailable ? (
@@ -480,10 +627,7 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
           )}
         </Panel>
 
-        <Panel
-          title="Category Breakdown"
-          subtitle="Current-month spend by category"
-        >
+        <Panel title="Category Breakdown" subtitle="Current-month spend by category">
           {busy ? (
             <div className="finance-loading">Loading category mix…</div>
           ) : unavailable ? (
@@ -538,10 +682,7 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
           )}
         </Panel>
 
-        <Panel
-          title="Top Vendors"
-          subtitle={`Highest outflow over the last ${months} months`}
-        >
+        <Panel title="Top Vendors" subtitle={`Highest outflow over the last ${months} months`}>
           {busy ? (
             <div className="finance-loading">Loading vendors…</div>
           ) : unavailable ? (
@@ -591,7 +732,11 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
 
         <Panel
           title="Budget Alerts"
-          subtitle={budgetsConfigured ? 'Current-month categories nearing or exceeding budget' : 'Set budgets to start alerting on overspend'}
+          subtitle={
+            budgetsConfigured
+              ? 'Current-month categories nearing or exceeding budget'
+              : 'Set budgets to start alerting on overspend'
+          }
         >
           {busy ? (
             <div className="finance-loading">Loading budget alerts…</div>
@@ -671,10 +816,79 @@ function DashboardPage({ user, token, onLogout, onOpenIntegrations, status }) {
           )}
         </Panel>
 
-        <Panel
-          title="Cash Setup"
-          subtitle="Define the opening balance that anchors cash-on-hand and runway"
-        >
+        {isFounder && (
+          <Panel
+            className="finance-panel-full"
+            title="Team Access"
+            subtitle="Share the Telegram join link with teammates and monitor who already has organization access"
+            actions={
+              <button
+                type="button"
+                className="secondary-btn finance-mini-button"
+                onClick={handleRegenerateJoinCode}
+                disabled={loadingTeam || regeneratingJoinCode}
+              >
+                {regeneratingJoinCode ? 'Regenerating…' : 'Regenerate Link'}
+              </button>
+            }
+          >
+            {loadingTeam ? (
+              <div className="finance-loading">Loading team access…</div>
+            ) : teamError ? (
+              <p className="error finance-form-notice">{teamError}</p>
+            ) : !team ? (
+              <EmptyState
+                title="Team details unavailable"
+                body="Founder access details could not be loaded for this organization."
+              />
+            ) : (
+              <div className="finance-team-layout">
+                <div className="finance-join-link-card">
+                  <span className="finance-metric-label">Join Code</span>
+                  <strong className="finance-join-code">{team.organization.join_code}</strong>
+                  <span className="finance-metric-label">Telegram Deep Link</span>
+                  <code className="finance-join-link-value">
+                    {team.organization.join_link || 'Set TELEGRAM_BOT_USERNAME to generate the full link.'}
+                  </code>
+                  <p className="finance-inline-note">
+                    Members use this link inside Telegram, link their SPARK account if needed, and then the bot can ingest
+                    images or text on behalf of the joined organization.
+                  </p>
+                  <div className="finance-inline-actions">
+                    <button
+                      type="button"
+                      className="secondary-btn finance-mini-button"
+                      onClick={handleCopyJoinLink}
+                      disabled={!team.organization.join_code}
+                    >
+                      Copy {team.organization.join_link ? 'Link' : 'Code'}
+                    </button>
+                  </div>
+                  {teamMessage && <p className="notice finance-form-notice">{teamMessage}</p>}
+                </div>
+                <div className="finance-member-list">
+                  <div className="finance-member-list-head">
+                    <span>Member</span>
+                    <span>Role</span>
+                    <span>Joined</span>
+                  </div>
+                  {team.members.map((member) => (
+                    <div key={member.user_id} className="finance-member-row">
+                      <div>
+                        <strong>{member.email || 'No email on file'}</strong>
+                        <p>{member.telegram_id ? `Telegram ${member.telegram_id}` : 'Telegram not linked yet'}</p>
+                      </div>
+                      <span>{member.role}</span>
+                      <span>{formatShortDate(member.joined_at)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Panel>
+        )}
+
+        <Panel title="Cash Setup" subtitle="Define the opening balance that anchors cash-on-hand and runway">
           <form className="finance-form" onSubmit={handleSaveCashConfig}>
             <div className="field">
               <label className="field-label" htmlFor="openingCashBalance">
