@@ -6,9 +6,14 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test",
+    "python-ai:install": "python -m pip install -r python_ai/requirements.txt",
+    "python-ai:dev": "python -m uvicorn python_ai.app:app --host 0.0.0.0 --port 8001 --reload"
   },
   "dependencies": {
+    "@langchain/core": "^0.3.40",
+    "@langchain/ollama": "^0.2.0",
     "bcryptjs": "^2.4.3",
     "busboy": "^1.6.0",
     "cors": "^2.8.5",

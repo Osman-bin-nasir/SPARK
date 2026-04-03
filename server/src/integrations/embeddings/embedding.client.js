@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { env } = require('../../config/env');
+const { callPythonEmbedding } = require('../python-ai/python-ai.client');
 
 function normalizeEmbedding(embedding) {
   if (!Array.isArray(embedding) || embedding.length !== 384) {
@@ -39,6 +40,11 @@ function buildDeterministicEmbedding(input) {
 }
 
 async function generateEmbedding(input) {
+  if (env.pythonAiUrl) {
+    const pythonResult = await callPythonEmbedding(input);
+    return normalizeEmbedding(pythonResult?.embedding);
+  }
+
   if (env.embeddingApiUrl) {
     const response = await fetch(env.embeddingApiUrl, {
       method: 'POST',
