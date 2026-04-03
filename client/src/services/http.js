@@ -139,3 +139,11 @@ export async function post(path, body, options = {}) {
     body: JSON.stringify(body)
   });
 }
+
+export async function put(path, body, options = {}) {
+  return request(path, {
+    ...options,
+    method: 'PUT',
+    body: JSON.stringify(body)
+  });
+}

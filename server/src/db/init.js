@@ -1,4 +1,5 @@
 const { pool } = require('./pool');
+const organizationsRepository = require('./organizations.repository');
 
 async function initDb() {
   await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto;');
@@ -27,9 +28,26 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS organizations (
       id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       name       TEXT NOT NULL,
+      join_code  TEXT NOT NULL DEFAULT LOWER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 10)),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS join_code TEXT;');
+  await pool.query(
+    `ALTER TABLE organizations
+     ALTER COLUMN join_code
+     SET DEFAULT LOWER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 10));`
+  );
+  await pool.query(
+    `UPDATE organizations
+     SET join_code = NULL
+     WHERE join_code IS NOT NULL
+       AND BTRIM(join_code) = ''`
+  );
+  await organizationsRepository.ensureOrganizationJoinCodes(pool);
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_join_code_unique ON organizations (join_code);');
+  await pool.query('ALTER TABLE organizations ALTER COLUMN join_code SET NOT NULL;');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS organization_members (
@@ -54,6 +72,28 @@ async function initDb() {
       drive_root_folder_id       TEXT NOT NULL UNIQUE,
       created_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS finance_settings (
+      organization_id              UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+      opening_cash_balance         NUMERIC(14, 2) NOT NULL CHECK (opening_cash_balance >= 0),
+      opening_cash_effective_date  DATE NOT NULL,
+      created_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS category_budgets (
+      id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id     UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      category            TEXT NOT NULL,
+      normalized_category TEXT NOT NULL,
+      monthly_limit       NUMERIC(14, 2) NOT NULL CHECK (monthly_limit > 0),
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
@@ -217,6 +257,9 @@ async function initDb() {
   `);
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_members_user_org ON organization_members (user_id, organization_id);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_members_org_created_at ON organization_members (organization_id, created_at);');
+  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_category_budgets_org_normalized_category ON category_budgets (organization_id, normalized_category);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_category_budgets_org_category ON category_budgets (organization_id, category);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_transactions_org_date ON transactions (organization_id, transaction_date DESC);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_transactions_org_type_status ON transactions (organization_id, transaction_type, status);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_transaction_id ON documents (transaction_id);');

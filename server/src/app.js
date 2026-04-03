@@ -16,7 +16,7 @@ const signedWebhookJsonParser = express.json({
 
 app.use(cors());
 app.use((req, res, next) => {
-  if (/^\/api\/ingestion\/text\/?$/.test(req.path)) {
+  if (/^\/api\/(ingestion\/text\/?|telegram(?:\/.*)?)$/.test(req.path)) {
     signedWebhookJsonParser(req, res, next);
     return;
   }

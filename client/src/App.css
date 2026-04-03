@@ -56,6 +56,11 @@ body::before {
   padding: 24px;
 }
 
+.app-dashboard {
+  display: block;
+  padding: 28px 24px 48px;
+}
+
 .card {
   position: relative;
   width: 100%;
@@ -126,13 +131,15 @@ form {
 }
 
 input,
+select,
 button {
   height: 50px;
   border-radius: 14px;
   font-size: 0.95rem;
 }
 
-input {
+input,
+select {
   border: 1px solid rgba(152, 179, 255, 0.14);
   background: rgba(5, 10, 21, 0.72);
   color: var(--text);
@@ -145,7 +152,8 @@ input::placeholder {
   color: rgba(158, 169, 199, 0.62);
 }
 
-input:focus {
+input:focus,
+select:focus {
   outline: none;
   border-color: var(--border-strong);
   background: rgba(8, 16, 30, 0.88);
@@ -267,6 +275,10 @@ button:disabled {
 @media (max-width: 540px) {
   .app {
     padding: 18px;
+  }
+
+  .app-dashboard {
+    padding: 18px 14px 28px;
   }
 
   .card {
