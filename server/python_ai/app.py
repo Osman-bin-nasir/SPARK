@@ -73,6 +73,7 @@ def embed(request: EmbedRequest):
 def generate(request: GenerateRequest):
     try:
         response = generate_text(
+            prompt=request.prompt,
             query=(request.query or '').strip(),
             context=(request.context or '').strip(),
             sources=[source.model_dump() for source in request.sources] if request.sources else None,

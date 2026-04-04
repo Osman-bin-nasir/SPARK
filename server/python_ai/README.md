@@ -2,6 +2,8 @@
 
 This service provides local model-backed embeddings and answer generation for SPARK.
 
+Target Python version: 3.12
+
 ## Default models
 
 - Embeddings: `sentence-transformers/all-MiniLM-L6-v2`
@@ -11,8 +13,18 @@ This service provides local model-backed embeddings and answer generation for SP
 
 ```bash
 cd server
-python -m pip install -r python_ai/requirements.txt
-python -m uvicorn python_ai.app:app --host 0.0.0.0 --port 8001 --reload
+npm run python-ai:venv
+npm run python-ai:install
+npm run python-ai:dev
+```
+
+Equivalent direct commands:
+
+```bash
+cd server
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r python_ai/requirements.txt
+.venv\Scripts\python.exe -m uvicorn python_ai.app:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 ## Endpoints

@@ -53,6 +53,8 @@ class OcrEngineUnavailable(RuntimeError):
     pass
 
 
+from PIL import Image, ImageEnhance, ImageOps
+
 class RapidOcrBackend:
     def __init__(self) -> None:
         if RapidOCR is None:
@@ -60,8 +62,20 @@ class RapidOcrBackend:
         self._engine = RapidOCR()
 
     def recognize(self, image: Image.Image) -> tuple[str, float | None]:
+        # 1. Convert to RGB
         rgb_image = image.convert('RGB')
-        image_array = np.array(rgb_image)
+        
+        # 2. Enhance image for better OCR accuracy
+        # Contrast enhancement (makes text pop)
+        enhancer = ImageEnhance.Contrast(rgb_image)
+        enhanced_image = enhancer.enhance(1.5)
+        
+        # Sharpness enhancement (reduces blur)
+        enhancer = ImageEnhance.Sharpness(enhanced_image)
+        enhanced_image = enhancer.enhance(1.2)
+        
+        # 3. Convert to grayscale array for RapidOCR
+        image_array = np.array(enhanced_image)
         result, _elapsed = self._engine(image_array)
 
         if not result:

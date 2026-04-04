@@ -3,7 +3,7 @@ from os import getenv
 DEFAULT_EMBED_MODEL = getenv('PYTHON_AI_EMBED_MODEL_ID', 'sentence-transformers/all-MiniLM-L6-v2')
 DEFAULT_CHAT_MODEL = getenv('PYTHON_AI_CHAT_MODEL_ID', 'Qwen/Qwen2.5-1.5B-Instruct')
 DEFAULT_DEVICE = getenv('PYTHON_AI_DEVICE', 'cpu')
-DEFAULT_DTYPE = getenv('PYTHON_AI_DTYPE', 'auto')
+DEFAULT_DTYPE = getenv('PYTHON_AI_DTYPE', 'float32')
 DEFAULT_MAX_NEW_TOKENS = int(getenv('PYTHON_AI_MAX_NEW_TOKENS', '256'))
 DEFAULT_TEMPERATURE = float(getenv('PYTHON_AI_TEMPERATURE', '0.2'))
 DEFAULT_TOP_P = float(getenv('PYTHON_AI_TOP_P', '0.9'))
