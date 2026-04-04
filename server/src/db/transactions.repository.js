@@ -139,9 +139,14 @@ async function insertTransactionWithDocumentAndJobs(
        file_type,
        content_hash,
        text_content,
+       extracted_text,
+       extraction_confidence,
+       extraction_method,
+       extraction_version,
+       extraction_error,
        uploaded_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, NOW()))`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17, NOW()))`,
     [
       document.id,
       document.transaction_id,
@@ -154,6 +159,11 @@ async function insertTransactionWithDocumentAndJobs(
       document.file_type,
       document.content_hash,
       document.text_content || null,
+      document.extracted_text || null,
+      document.extraction_confidence ?? null,
+      document.extraction_method || null,
+      document.extraction_version || null,
+      document.extraction_error || null,
       document.uploaded_at || null
     ]
   );
@@ -305,6 +315,168 @@ async function listTransactions(
   };
 }
 
+async function findTransactionsBySimilarity(
+  {
+    organizationId,
+    queryEmbedding,
+    topK = 5,
+    minSimilarity = 0.6,
+    includePendingReview = false
+  },
+  client = pool
+) {
+  const vectorLiteral = `[${queryEmbedding.join(',')}]`;
+  const statuses = includePendingReview ? ['auto_verified', 'pending_review'] : ['auto_verified'];
+
+  const { rows } = await client.query(
+    `SELECT t.id,
+            t.organization_id,
+            t.amount,
+            t.vendor,
+            t.transaction_type,
+            t.category,
+            t.transaction_date,
+            t.confidence_score,
+            t.duplicate_of_transaction_id,
+            t.duplicate_score,
+            t.status,
+            t.created_at,
+            d.id AS document_id,
+            d.storage_kind,
+            d.original_name,
+            d.stored_name,
+            d.file_type,
+            d.extraction_confidence,
+            ROUND((1 - (te.embedding <=> $2::vector))::numeric, 6) AS similarity_score
+     FROM transactions t
+     JOIN transaction_embeddings te ON te.transaction_id = t.id
+     LEFT JOIN documents d ON d.transaction_id = t.id
+     WHERE t.organization_id = $1
+       AND t.status = ANY($3::text[])
+       AND (1 - (te.embedding <=> $2::vector)) >= $4
+     ORDER BY te.embedding <=> $2::vector ASC
+     LIMIT $5`,
+    [organizationId, vectorLiteral, statuses, minSimilarity, topK]
+  );
+
+  return rows.map((row) => ({
+    ...mapTransactionRow(row),
+    similarity_score: Number(row.similarity_score),
+    document: row.document_id
+      ? {
+          id: row.document_id,
+          storage_kind: row.storage_kind,
+          original_name: row.original_name,
+          stored_name: row.stored_name,
+          file_type: row.file_type,
+          extraction_confidence: row.extraction_confidence === null ? null : Number(row.extraction_confidence)
+        }
+      : null
+  }));
+}
+
+async function findTransactionsByKeywordSearch(
+  {
+    organizationId,
+    query,
+    topK = 5,
+    minLexicalScore = 0,
+    includePendingReview = false
+  },
+  client = pool
+) {
+  const statuses = includePendingReview ? ['auto_verified', 'pending_review'] : ['auto_verified'];
+
+  const { rows } = await client.query(
+    `SELECT t.id,
+            t.organization_id,
+            t.amount,
+            t.vendor,
+            t.transaction_type,
+            t.category,
+            t.transaction_date,
+            t.confidence_score,
+            t.duplicate_of_transaction_id,
+            t.duplicate_score,
+            t.status,
+            t.created_at,
+            d.id AS document_id,
+            d.storage_kind,
+            d.original_name,
+            d.stored_name,
+            d.file_type,
+            d.extraction_confidence,
+            ts_rank_cd(
+              to_tsvector(
+                'simple',
+                concat_ws(
+                  ' ',
+                  t.vendor,
+                  t.category,
+                  t.transaction_type,
+                  COALESCE(d.extracted_text, ''),
+                  COALESCE(d.text_content, ''),
+                  COALESCE(d.original_name, ''),
+                  COALESCE(d.stored_name, '')
+                )
+              ),
+              plainto_tsquery('simple', $2)
+            ) AS lexical_score
+     FROM transactions t
+     LEFT JOIN documents d ON d.transaction_id = t.id
+     WHERE t.organization_id = $1
+       AND t.status = ANY($3::text[])
+       AND to_tsvector(
+         'simple',
+         concat_ws(
+           ' ',
+           t.vendor,
+           t.category,
+           t.transaction_type,
+           COALESCE(d.extracted_text, ''),
+           COALESCE(d.text_content, ''),
+           COALESCE(d.original_name, ''),
+           COALESCE(d.stored_name, '')
+         )
+       ) @@ plainto_tsquery('simple', $2)
+       AND ts_rank_cd(
+         to_tsvector(
+           'simple',
+           concat_ws(
+             ' ',
+             t.vendor,
+             t.category,
+             t.transaction_type,
+             COALESCE(d.extracted_text, ''),
+             COALESCE(d.text_content, ''),
+             COALESCE(d.original_name, ''),
+             COALESCE(d.stored_name, '')
+           )
+         ),
+         plainto_tsquery('simple', $2)
+       ) >= $4
+     ORDER BY lexical_score DESC, t.transaction_date DESC
+     LIMIT $5`,
+    [organizationId, query, statuses, minLexicalScore, topK]
+  );
+
+  return rows.map((row) => ({
+    ...mapTransactionRow(row),
+    lexical_score: Number(row.lexical_score),
+    similarity_score: Number(row.lexical_score),
+    document: row.document_id
+      ? {
+          id: row.document_id,
+          storage_kind: row.storage_kind,
+          original_name: row.original_name,
+          stored_name: row.stored_name,
+          file_type: row.file_type,
+          extraction_confidence: row.extraction_confidence === null ? null : Number(row.extraction_confidence)
+        }
+      : null
+  }));
+}
+
 async function findTransactionById({ organizationId, transactionId }, client = pool) {
   const { rows } = await client.query(
     `SELECT t.id,
@@ -328,6 +500,11 @@ async function findTransactionById({ organizationId, transactionId }, client = p
             d.file_type,
             d.content_hash,
             d.text_content,
+            d.extracted_text,
+            d.extraction_confidence,
+            d.extraction_method,
+            d.extraction_version,
+            d.extraction_error,
             d.uploaded_at,
             a.id AS approval_id,
             a.approved_by,
@@ -360,6 +537,11 @@ async function findTransactionById({ organizationId, transactionId }, client = p
           file_type: row.file_type,
           content_hash: row.content_hash,
           text_content: row.storage_kind === 'inline_text' ? row.text_content : null,
+          extracted_text: row.extracted_text,
+          extraction_confidence: row.extraction_confidence === null ? null : Number(row.extraction_confidence),
+          extraction_method: row.extraction_method,
+          extraction_version: row.extraction_version,
+          extraction_error: row.extraction_error,
           uploaded_at: row.uploaded_at
         }
       : null,
@@ -485,6 +667,52 @@ async function claimEmbeddingJobs(limit = 5, client = pool) {
   return rows;
 }
 
+async function enqueueBackfillEmbeddingJobs(limit = 50, client = pool) {
+  if (!Number.isInteger(limit) || limit <= 0) {
+    return 0;
+  }
+
+  const { rowCount } = await client.query(
+    `WITH candidates AS (
+       SELECT t.id AS transaction_id,
+              t.organization_id
+       FROM transactions t
+       LEFT JOIN transaction_embeddings te ON te.transaction_id = t.id
+       LEFT JOIN embedding_jobs ej ON ej.transaction_id = t.id
+       WHERE te.transaction_id IS NULL
+         AND ej.transaction_id IS NULL
+       ORDER BY t.created_at DESC
+       LIMIT $1
+     )
+     INSERT INTO embedding_jobs (
+       id,
+       transaction_id,
+       organization_id,
+       status,
+       attempt_count,
+       max_attempts,
+       next_attempt_at,
+       last_error,
+       created_at,
+       updated_at
+     )
+     SELECT gen_random_uuid(),
+            c.transaction_id,
+            c.organization_id,
+            'pending',
+            0,
+            5,
+            NOW(),
+            NULL,
+            NOW(),
+            NOW()
+     FROM candidates c`,
+    [limit]
+  );
+
+  return rowCount || 0;
+}
+
 async function findTransactionEmbeddingSource(transactionId, client = pool) {
   const { rows } = await client.query(
     `SELECT t.id,
@@ -495,6 +723,7 @@ async function findTransactionEmbeddingSource(transactionId, client = pool) {
             t.transaction_date,
             d.original_name,
             d.stored_name,
+            d.extracted_text,
             d.text_content
      FROM transactions t
      LEFT JOIN documents d ON d.transaction_id = t.id
@@ -546,8 +775,11 @@ async function markEmbeddingJobFailed({ id, attemptCount, maxAttempts, message }
 
 module.exports = {
   claimEmbeddingJobs,
+  enqueueBackfillEmbeddingJobs,
   findExactDuplicateDocument,
+  findTransactionsByKeywordSearch,
   findTransactionById,
+  findTransactionsBySimilarity,
   findTransactionEmbeddingSource,
   insertAuditLog,
   insertTransactionWithDocumentAndJobs,

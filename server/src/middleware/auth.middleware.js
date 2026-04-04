@@ -20,7 +20,9 @@ function requireAuth(req, _res, next) {
     const payload = verifyAccessToken(token);
     req.auth = {
       userId: payload.sub,
-      email: payload.email
+      email: payload.email,
+      telegramId: payload.telegram_id || null,
+      organizationId: payload.organization_id || null
     };
     next();
   } catch (error) {
@@ -52,7 +54,9 @@ function optionalAuth(req, _res, next) {
     const payload = verifyAccessToken(token);
     req.auth = {
       userId: payload.sub,
-      email: payload.email
+      email: payload.email,
+      telegramId: payload.telegram_id || null,
+      organizationId: payload.organization_id || null
     };
     next();
   } catch (error) {

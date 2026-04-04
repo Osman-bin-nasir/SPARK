@@ -18,6 +18,15 @@ async function login(req, res, next) {
   }
 }
 
+async function telegramLogin(req, res, next) {
+  try {
+    const result = await authService.loginWithTelegram(req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function refresh(req, res, next) {
   try {
     const result = await authService.refreshAccessToken(req.body);
@@ -53,5 +62,6 @@ module.exports = {
   linkTelegram,
   login,
   refresh,
-  register
+  register,
+  telegramLogin
 };

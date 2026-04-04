@@ -4,6 +4,7 @@ const organizationsRepository = require('../db/organizations.repository');
 const {
   signAccessToken,
   signRefreshToken,
+  signTelegramAccessToken,
   signTelegramLoginToken,
   verifyRefreshToken,
   verifyTelegramLoginToken
@@ -71,13 +72,20 @@ function decorateUser(user, memberships) {
   };
 }
 
+async function resolvePrimaryOrganizationId(userId) {
+  const memberships = await organizationsRepository.listMembershipsByUserId(userId);
+  return memberships[0]?.organization_id || null;
+}
+
 async function buildAuthResponse(user) {
   const memberships = await organizationsRepository.ensureDefaultOrganizationForUser({
     userId: user.id,
     email: user.email
   });
   const hydratedUser = decorateUser(user, memberships);
-  const accessToken = signAccessToken(user);
+  const accessToken = signAccessToken(user, {
+    organizationId: hydratedUser.default_organization_id
+  });
   const refreshToken = signRefreshToken(user);
 
   return {
@@ -163,6 +171,27 @@ async function login(payload) {
   return buildAuthResponse(usersRepository.mapUser(user));
 }
 
+async function loginWithTelegram(payload) {
+  const body = payload || {};
+  const telegramId = normalizeTelegramId(body.telegram_id);
+  const user = await usersRepository.findUserByTelegramId(telegramId);
+
+  if (!user) {
+    throw new HttpError(404, 'User not found');
+  }
+
+  const mappedUser = usersRepository.mapUser(user);
+  const organizationId = await resolvePrimaryOrganizationId(mappedUser.id);
+  const token = signTelegramAccessToken({
+    userId: mappedUser.id,
+    email: mappedUser.email,
+    telegramId: mappedUser.telegram_id,
+    organizationId
+  });
+
+  return { token };
+}
+
 async function refreshAccessToken(payload) {
   if (!payload || typeof payload.refresh_token !== 'string' || !payload.refresh_token.trim()) {
     throw new HttpError(400, 'refresh_token is required');
@@ -218,6 +247,7 @@ module.exports = {
   createTelegramLogin,
   linkTelegramAccount,
   login,
+  loginWithTelegram,
   refreshAccessToken,
   register
 };
