@@ -13,9 +13,13 @@ let orphanCleanupInterval = null;
 const MAX_EMBEDDING_TEXT_CHARS = 4000;
 
 function buildEmbeddingSourceText(source) {
+  const extractedText = typeof source.extracted_text === 'string'
+    ? source.extracted_text.slice(0, MAX_EMBEDDING_TEXT_CHARS)
+    : '';
   const inlineText = typeof source.text_content === 'string'
     ? source.text_content.slice(0, MAX_EMBEDDING_TEXT_CHARS)
     : '';
+  const primaryText = extractedText || inlineText;
 
   return [
     `vendor: ${source.vendor || ''}`,
@@ -25,7 +29,7 @@ function buildEmbeddingSourceText(source) {
     `transaction_date: ${source.transaction_date || ''}`,
     `original_name: ${source.original_name || ''}`,
     `stored_name: ${source.stored_name || ''}`,
-    `text_content: ${inlineText}`
+    `text_content: ${primaryText}`
   ].join('\n');
 }
 
@@ -37,7 +41,17 @@ async function processEmbeddingJobs() {
   embeddingWorkerRunning = true;
 
   try {
+    if (env.embeddingBackfillBatchSize > 0) {
+      const enqueued = await transactionsRepository.enqueueBackfillEmbeddingJobs(env.embeddingBackfillBatchSize);
+
+      if (enqueued > 0) {
+        console.info(`[embedding-worker] Enqueued ${enqueued} backfill job(s)`);
+      }
+    }
+
     const jobs = await transactionsRepository.claimEmbeddingJobs(5);
+    let completedCount = 0;
+    let failedCount = 0;
 
     for (const job of jobs) {
       try {
@@ -53,6 +67,7 @@ async function processEmbeddingJobs() {
           transactionId: job.transaction_id,
           embedding
         });
+        completedCount += 1;
       } catch (error) {
         const attemptCount = Number(job.attempt_count || 0) + 1;
         await transactionsRepository.markEmbeddingJobFailed({
@@ -61,7 +76,15 @@ async function processEmbeddingJobs() {
           maxAttempts: Number(job.max_attempts || 5),
           message: error.message
         });
+        failedCount += 1;
+        console.warn(`[embedding-worker] Failed job ${job.id} (tx=${job.transaction_id}): ${error.message}`);
       }
+    }
+
+    if (jobs.length > 0) {
+      console.info(
+        `[embedding-worker] Processed ${jobs.length} job(s), completed=${completedCount}, failed=${failedCount}`
+      );
     }
   } catch (error) {
     console.error('Embedding worker iteration failed:', error.message);

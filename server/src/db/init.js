@@ -127,8 +127,16 @@ async function initDb() {
       file_type      TEXT NOT NULL,
       content_hash   CHAR(64) NOT NULL,
       text_content   TEXT,
+      extracted_text TEXT,
+      extraction_confidence NUMERIC(5, 4),
+      extraction_method TEXT,
+      extraction_version TEXT,
+      extraction_error TEXT,
       uploaded_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT documents_storage_kind_check CHECK (storage_kind IN ('google_drive', 'inline_text')),
+      CONSTRAINT documents_extraction_confidence_check CHECK (
+        extraction_confidence IS NULL OR (extraction_confidence >= 0 AND extraction_confidence <= 1)
+      ),
       CONSTRAINT documents_storage_fields_check CHECK (
         (
           storage_kind = 'google_drive'
@@ -150,6 +158,11 @@ async function initDb() {
 
   await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS storage_kind TEXT;');
   await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS text_content TEXT;');
+  await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS extracted_text TEXT;');
+  await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS extraction_confidence NUMERIC(5, 4);');
+  await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS extraction_method TEXT;');
+  await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS extraction_version TEXT;');
+  await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS extraction_error TEXT;');
   await pool.query('UPDATE documents SET storage_kind = \'google_drive\' WHERE storage_kind IS NULL;');
   await pool.query('ALTER TABLE documents ALTER COLUMN storage_kind SET DEFAULT \'google_drive\';');
   await pool.query('ALTER TABLE documents ALTER COLUMN storage_kind SET NOT NULL;');
@@ -179,6 +192,14 @@ async function initDb() {
         AND drive_folder_id IS NULL
         AND text_content IS NOT NULL
       )
+    );
+  `);
+  await pool.query('ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_extraction_confidence_check;');
+  await pool.query(`
+    ALTER TABLE documents
+    ADD CONSTRAINT documents_extraction_confidence_check
+    CHECK (
+      extraction_confidence IS NULL OR (extraction_confidence >= 0 AND extraction_confidence <= 1)
     );
   `);
 
@@ -265,6 +286,8 @@ async function initDb() {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_transaction_id ON documents (transaction_id);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_documents_drive_file_id ON documents (drive_file_id);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_embedding_jobs_status_next_attempt ON embedding_jobs (status, next_attempt_at);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_transaction_embeddings_created_at ON transaction_embeddings (created_at DESC);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_transaction_embeddings_vector_ivfflat ON transaction_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_status_created_at ON ingestion_jobs (status, created_at);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_orphan_drive_files_cleanup_status_created_at ON orphan_drive_files (cleanup_status, created_at);');
 }

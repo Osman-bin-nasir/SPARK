@@ -9,6 +9,15 @@ const {
   ensureFolderPath,
   uploadFile
 } = require('../integrations/google-drive/drive.client');
+const { extractTextFromDocument } = require('../integrations/ocr/ocr.client');
+const { env } = require('../config/env');
+const {
+  OCR_EXTRACTION_METHODS,
+  OCR_FAILURE_CODES,
+  clampConfidence,
+  normalizeExtractedText,
+  shouldRouteToPendingReview
+} = require('../contracts/ocr.contract');
 const { buildStoredFileName } = require('../utils/file');
 const { HttpError } = require('../utils/http-error');
 const { normalizeComparableText } = require('../utils/vendor');
@@ -106,6 +115,63 @@ function validateTextPayload(payload) {
     ...normalizedPayload,
     text: payload.text
   };
+}
+
+function inferFailureCode(error) {
+  const message = String(error?.message || '').toLowerCase();
+
+  if (error?.name === 'AbortError' || message.includes('timeout')) {
+    return OCR_FAILURE_CODES.EXTRACTOR_TIMEOUT;
+  }
+
+  if (message.includes('failed with status')) {
+    return OCR_FAILURE_CODES.EXTRACTOR_UNAVAILABLE;
+  }
+
+  if (message.includes('unsupported')) {
+    return OCR_FAILURE_CODES.UNSUPPORTED_FILE_TYPE;
+  }
+
+  return OCR_FAILURE_CODES.UNKNOWN;
+}
+
+function buildFallbackExtractedText(payload = {}) {
+  const fromPayload = typeof payload.extracted_text === 'string' ? payload.extracted_text : '';
+  const fromRawExtraction = typeof payload.raw_extraction?.text === 'string' ? payload.raw_extraction.text : '';
+  const fromBodyText = typeof payload.text === 'string' ? payload.text : '';
+  return fromPayload || fromRawExtraction || fromBodyText || '';
+}
+
+async function buildDocumentExtraction(file, payload) {
+  try {
+    const extracted = await extractTextFromDocument({
+      fileName: file.filename,
+      mimeType: file.mimeType,
+      buffer: file.buffer,
+      fallbackText: buildFallbackExtractedText(payload)
+    });
+
+    return {
+      extracted_text: normalizeExtractedText(extracted.text, env.ocrMaxExtractedTextChars),
+      extraction_confidence: clampConfidence(extracted.confidence),
+      extraction_method: extracted.method || OCR_EXTRACTION_METHODS.UNKNOWN,
+      extraction_version: extracted.version || null,
+      extraction_error: null
+    };
+  } catch (error) {
+    console.warn(
+      `[ingestion][ocr] Extraction fallback used for file=${file?.filename || 'unknown'}: ${error.message}`
+    );
+    const fallbackText = normalizeExtractedText(buildFallbackExtractedText(payload), env.ocrMaxExtractedTextChars);
+
+    return {
+      extracted_text: fallbackText,
+      extraction_confidence: null,
+      extraction_method: OCR_EXTRACTION_METHODS.UNKNOWN,
+      extraction_version: null,
+      extraction_error: `${inferFailureCode(error)}: ${error.message}`
+    };
+  }
 }
 
 function calculateDuplicateScore(candidate, incoming) {
@@ -222,6 +288,7 @@ async function createTransactionAndDocument({
   documentId,
   embeddingJobId,
   duplicateMatch,
+  forcePendingReview,
   document
 }) {
   const client = await pool.connect();
@@ -241,7 +308,7 @@ async function createTransactionAndDocument({
         confidence_score: normalizedPayload.confidence_score,
         duplicate_of_transaction_id: duplicateMatch?.transaction_id || null,
         duplicate_score: duplicateMatch?.duplicate_score || null,
-        status: duplicateMatch ? 'pending_review' : 'auto_verified'
+        status: duplicateMatch || forcePendingReview ? 'pending_review' : 'auto_verified'
       },
       document: {
         id: documentId,
@@ -254,7 +321,12 @@ async function createTransactionAndDocument({
         stored_name: document.stored_name,
         file_type: document.file_type,
         content_hash: document.content_hash,
-        text_content: document.text_content || null
+        text_content: document.text_content || null,
+        extracted_text: document.extracted_text || null,
+        extraction_confidence: document.extraction_confidence ?? null,
+        extraction_method: document.extraction_method || null,
+        extraction_version: document.extraction_version || null,
+        extraction_error: document.extraction_error || null
       },
       embeddingJob: {
         id: embeddingJobId,
@@ -276,8 +348,12 @@ async function createTransactionAndDocument({
           transaction_type: normalizedPayload.transaction_type,
           category: normalizedPayload.category,
           transaction_date: normalizedPayload.transaction_date,
+          confidence_score: normalizedPayload.confidence_score,
           duplicate_of_transaction_id: duplicateMatch?.transaction_id || null,
-          duplicate_score: duplicateMatch?.duplicate_score || null
+          duplicate_score: duplicateMatch?.duplicate_score || null,
+          extraction_confidence: document.extraction_confidence ?? null,
+          extraction_method: document.extraction_method || null,
+          extraction_error: document.extraction_error || null
         }
       }
     }, client);
@@ -328,9 +404,19 @@ async function ingestDocument({ organizationId, payload, file }) {
     }
 
     const contentHash = hashBuffer(file.buffer);
+    const extraction = await buildDocumentExtraction(file, payload);
+    const effectiveConfidence = clampConfidence(
+      extraction.extraction_confidence !== null
+        ? extraction.extraction_confidence
+        : normalizedPayload.confidence_score
+    );
+    const nextPayload = {
+      ...normalizedPayload,
+      confidence_score: effectiveConfidence
+    };
     const prepared = await prepareIngestion({
       organizationId,
-      normalizedPayload,
+      normalizedPayload: nextPayload,
       contentHash
     });
 
@@ -368,12 +454,13 @@ async function ingestDocument({ organizationId, payload, file }) {
     try {
       return await createTransactionAndDocument({
         organizationId,
-        normalizedPayload,
+        normalizedPayload: nextPayload,
         ingestionJobId: ingestionJob.id,
         transactionId: prepared.transactionId,
         documentId: prepared.documentId,
         embeddingJobId: prepared.embeddingJobId,
         duplicateMatch: prepared.duplicateMatch,
+        forcePendingReview: shouldRouteToPendingReview(effectiveConfidence, env.ocrConfidenceThreshold),
         document: {
           storage_kind: 'google_drive',
           drive_file_id: uploadedFile.id,
@@ -382,7 +469,12 @@ async function ingestDocument({ organizationId, payload, file }) {
           stored_name: storedName,
           file_type: file.mimeType || 'application/octet-stream',
           content_hash: contentHash,
-          text_content: null
+          text_content: null,
+          extracted_text: extraction.extracted_text,
+          extraction_confidence: extraction.extraction_confidence,
+          extraction_method: extraction.extraction_method,
+          extraction_version: extraction.extraction_version,
+          extraction_error: extraction.extraction_error
         }
       });
     } catch (dbError) {
@@ -422,11 +514,20 @@ async function ingestText({ organizationId, payload }) {
   });
 
   try {
-    const textBuffer = Buffer.from(normalizedPayload.text, 'utf8');
+    const normalizedText = normalizeExtractedText(normalizedPayload.text, env.ocrMaxExtractedTextChars);
+    const textBuffer = Buffer.from(normalizedText, 'utf8');
     const contentHash = hashBuffer(textBuffer);
+    const effectiveConfidence = clampConfidence(
+      normalizedPayload.confidence_score === null ? 1 : normalizedPayload.confidence_score
+    );
+    const nextPayload = {
+      ...normalizedPayload,
+      confidence_score: effectiveConfidence,
+      text: normalizedText
+    };
     const prepared = await prepareIngestion({
       organizationId,
-      normalizedPayload,
+      normalizedPayload: nextPayload,
       contentHash
     });
 
@@ -441,18 +542,19 @@ async function ingestText({ organizationId, payload }) {
       transactionDate: normalizedPayload.transaction_date,
       transactionId: prepared.transactionId,
       transactionType: normalizedPayload.transaction_type,
-      vendor: normalizedPayload.vendor,
+      vendor: nextPayload.vendor,
       originalName: INLINE_TEXT_ORIGINAL_NAME
     });
 
     return await createTransactionAndDocument({
       organizationId,
-      normalizedPayload,
+      normalizedPayload: nextPayload,
       ingestionJobId: ingestionJob.id,
       transactionId: prepared.transactionId,
       documentId: prepared.documentId,
       embeddingJobId: prepared.embeddingJobId,
       duplicateMatch: prepared.duplicateMatch,
+      forcePendingReview: shouldRouteToPendingReview(effectiveConfidence, env.ocrConfidenceThreshold),
       document: {
         storage_kind: 'inline_text',
         drive_file_id: null,
@@ -461,7 +563,12 @@ async function ingestText({ organizationId, payload }) {
         stored_name: storedName,
         file_type: 'text/plain',
         content_hash: contentHash,
-        text_content: normalizedPayload.text
+        text_content: nextPayload.text,
+        extracted_text: nextPayload.text,
+        extraction_confidence: effectiveConfidence,
+        extraction_method: OCR_EXTRACTION_METHODS.INLINE_TEXT_PASSTHROUGH,
+        extraction_version: null,
+        extraction_error: null
       }
     });
   } catch (error) {
