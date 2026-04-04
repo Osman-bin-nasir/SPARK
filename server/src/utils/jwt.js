@@ -7,15 +7,38 @@ function assertTokenType(payload, expectedType) {
   }
 }
 
-function signAccessToken(user) {
+function buildAccessTokenPayload({ userId, email, telegramId, organizationId }) {
+  const payload = {
+    sub: userId,
+    user_id: userId,
+    type: 'access'
+  };
+
+  if (email) {
+    payload.email = email;
+  }
+
+  if (telegramId !== undefined && telegramId !== null && String(telegramId).trim()) {
+    payload.telegram_id = String(telegramId);
+  }
+
+  if (organizationId) {
+    payload.organization_id = organizationId;
+  }
+
+  return payload;
+}
+
+function signAccessToken(user, options = {}) {
   return jwt.sign(
-    {
-      sub: user.id,
+    buildAccessTokenPayload({
+      userId: user.id,
       email: user.email,
-      type: 'access'
-    },
+      telegramId: user.telegram_id,
+      organizationId: options.organizationId
+    }),
     env.jwtSecret,
-    { expiresIn: env.accessTokenExpiresIn }
+    { expiresIn: options.expiresIn || env.accessTokenExpiresIn }
   );
 }
 
@@ -38,6 +61,19 @@ function signTelegramLoginToken(telegramId) {
     },
     env.telegramJwtSecret,
     { expiresIn: env.telegramLoginExpiresIn }
+  );
+}
+
+function signTelegramAccessToken({ userId, email, telegramId, organizationId }) {
+  return jwt.sign(
+    buildAccessTokenPayload({
+      userId,
+      email,
+      telegramId,
+      organizationId
+    }),
+    env.jwtSecret,
+    { expiresIn: '7d' }
   );
 }
 
@@ -85,6 +121,7 @@ module.exports = {
   signGoogleOauthState,
   signAccessToken,
   signRefreshToken,
+  signTelegramAccessToken,
   signTelegramLoginToken,
   signToken,
   verifyAccessToken,
