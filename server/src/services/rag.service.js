@@ -185,11 +185,16 @@ async function composeAnswer({ query, items, answerMode }) {
       };
     }
 
+    const citationMap = new Map(deterministic.citations.map((c) => [c.transaction_id, c]));
+    const mappedCitations = generated.cited_transaction_ids
+      .map((id) => citationMap.get(id))
+      .filter(Boolean);
+
     return {
       ...deterministic,
       answer: generated.answer,
       confidence: generated.confidence,
-      citations: generated.citations,
+      citations: mappedCitations.length > 0 ? mappedCitations : deterministic.citations,
       generation_mode: 'sllm_local_model',
       generation_guardrail_refusal: generated.refusal,
       generation_guardrail_reason: generated.guardrail_reason,

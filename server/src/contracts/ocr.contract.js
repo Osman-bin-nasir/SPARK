@@ -7,9 +7,13 @@ const OCR_STORAGE_INPUT_TYPES = {
 };
 
 const OCR_EXTRACTION_METHODS = {
-  PADDLE_OCR: 'paddleocr',
-  PDF_PARSER: 'pdf_parser',
+  RAPID_OCR: 'rapidocr',
+  PDF_TEXT: 'pdf_text',
+  PDF_OCR: 'pdf_ocr',
+  IMAGE_OCR: 'image_ocr',
+  INLINE_TEXT: 'inline_text',
   INLINE_TEXT_PASSTHROUGH: 'inline_text_passthrough',
+  FALLBACK: 'fallback_text',
   MANUAL: 'manual',
   UNKNOWN: 'unknown'
 };
