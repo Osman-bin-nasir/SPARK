@@ -288,7 +288,7 @@ function App() {
     </Suspense>
   );
 
-  const isDashboardSurface = token && location.pathname !== '/integrations';
+  const isDashboardSurface = token;
 
   return (
     <main className={isDashboardSurface ? 'app app-dashboard' : 'app'}>

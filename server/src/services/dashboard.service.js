@@ -274,7 +274,8 @@ function buildSpikeAlerts({
     .sort((left, right) => right.delta - left.delta);
 }
 
-async function getDashboardSnapshot({ organizationId, query }) {
+async function getDashboardSnapshot({ organization, query }) {
+  const organizationId = organization.id;
   const months = parseDashboardMonths(query?.months);
   const now = new Date();
   const currentMonthStart = toUtcMonthStart(now);
@@ -386,7 +387,11 @@ async function getDashboardSnapshot({ organizationId, query }) {
     }
   }
 
+  const hasTransactions = Boolean(earliestTransactionDate);
+
   return {
+    organization,
+    dashboard_state: hasTransactions ? 'ready' : 'no_history',
     metrics: {
       cash_on_hand: cashOnHand,
       runway_months: runwayMonths,
@@ -405,7 +410,7 @@ async function getDashboardSnapshot({ organizationId, query }) {
     config: {
       cash_configured: Boolean(financeSettings),
       budgets_configured: budgets.length > 0,
-      has_transactions: Boolean(earliestTransactionDate),
+      has_transactions: hasTransactions,
       history_ready_for_spikes: historyReady
     }
   };

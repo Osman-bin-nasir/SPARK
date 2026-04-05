@@ -3,7 +3,7 @@ const dashboardService = require('../services/dashboard.service');
 async function getDashboard(req, res, next) {
   try {
     const result = await dashboardService.getDashboardSnapshot({
-      organizationId: req.organization.id,
+      organization: req.organization,
       query: req.query
     });
 

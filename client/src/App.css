@@ -1,19 +1,19 @@
 :root {
-  color-scheme: dark;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
-  --bg: #040914;
-  --bg-deep: #02050b;
-  --panel: rgba(8, 15, 28, 0.9);
-  --panel-strong: rgba(12, 22, 40, 0.96);
-  --panel-soft: rgba(16, 30, 54, 0.72);
-  --border: rgba(149, 176, 255, 0.16);
-  --border-strong: rgba(118, 221, 255, 0.34);
-  --text: #f4f7ff;
-  --text-muted: #9ea9c7;
-  --accent: #69d2ff;
-  --accent-strong: #2e6bff;
-  --success: #59e0a2;
-  --error: #ff8d95;
+  color-scheme: light;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  --bg: #f2f3f3;
+  --bg-deep: #ffffff;
+  --panel: #ffffff;
+  --panel-strong: #ffffff;
+  --panel-soft: #fafafa;
+  --border: #eaeded;
+  --border-strong: #d5dbdb;
+  --text: #16191f;
+  --text-muted: #545b64;
+  --accent: #0073bb;
+  --accent-strong: #005a9e;
+  --success: #1d8102;
+  --error: #df3312;
 }
 
 * {
@@ -29,23 +29,11 @@ body,
 body {
   margin: 0;
   color: var(--text);
-  background:
-    radial-gradient(circle at 18% 18%, rgba(64, 144, 255, 0.22), transparent 22%),
-    radial-gradient(circle at 82% 0%, rgba(66, 240, 194, 0.14), transparent 18%),
-    radial-gradient(circle at 50% 100%, rgba(92, 55, 255, 0.14), transparent 28%),
-    linear-gradient(160deg, var(--bg) 0%, #071224 45%, var(--bg-deep) 100%);
+  background: var(--bg);
 }
 
 body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(circle at center, black 35%, transparent 82%);
-  pointer-events: none;
+  display: none;
 }
 
 .app {
@@ -58,7 +46,7 @@ body::before {
 
 .app-dashboard {
   display: block;
-  padding: 28px 24px 48px;
+  padding: 0;
 }
 
 .card {
@@ -67,25 +55,14 @@ body::before {
   max-width: 460px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 28px;
+  border-radius: 6px;
   padding: 28px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 28%),
-    linear-gradient(155deg, var(--panel-strong) 0%, var(--panel) 54%, rgba(5, 10, 20, 0.96) 100%);
-  box-shadow:
-    0 30px 90px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(22px);
+  background: var(--panel);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .card::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto auto 0;
-  width: 100%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  opacity: 0.85;
+  display: none;
 }
 
 .eyebrow {
@@ -134,50 +111,42 @@ input,
 select,
 button {
   height: 50px;
-  border-radius: 14px;
+  border-radius: 6px;
   font-size: 0.95rem;
 }
 
 input,
 select {
-  border: 1px solid rgba(152, 179, 255, 0.14);
-  background: rgba(5, 10, 21, 0.72);
+  border: 1px solid var(--border-strong);
+  background: #ffffff;
   color: var(--text);
   padding: 0 14px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 input::placeholder {
-  color: rgba(158, 169, 199, 0.62);
+  color: var(--text-muted);
 }
 
 input:focus,
 select:focus {
   outline: none;
-  border-color: var(--border-strong);
-  background: rgba(8, 16, 30, 0.88);
-  box-shadow: 0 0 0 4px rgba(105, 210, 255, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 115, 187, 0.2);
 }
 
 button {
-  border: none;
-  color: #f8fbff;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  color: #ffffff;
+  font-weight: 600;
   cursor: pointer;
-  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
-  box-shadow:
-    0 16px 32px rgba(46, 107, 255, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+  background: var(--accent);
+  transition: background 160ms ease;
+  border-radius: 6px;
 }
 
 button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow:
-    0 20px 36px rgba(46, 107, 255, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  background: var(--accent-strong);
 }
 
 button:disabled {
@@ -186,14 +155,15 @@ button:disabled {
 }
 
 .secondary-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: none;
+  background: #ffffff;
+  color: var(--text);
+  border: 1px solid var(--text-muted);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .secondary-btn:hover:not(:disabled) {
-  box-shadow: none;
-  background: rgba(255, 255, 255, 0.08);
+  background: #f2f3f3;
+  color: var(--text);
 }
 
 .link-btn {
@@ -219,23 +189,23 @@ button:disabled {
 .error,
 .notice {
   margin: 0;
-  border-radius: 14px;
+  border-radius: 6px;
   padding: 12px 14px;
   font-size: 0.88rem;
   line-height: 1.45;
 }
 
 .error {
-  color: #ffd6da;
-  background: rgba(147, 34, 47, 0.28);
-  border: 1px solid rgba(255, 141, 149, 0.22);
+  color: #7d210e;
+  background: #fae3e1;
+  border: 1px solid #df3312;
 }
 
 .notice {
   margin-top: 18px;
-  color: #d7ecff;
-  background: rgba(42, 84, 170, 0.26);
-  border: 1px solid rgba(105, 210, 255, 0.18);
+  color: #004578;
+  background: #e3f2fd;
+  border: 1px solid #0073bb;
 }
 
 .dashboard-grid {
@@ -246,7 +216,7 @@ button:disabled {
 
 .metric {
   padding: 16px 18px;
-  border-radius: 18px;
+  border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: var(--panel-soft);
 }
@@ -278,7 +248,7 @@ button:disabled {
   }
 
   .app-dashboard {
-    padding: 18px 14px 28px;
+    padding: 0;
   }
 
   .card {

@@ -25,7 +25,7 @@ import {
 import '../../styles/dashboard.css';
 
 const RANGE_OPTIONS = [3, 6, 12];
-const CATEGORY_COLORS = ['#7cf5d6', '#69d2ff', '#4c8dff', '#ffb56b', '#ff7f96', '#c69dff'];
+const CATEGORY_COLORS = ['#0073bb', '#1d8102', '#d13212', '#ff9900', '#232f3e', '#879196'];
 
 function createBudgetDraft(item = {}) {
   return {
@@ -150,10 +150,6 @@ function DashboardPage({
   user
 }) {
   const organizations = user?.organizations || [];
-  const organizationId = activeOrganizationId || user?.default_organization_id || organizations[0]?.id || '';
-  const organization = organizations.find((item) => item.id === organizationId) || null;
-  const canManageFinance = ['founder', 'admin'].includes(organization?.role || '');
-  const isFounder = organization?.role === 'founder';
 
   const [months, setMonths] = useState(6);
   const [snapshot, setSnapshot] = useState(null);
@@ -181,8 +177,25 @@ function DashboardPage({
   const [savingBudgets, setSavingBudgets] = useState(false);
   const [regeneratingJoinCode, setRegeneratingJoinCode] = useState(false);
 
+  // Derived from backend response once available
+  const organization = snapshot?.organization || organizations.find((item) => item.id === activeOrganizationId) || null;
+  const organizationId = organization?.id || activeOrganizationId || '';
+  const permissions = organization?.permissions || {
+    can_manage_finance: ['founder', 'admin'].includes(organization?.role || ''),
+    is_founder: organization?.role === 'founder'
+  };
+  const { can_manage_finance: canManageFinance, is_founder: isFounder } = permissions;
+
+  const dashboardState = loadingSnapshot ? 'loading' : snapshot?.dashboard_state || 'unavailable';
+  const snapshotReady = dashboardState === 'ready' || dashboardState === 'no_history';
+  const busy = loadingSnapshot || loadingSetup;
+  const noTransactionHistory = dashboardState === 'no_history';
+  const unavailable = dashboardState === 'unavailable';
+  const budgetsConfigured = snapshot?.config.budgets_configured ?? budgets.items.length > 0;
+  const metricFallback = busy ? 'Loading...' : 'Unavailable';
+
   useEffect(() => {
-    if (!token || !organizationId) {
+    if (!token) {
       setSnapshot(null);
       setLoadingSnapshot(false);
       return;
@@ -197,7 +210,7 @@ function DashboardPage({
 
         const result = await getDashboardSnapshot({
           token,
-          organizationId,
+          organizationId: activeOrganizationId,
           months
         });
 
@@ -220,7 +233,7 @@ function DashboardPage({
     return () => {
       isActive = false;
     };
-  }, [months, organizationId, token]);
+  }, [months, activeOrganizationId, token]);
 
   useEffect(() => {
     if (!token || !organizationId) {
@@ -324,7 +337,7 @@ function DashboardPage({
   async function refreshSnapshot() {
     const result = await getDashboardSnapshot({
       token,
-      organizationId,
+      organizationId: activeOrganizationId,
       months
     });
 
@@ -480,7 +493,7 @@ function DashboardPage({
     });
   }
 
-  if (!organizationId) {
+  if (!organizationId && !loadingSnapshot) {
     return (
       <div className="card">
         <p className="eyebrow">SPARK Console</p>
@@ -490,23 +503,19 @@ function DashboardPage({
     );
   }
 
-  const snapshotReady = Boolean(snapshot);
-  const busy = loadingSnapshot || loadingSetup;
-  const unavailable = !busy && !snapshotReady;
-  const noTransactionHistory = snapshotReady && !snapshot.config.has_transactions;
-  const budgetsConfigured = snapshotReady ? snapshot.config.budgets_configured : budgets.items.length > 0;
-  const metricFallback = busy ? 'Loading...' : 'Unavailable';
-
   return (
-    <div className="finance-dashboard-shell">
-      <header className="finance-dashboard-header">
-        <div>
-          <p className="eyebrow">SPARK Finance</p>
-          <h1>Founder Dashboard</h1>
-          <p className="finance-dashboard-subtitle">
-            Burn, runway, revenue, vendor concentration, and budget pressure for{' '}
-            <strong>{organization?.name || organizationId}</strong>.
-          </p>
+    <div className="finance-dashboard-wrapper">
+      <nav className="finance-navbar">
+        <div className="finance-navbar-brand">
+          <span className="finance-navbar-logo">SPARK</span>
+          <div className="finance-navbar-divider"></div>
+          <span className="finance-navbar-title">Founder Dashboard</span>
+        </div>
+
+        <div className="finance-navbar-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" placeholder="Search" />
+          <span className="finance-navbar-shortcut">[Alt+S]</span>
         </div>
         <div className="finance-header-actions">
           <OrganizationSwitcher
@@ -518,14 +527,25 @@ function DashboardPage({
             <span>Role</span>
             <strong>{organization?.role || 'member'}</strong>
           </div>
-          <button type="button" className="secondary-btn" onClick={onOpenIntegrations}>
+          <button type="button" className="secondary-btn finance-mini-btn" onClick={onOpenIntegrations}>
             Integrations
           </button>
-          <button type="button" className="secondary-btn" onClick={onLogout}>
+          <button type="button" className="secondary-btn finance-mini-btn" onClick={onLogout}>
             Logout
           </button>
         </div>
-      </header>
+      </nav>
+
+      <div className="finance-dashboard-shell">
+        <header className="finance-dashboard-header">
+          <div>
+            <h1>Overview</h1>
+            <p className="finance-dashboard-subtitle">
+              Burn, runway, revenue, vendor concentration, and budget pressure for{' '}
+              <strong>{organization?.name || organizationId}</strong>.
+            </p>
+          </div>
+        </header>
 
       {status && <p className="notice finance-banner">{status}</p>}
       {error && <p className="error finance-banner">{error}</p>}
@@ -591,31 +611,32 @@ function DashboardPage({
                 <AreaChart data={snapshot.trends}>
                   <defs>
                     <linearGradient id="sparkTrend" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#69d2ff" stopOpacity={0.85} />
-                      <stop offset="95%" stopColor="#69d2ff" stopOpacity={0.05} />
+                      <stop offset="5%" stopColor="#0073bb" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#0073bb" stopOpacity={0.05} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#9ea9c7', fontSize: 12 }} />
+                  <CartesianGrid stroke="#eaeded" vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: '#545b64', fontSize: 12 }} />
                   <YAxis
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: '#9ea9c7', fontSize: 12 }}
+                    tick={{ fill: '#545b64', fontSize: 12 }}
                     tickFormatter={(value) => formatCurrency(value, { maximumFractionDigits: 0 })}
                   />
                   <Tooltip
-                    cursor={{ stroke: 'rgba(105, 210, 255, 0.35)', strokeWidth: 1 }}
+                    cursor={{ stroke: '#0073bb', strokeWidth: 1, strokeDasharray: '4 4' }}
                     formatter={renderChartTooltip}
                     contentStyle={{
-                      background: 'rgba(6, 12, 23, 0.96)',
-                      border: '1px solid rgba(105, 210, 255, 0.18)',
-                      borderRadius: 16
+                      background: '#ffffff',
+                      border: '1px solid #d5dbdb',
+                      borderRadius: 4,
+                      color: '#16191f'
                     }}
                   />
                   <Area
                     type="monotone"
                     dataKey="amount"
-                    stroke="#69d2ff"
+                    stroke="#0073bb"
                     strokeWidth={3}
                     fillOpacity={1}
                     fill="url(#sparkTrend)"
@@ -660,9 +681,10 @@ function DashboardPage({
                     <Tooltip
                       formatter={renderChartTooltip}
                       contentStyle={{
-                        background: 'rgba(6, 12, 23, 0.96)',
-                        border: '1px solid rgba(105, 210, 255, 0.18)',
-                        borderRadius: 16
+                        background: '#ffffff',
+                        border: '1px solid #d5dbdb',
+                        borderRadius: 4,
+                        color: '#16191f'
                       }}
                     />
                   </PieChart>
@@ -699,12 +721,12 @@ function DashboardPage({
             <div className="finance-chart-shell finance-chart-shell-compact">
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={snapshot.top_vendors} layout="vertical" margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
-                  <CartesianGrid stroke="rgba(255,255,255,0.05)" horizontal={false} />
+                  <CartesianGrid stroke="#eaeded" horizontal={false} />
                   <XAxis
                     type="number"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: '#9ea9c7', fontSize: 12 }}
+                    tick={{ fill: '#545b64', fontSize: 12 }}
                     tickFormatter={(value) => formatCurrency(value, { maximumFractionDigits: 0 })}
                   />
                   <YAxis
@@ -713,17 +735,18 @@ function DashboardPage({
                     dataKey="vendor"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: '#dce4ff', fontSize: 12 }}
+                    tick={{ fill: '#16191f', fontSize: 12 }}
                   />
                   <Tooltip
                     formatter={renderChartTooltip}
                     contentStyle={{
-                      background: 'rgba(6, 12, 23, 0.96)',
-                      border: '1px solid rgba(105, 210, 255, 0.18)',
-                      borderRadius: 16
+                      background: '#ffffff',
+                      border: '1px solid #d5dbdb',
+                      borderRadius: 4,
+                      color: '#16191f'
                     }}
                   />
-                  <Bar dataKey="amount" radius={[0, 14, 14, 0]} fill="#7cf5d6" name="Spend" />
+                  <Bar dataKey="amount" radius={[0, 4, 4, 0]} fill="#0073bb" name="Spend" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -997,6 +1020,7 @@ function DashboardPage({
           </form>
         </Panel>
       </section>
+    </div>
     </div>
   );
 }

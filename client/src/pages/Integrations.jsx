@@ -2,6 +2,50 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { get, post } from '../services/http';
 import { endpoints } from '../services/endpoints';
+import '../styles/dashboard.css';
+
+function StatusBadge({ icon, loading, connected, hoverText }) {
+  let color = '#df3312'; // red
+  let text = 'Not connected';
+  let isSpinning = false;
+
+  if (loading) {
+    color = '#fca130';
+    text = 'Checking status...';
+    isSpinning = true;
+  } else if (connected) {
+    color = '#037f0c';
+    text = 'Connected';
+  }
+
+  if (hoverText && !loading) {
+    text = hoverText;
+  }
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-flex' }} title={text}>
+      {icon}
+      <div style={{
+        position: 'absolute',
+        top: '-4px',
+        right: '-4px',
+        width: '16px',
+        height: '16px',
+        borderRadius: '50%',
+        backgroundColor: color,
+        border: '2px solid #ffffff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.15)'
+      }}>
+        {isSpinning && (
+          <svg style={{ animation: 'spark-spin 1s linear infinite' }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function IntegrationsPage({ activeOrganizationId, onBack, onLogout, onSelectOrganization, token, user }) {
   const [searchParams] = useSearchParams();
@@ -11,6 +55,7 @@ function IntegrationsPage({ activeOrganizationId, onBack, onLogout, onSelectOrga
 
   const organizationId = activeOrganizationId || user?.default_organization_id || user?.organizations?.[0]?.id || '';
   const organizations = user?.organizations || [];
+  const organization = organizations.find((o) => o.id === organizationId);
   const driveParam = searchParams.get('drive');
   const driveMessage = searchParams.get('message');
 
@@ -89,58 +134,196 @@ function IntegrationsPage({ activeOrganizationId, onBack, onLogout, onSelectOrga
   }
 
   return (
-    <div className="card">
-      <p className="eyebrow">Settings</p>
-      <h1>Integrations</h1>
-      <p className="card-subtitle">
-        Connect organization storage so SPARK can place uploaded finance documents in Google Drive.
-      </p>
-
-      {driveParam === 'connected' && <p className="notice">Google Drive connected successfully.</p>}
-      {driveParam === 'error' && <p className="error">{driveMessage || 'Google Drive connection failed.'}</p>}
-      {error && <p className="error">{error}</p>}
-
-      {organizations.length > 0 && (
-        <label className="field">
-          <span className="field-label">Active Organization</span>
-          <select value={organizationId} onChange={(event) => onSelectOrganization(event.target.value)}>
-            {organizations.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name} · {item.role}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      <div className="dashboard-grid">
-        <div className="metric">
-          <span className="metric-label">Google Drive</span>
-          <strong>{loading ? 'Checking status...' : driveStatus.connected ? 'Connected' : 'Not connected'}</strong>
+    <div className="finance-dashboard-wrapper">
+      <style>{`
+        @keyframes spark-spin {
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+      <nav className="finance-navbar">
+        <div className="finance-navbar-brand" onClick={onBack} style={{ cursor: 'pointer' }} title="Back to Dashboard">
+          <span className="finance-navbar-logo">SPARK</span>
+          <div className="finance-navbar-divider"></div>
+          <span className="finance-navbar-title">Integrations & Settings</span>
         </div>
-        <div className="metric">
-          <span className="metric-label">Account</span>
-          <strong>{driveStatus.google_email || 'No Google account connected'}</strong>
-        </div>
-        <div className="metric">
-          <span className="metric-label">Organization</span>
-          <strong>{user?.organizations?.find((item) => item.id === organizationId)?.name || organizationId || 'Unavailable'}</strong>
-        </div>
-      </div>
 
-      {!driveStatus.connected && (
-        <button type="button" onClick={connectDrive} disabled={loading || !organizationId}>
-          Connect Google Drive
-        </button>
-      )}
+        <div className="finance-navbar-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" placeholder="Search" />
+          <span className="finance-navbar-shortcut">[Alt+S]</span>
+        </div>
 
-      <div className="actions-row">
-        <button type="button" className="secondary-btn" onClick={onBack}>
-          Back to Dashboard
-        </button>
-        <button type="button" className="secondary-btn" onClick={onLogout}>
-          Logout
-        </button>
+        <div className="finance-header-actions">
+          {organizations.length > 0 && (
+            <label className="finance-org-switcher" style={{ display: 'flex', alignItems: 'center' }}>
+              <select 
+                value={organizationId} 
+                onChange={(event) => onSelectOrganization(event.target.value)}
+                style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.85rem' }}
+              >
+                {organizations.map((item) => (
+                  <option key={item.id} value={item.id} style={{ color: '#000' }}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div className="finance-org-pill">
+            <span>Role</span>
+            <strong>{organization?.role || 'member'}</strong>
+          </div>
+          <button type="button" className="secondary-btn finance-mini-btn" onClick={onLogout}>
+            Logout
+          </button>
+        </div>
+      </nav>
+
+      <div className="finance-dashboard-shell">
+        <header className="finance-dashboard-header" style={{ marginBottom: '32px' }}>
+          <div>
+            <h1>Connected Services</h1>
+            <p className="finance-dashboard-subtitle">
+              Manage third-party integrations, storage connections, and AI modules for{' '}
+              <strong>{organization?.name || organizationId}</strong>.
+            </p>
+          </div>
+        </header>
+
+        {driveParam === 'connected' && <p className="notice" style={{ marginBottom: '24px' }}>Google Drive connected successfully.</p>}
+        {driveParam === 'error' && <p className="error" style={{ marginBottom: '24px' }}>{driveMessage || 'Google Drive connection failed.'}</p>}
+        {error && <p className="error" style={{ marginBottom: '24px' }}>{error}</p>}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '24px' }}>
+          {/* Google Drive Integration */}
+          <div className="finance-panel" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '24px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+                <StatusBadge 
+                  loading={loading} 
+                  connected={driveStatus.connected}
+                  icon={<svg width="48" height="48" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>}
+                />
+                <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text)' }}>Google Drive</h3>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Connect your organization's Google Drive to automatically store uploaded finance documents and generate reports.
+              </p>
+            </div>
+            
+            {driveStatus.connected && (
+              <div style={{ padding: '24px', flex: 1, background: '#ffffff' }}>
+                <div style={{ display: 'grid', gap: '16px' }}>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Connected Account</div>
+                    <div style={{ color: 'var(--text)', fontSize: '0.95rem' }}>{driveStatus.google_email || 'No email available'}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* If not connected and no content to show, we still flex-grow to push footer down */}
+            {!driveStatus.connected && <div style={{ flex: 1, background: '#ffffff' }}></div>}
+
+            <div style={{ padding: '16px 24px', background: 'var(--panel-soft)', borderTop: '1px solid var(--border)' }}>
+              {!driveStatus.connected ? (
+                <button type="button" onClick={connectDrive} disabled={loading || !organizationId} style={{ width: '100%' }}>
+                  Connect Google Drive
+                </button>
+              ) : (
+                <button type="button" className="secondary-btn" disabled style={{ width: '100%', background: '#fff' }}>
+                  Service Linked
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Telegram Integration */}
+          <div className="finance-panel" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '24px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+                <StatusBadge 
+                  loading={false} 
+                  connected={true}
+                  hoverText="Active System-wide"
+                  icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#2AABEE"/><path fill="#fff" d="M5.4 11.8l11.4-4.4c.5-.2.9.1.8.6l-1.9 9.1c-.1.5-.4.7-.8.4l-2.3-1.7-1.1 1.1c-.1.1-.3.2-.5.2l.2-2.4 4.3-3.9c.2-.2-.1-.3-.3-.1l-5.3 3.3-2.3-.7c-.5-.2-.5-.5.1-.7z"/></svg>}
+                />
+                <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text)' }}>Telegram Bot</h3>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Get instant alerts, submit expenses via chat, and query your startup's financial metrics directly from Telegram.
+              </p>
+            </div>
+            <div style={{ padding: '24px', flex: 1, background: '#ffffff' }}>
+              <div style={{ display: 'grid', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Join Link</div>
+                  <div style={{ color: 'var(--text)', fontSize: '0.95rem' }}>Retrieve link from the dashboard</div>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '16px 24px', background: 'var(--panel-soft)', borderTop: '1px solid var(--border)' }}>
+              <button type="button" className="secondary-btn" onClick={onBack} style={{ width: '100%', background: '#fff' }}>
+                View on Dashboard
+              </button>
+            </div>
+          </div>
+
+          {/* Google Sheets Integration */}
+          <div className="finance-panel" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '24px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+                <StatusBadge 
+                  loading={false} 
+                  connected={false}
+                  hoverText="Available Soon"
+                  icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none"><path fill="#0F9D58" d="M14.5 2H5C4.4 2 4 2.4 4 3v18c0 .6.4 1 1 1h14c.6 0 1-.4 1-1V7.5L14.5 2z"/><path fill="#000" fillOpacity=".2" d="M14.5 8h5.5l-5.5-6v6z"/><path fill="#fff" d="M8 12h8v2H8v-2zm0 4h8v2H8v-2zm0-8h5v2H8V8z"/></svg>}
+                />
+                <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text)' }}>Google Sheets Sync</h3>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Automatically sync aggregated transaction data and budget variances into your dedicated Google Sheet.
+              </p>
+            </div>
+            <div style={{ flex: 1, background: '#ffffff' }}></div>
+            <div style={{ padding: '16px 24px', background: 'var(--panel-soft)', borderTop: '1px solid var(--border)' }}>
+              <button type="button" className="secondary-btn" disabled style={{ width: '100%', background: '#fff', color: 'var(--text-muted)' }}>
+                Coming Soon
+              </button>
+            </div>
+          </div>
+
+          {/* AI Providers Integration */}
+          <div className="finance-panel" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '24px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+                <StatusBadge 
+                  loading={false} 
+                  connected={true}
+                  hoverText="System Active"
+                  icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#16191f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>}
+                />
+                <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text)' }}>AI Services (LLM & OCR)</h3>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Power the financial insight assistant and automated receipt OCR capabilities with advanced AI processing.
+              </p>
+            </div>
+            <div style={{ padding: '24px', flex: 1, background: '#ffffff' }}>
+              <div style={{ display: 'grid', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Capabilities</div>
+                  <div style={{ color: 'var(--text)', fontSize: '0.95rem' }}>Receipt parsing, Financial assistant</div>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '16px 24px', background: 'var(--panel-soft)', borderTop: '1px solid var(--border)' }}>
+              <button type="button" className="secondary-btn" disabled style={{ width: '100%', background: '#fff' }}>
+                System Managed
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
