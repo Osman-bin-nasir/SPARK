@@ -253,7 +253,7 @@ Today, the live app surface is limited to:
 - Auth screens
 - Telegram link completion flow
 - A basic dashboard card
-- A Google Drive integrations page
+- A Google Drive integrations page 
 
 The live backend currently exposes:
 
