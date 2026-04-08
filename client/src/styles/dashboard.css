@@ -232,7 +232,7 @@
 }
 
 .finance-range-button.is-active {
-  background: #ffffff;
+  background: var(--range-active-bg, #ffffff);
   color: var(--text);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
@@ -498,7 +498,7 @@
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 14px 16px;
-  background: #ffffff;
+  background: var(--panel-soft);
   color: var(--text);
   font-size: 0.9rem;
   line-height: 1.6;
@@ -618,4 +618,91 @@
   .finance-range-button {
     flex: 1 1 0;
   }
+}
+
+/* ── Premium card & input system (dark-mode-aware) ─────────────────── */
+.premium-card {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.premium-card-header {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.premium-card-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.premium-page-container {
+  width: min(1200px, 100%);
+  margin: 0 auto;
+  padding: 32px 28px 64px;
+}
+
+/* Toggle switch component */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border-strong);
+  border-radius: 24px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.slider::before {
+  content: '';
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.toggle-switch input:checked + .slider {
+  background: var(--accent);
+}
+
+.toggle-switch input:checked + .slider::before {
+  transform: translateX(20px);
+}
+
+/* Alert card states — dark-mode aware */
+.finance-alert-card.is-warning {
+  border-color: #fca130;
+  background: var(--warning-bg, #fff8eb);
+}
+
+.finance-alert-card.is-exceeded {
+  border-color: #df3312;
+  background: var(--error-bg, #fae3e1);
+}
+
+.finance-alert-card.is-spike {
+  border-color: #0073bb;
+  background: var(--notice-bg, #e3f2fd);
 }

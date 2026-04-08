@@ -338,6 +338,36 @@ async function ensureDefaultOrganizationForUser({ userId, email }) {
   }
 }
 
+async function removeOrganizationMember({ organizationId, userId }, client = pool) {
+  const { rowCount } = await client.query(
+    `DELETE FROM organization_members
+     WHERE organization_id = $1 AND user_id = $2`,
+    [organizationId, userId]
+  );
+  return rowCount > 0;
+}
+
+async function updateOrganizationMemberRole({ organizationId, userId, role }, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE organization_members
+     SET role = $3
+     WHERE organization_id = $1 AND user_id = $2
+     RETURNING organization_id, user_id, role, created_at AS joined_at`,
+    [organizationId, userId, role]
+  );
+  
+  if (!rows[0]) {
+    return null;
+  }
+  
+  return {
+    organization_id: rows[0].organization_id,
+    user_id: rows[0].user_id,
+    role: rows[0].role,
+    joined_at: rows[0].joined_at
+  };
+}
+
 module.exports = {
   addOrganizationMember,
   ensureDefaultOrganizationForUser,
@@ -350,5 +380,7 @@ module.exports = {
   listMembershipsByUserId,
   listOrganizationMembers,
   mapMembership,
-  regenerateOrganizationJoinCode
+  regenerateOrganizationJoinCode,
+  removeOrganizationMember,
+  updateOrganizationMemberRole
 };

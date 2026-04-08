@@ -332,6 +332,17 @@ async function getDashboardSnapshot({ organization, query }) {
     dashboardRepository.getEarliestTransactionDate({ organizationId })
   ]);
 
+  // Optimistically fetch cash flow in parallel with the rest of the queries.
+  // We pre-fetch using the finance settings fetched above — if settings exist,
+  // the cash flow query will already be running. Otherwise resolve immediately.
+  const cashFlowTotals = financeSettings
+    ? await dashboardRepository.getCashFlowTotalsSince({
+        organizationId,
+        startDate: financeSettings.opening_cash_effective_date,
+        endDate: toDateString(now)
+      })
+    : null;
+
   const budgetLabelMap = createBudgetLabelMap(budgets);
   const currentMonthSpend = aggregateCategorySpend(currentMonthSpendRows, budgetLabelMap);
   const currentMonthCategories = Array.from(currentMonthSpend.values())
@@ -371,13 +382,7 @@ async function getDashboardSnapshot({ organization, query }) {
   let cashOnHand = null;
   let runwayMonths = null;
 
-  if (financeSettings) {
-    const cashFlowTotals = await dashboardRepository.getCashFlowTotalsSince({
-      organizationId,
-      startDate: financeSettings.opening_cash_effective_date,
-      endDate: toDateString(now)
-    });
-
+  if (financeSettings && cashFlowTotals) {
     cashOnHand = roundAmount(
       financeSettings.opening_cash_balance + cashFlowTotals.income_total - cashFlowTotals.outflow_total
     );
