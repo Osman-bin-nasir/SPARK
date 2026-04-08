@@ -53,12 +53,18 @@ function signRefreshToken(user) {
   );
 }
 
-function signTelegramLoginToken(telegramId) {
+function signTelegramLoginToken({ telegramId, organizationId = null }) {
+  const payload = {
+    telegram_id: String(telegramId),
+    type: 'telegram-link'
+  };
+
+  if (organizationId) {
+    payload.organization_id = String(organizationId);
+  }
+
   return jwt.sign(
-    {
-      telegram_id: String(telegramId),
-      type: 'telegram-link'
-    },
+    payload,
     env.telegramJwtSecret,
     { expiresIn: env.telegramLoginExpiresIn }
   );
