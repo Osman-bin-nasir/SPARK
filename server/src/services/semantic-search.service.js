@@ -112,7 +112,12 @@ async function semanticSearch({
   minSimilarity,
   minLexicalScore,
   includePendingReview,
-  retrievalMode
+  retrievalMode,
+  vendor,
+  category,
+  transactionType,
+  startDate,
+  endDate
 }) {
   const normalizedQuery = String(query || '').trim();
 
@@ -137,7 +142,12 @@ async function semanticSearch({
       queryEmbedding,
       topK: resolvedTopK,
       minSimilarity: resolvedMinSimilarity,
-      includePendingReview: Boolean(includePendingReview)
+      includePendingReview: Boolean(includePendingReview),
+      vendor,
+      category,
+      transactionType,
+      startDate,
+      endDate
     });
   } else if (resolvedRetrievalMode === 'vectorless') {
     items = await transactionsRepository.findTransactionsByKeywordSearch({
@@ -145,7 +155,12 @@ async function semanticSearch({
       query: normalizedQuery,
       topK: resolvedTopK,
       minLexicalScore: resolvedMinLexicalScore,
-      includePendingReview: Boolean(includePendingReview)
+      includePendingReview: Boolean(includePendingReview),
+      vendor,
+      category,
+      transactionType,
+      startDate,
+      endDate
     });
   } else {
     const queryEmbedding = await generateEmbedding(normalizedQuery);
@@ -155,14 +170,24 @@ async function semanticSearch({
         queryEmbedding,
         topK: resolvedTopK,
         minSimilarity: resolvedMinSimilarity,
-        includePendingReview: Boolean(includePendingReview)
+        includePendingReview: Boolean(includePendingReview),
+        vendor,
+        category,
+        transactionType,
+        startDate,
+        endDate
       }),
       transactionsRepository.findTransactionsByKeywordSearch({
         organizationId,
         query: normalizedQuery,
         topK: resolvedTopK,
         minLexicalScore: resolvedMinLexicalScore,
-        includePendingReview: Boolean(includePendingReview)
+        includePendingReview: Boolean(includePendingReview),
+        vendor,
+        category,
+        transactionType,
+        startDate,
+        endDate
       })
     ]);
 

@@ -14,6 +14,26 @@ node_modules/
 .venv/
 **/.venv/
 
+# python caches and tooling
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+pip-wheel-metadata/
+*.egg-info/
+
+# local notebooks / temp artifacts
+.ipynb_checkpoints/
+
+# Python AI service runtime artifacts
+server/.venv/
+server/python_ai/__pycache__/
+
 # logs
 *.log
 npm-debug.log*
@@ -25,3 +45,8 @@ pnpm-debug.log*
 .DS_Store
 .vscode/
 .idea/
+
+plan.md
+PRESENTATION.md
+
+**/docs/

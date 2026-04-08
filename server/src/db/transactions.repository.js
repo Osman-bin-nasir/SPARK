@@ -321,12 +321,50 @@ async function findTransactionsBySimilarity(
     queryEmbedding,
     topK = 5,
     minSimilarity = 0.6,
-    includePendingReview = false
+    includePendingReview = false,
+    vendor,
+    category,
+    transactionType,
+    startDate,
+    endDate
   },
   client = pool
 ) {
   const vectorLiteral = `[${queryEmbedding.join(',')}]`;
   const statuses = includePendingReview ? ['auto_verified', 'pending_review'] : ['auto_verified'];
+  const params = [organizationId, vectorLiteral, statuses, minSimilarity];
+  const filters = [
+    't.organization_id = $1',
+    't.status = ANY($3::text[])',
+    '(1 - (te.embedding <=> $2::vector)) >= $4'
+  ];
+
+  if (transactionType) {
+    params.push(transactionType);
+    filters.push(`LOWER(t.transaction_type) = LOWER($${params.length})`);
+  }
+
+  if (vendor) {
+    params.push(`%${String(vendor).trim().toLowerCase()}%`);
+    filters.push(`LOWER(t.vendor) LIKE $${params.length}`);
+  }
+
+  if (category) {
+    params.push(`%${String(category).trim().toLowerCase()}%`);
+    filters.push(`LOWER(t.category) LIKE $${params.length}`);
+  }
+
+  if (startDate) {
+    params.push(startDate);
+    filters.push(`t.transaction_date >= $${params.length}::date`);
+  }
+
+  if (endDate) {
+    params.push(endDate);
+    filters.push(`t.transaction_date <= $${params.length}::date`);
+  }
+
+  params.push(topK);
 
   const { rows } = await client.query(
     `SELECT t.id,
@@ -351,12 +389,10 @@ async function findTransactionsBySimilarity(
      FROM transactions t
      JOIN transaction_embeddings te ON te.transaction_id = t.id
      LEFT JOIN documents d ON d.transaction_id = t.id
-     WHERE t.organization_id = $1
-       AND t.status = ANY($3::text[])
-       AND (1 - (te.embedding <=> $2::vector)) >= $4
+     WHERE ${filters.join(' AND ')}
      ORDER BY te.embedding <=> $2::vector ASC
-     LIMIT $5`,
-    [organizationId, vectorLiteral, statuses, minSimilarity, topK]
+     LIMIT $${params.length}`,
+    params
   );
 
   return rows.map((row) => ({
@@ -381,11 +417,45 @@ async function findTransactionsByKeywordSearch(
     query,
     topK = 5,
     minLexicalScore = 0,
-    includePendingReview = false
+    includePendingReview = false,
+    vendor,
+    category,
+    transactionType,
+    startDate,
+    endDate
   },
   client = pool
 ) {
   const statuses = includePendingReview ? ['auto_verified', 'pending_review'] : ['auto_verified'];
+  const params = [organizationId, query, statuses, minLexicalScore];
+  const optionalFilters = [];
+
+  if (transactionType) {
+    params.push(transactionType);
+    optionalFilters.push(`LOWER(t.transaction_type) = LOWER($${params.length})`);
+  }
+
+  if (vendor) {
+    params.push(`%${String(vendor).trim().toLowerCase()}%`);
+    optionalFilters.push(`LOWER(t.vendor) LIKE $${params.length}`);
+  }
+
+  if (category) {
+    params.push(`%${String(category).trim().toLowerCase()}%`);
+    optionalFilters.push(`LOWER(t.category) LIKE $${params.length}`);
+  }
+
+  if (startDate) {
+    params.push(startDate);
+    optionalFilters.push(`t.transaction_date >= $${params.length}::date`);
+  }
+
+  if (endDate) {
+    params.push(endDate);
+    optionalFilters.push(`t.transaction_date <= $${params.length}::date`);
+  }
+
+  params.push(topK);
 
   const { rows } = await client.query(
     `SELECT t.id,
@@ -455,9 +525,10 @@ async function findTransactionsByKeywordSearch(
          ),
          plainto_tsquery('simple', $2)
        ) >= $4
+       ${optionalFilters.length > 0 ? `AND ${optionalFilters.join(' AND ')}` : ''}
      ORDER BY lexical_score DESC, t.transaction_date DESC
-     LIMIT $5`,
-    [organizationId, query, statuses, minLexicalScore, topK]
+     LIMIT $${params.length}`,
+    params
   );
 
   return rows.map((row) => ({
@@ -475,6 +546,165 @@ async function findTransactionsByKeywordSearch(
         }
       : null
   }));
+}
+
+function buildStatusFilter(includePendingReview) {
+  return includePendingReview ? ['auto_verified', 'pending_review'] : ['auto_verified'];
+}
+
+function buildSummaryGroupExpression(groupBy) {
+  switch (groupBy) {
+    case 'vendor':
+      return "COALESCE(t.vendor, 'Unknown')";
+    case 'month':
+      return "to_char(t.transaction_date::date, 'YYYY-MM')";
+    case 'day':
+      return 't.transaction_date::date::text';
+    case 'category':
+    default:
+      return "COALESCE(t.category, 'Uncategorized')";
+  }
+}
+
+async function summarizeTransactions(
+  {
+    organizationId,
+    vendor,
+    category,
+    transactionType,
+    startDate,
+    endDate,
+    includePendingReview = false,
+    groupBy = 'category',
+    limit = 5
+  },
+  client = pool
+) {
+  const params = [organizationId];
+  const filters = ['t.organization_id = $1'];
+  const statuses = buildStatusFilter(includePendingReview);
+
+  params.push(statuses);
+  filters.push(`t.status = ANY($${params.length}::text[])`);
+
+  if (transactionType) {
+    params.push(transactionType);
+    filters.push(`LOWER(t.transaction_type) = LOWER($${params.length})`);
+  }
+
+  if (vendor) {
+    params.push(`%${String(vendor).trim().toLowerCase()}%`);
+    filters.push(`LOWER(t.vendor) LIKE $${params.length}`);
+  }
+
+  if (category) {
+    params.push(`%${String(category).trim().toLowerCase()}%`);
+    filters.push(`LOWER(t.category) LIKE $${params.length}`);
+  }
+
+  if (startDate) {
+    params.push(startDate);
+    filters.push(`t.transaction_date >= $${params.length}::date`);
+  }
+
+  if (endDate) {
+    params.push(endDate);
+    filters.push(`t.transaction_date <= $${params.length}::date`);
+  }
+
+  const whereClause = filters.join(' AND ');
+  const totalsQuery = `
+    SELECT COUNT(*)::int AS transaction_count,
+           COALESCE(SUM(t.amount), 0)::numeric(14, 2) AS total_amount,
+           COALESCE(AVG(t.amount), 0)::numeric(14, 2) AS average_amount,
+           COALESCE(MIN(t.amount), 0)::numeric(14, 2) AS min_amount,
+           COALESCE(MAX(t.amount), 0)::numeric(14, 2) AS max_amount
+    FROM transactions t
+    WHERE ${whereClause}
+  `;
+
+  const groupExpression = buildSummaryGroupExpression(groupBy);
+  const breakdownQuery = `
+    SELECT ${groupExpression} AS group_value,
+           COUNT(*)::int AS transaction_count,
+           COALESCE(SUM(t.amount), 0)::numeric(14, 2) AS total_amount,
+           COALESCE(AVG(t.amount), 0)::numeric(14, 2) AS average_amount
+    FROM transactions t
+    WHERE ${whereClause}
+    GROUP BY ${groupExpression}
+    ORDER BY total_amount DESC, transaction_count DESC
+    LIMIT $${params.length + 1}
+  `;
+
+  const sampleQuery = `
+    SELECT t.id,
+           t.organization_id,
+           t.amount,
+           t.vendor,
+           t.transaction_type,
+           t.category,
+           t.transaction_date,
+           t.confidence_score,
+           t.duplicate_of_transaction_id,
+           t.duplicate_score,
+           t.status,
+           t.created_at,
+           d.id AS document_id,
+           d.storage_kind,
+           d.original_name,
+           d.stored_name,
+           d.file_type,
+           d.extraction_confidence
+    FROM transactions t
+    LEFT JOIN documents d ON d.transaction_id = t.id
+    WHERE ${whereClause}
+    ORDER BY t.amount DESC, t.transaction_date DESC, t.created_at DESC
+    LIMIT $${params.length + 1}
+  `;
+
+  const [totalsResult, breakdownResult, sampleResult] = await Promise.all([
+    client.query(totalsQuery, params),
+    client.query(breakdownQuery, [...params, Math.min(Math.max(Number(limit) || 5, 1), 20)]),
+    client.query(sampleQuery, [...params, Math.min(Math.max(Number(limit) || 5, 1), 20)])
+  ]);
+
+  return {
+    filters: {
+      vendor: vendor || null,
+      category: category || null,
+      transaction_type: transactionType || null,
+      start_date: startDate || null,
+      end_date: endDate || null,
+      include_pending_review: Boolean(includePendingReview),
+      group_by: groupBy || null
+    },
+    totals: {
+      transaction_count: Number(totalsResult.rows[0]?.transaction_count || 0),
+      total_amount: Number(totalsResult.rows[0]?.total_amount || 0),
+      average_amount: Number(totalsResult.rows[0]?.average_amount || 0),
+      min_amount: Number(totalsResult.rows[0]?.min_amount || 0),
+      max_amount: Number(totalsResult.rows[0]?.max_amount || 0)
+    },
+    breakdown: breakdownResult.rows.map((row) => ({
+      group_value: row.group_value,
+      transaction_count: Number(row.transaction_count || 0),
+      total_amount: Number(row.total_amount || 0),
+      average_amount: Number(row.average_amount || 0)
+    })),
+    sample_transactions: sampleResult.rows.map((row) => ({
+      ...mapTransactionRow(row),
+      document: row.document_id
+        ? {
+            id: row.document_id,
+            storage_kind: row.storage_kind,
+            original_name: row.original_name,
+            stored_name: row.stored_name,
+            file_type: row.file_type,
+            extraction_confidence: row.extraction_confidence === null ? null : Number(row.extraction_confidence)
+          }
+        : null
+    }))
+  };
 }
 
 async function findTransactionById({ organizationId, transactionId }, client = pool) {
@@ -785,6 +1015,7 @@ module.exports = {
   insertTransactionWithDocumentAndJobs,
   listPotentialDuplicateCandidates,
   listTransactions,
+  summarizeTransactions,
   mapTransactionRow,
   markEmbeddingJobCompleted,
   markEmbeddingJobFailed,
