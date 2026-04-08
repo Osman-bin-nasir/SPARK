@@ -58,6 +58,15 @@ function normalizeTelegramId(telegramId) {
   return value;
 }
 
+function normalizeOptionalOrganizationId(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
 function decorateUser(user, memberships) {
   const organizations = memberships.map((membership) => ({
     id: membership.organization_id,
@@ -75,6 +84,20 @@ function decorateUser(user, memberships) {
 async function resolvePrimaryOrganizationId(userId) {
   const memberships = await organizationsRepository.listMembershipsByUserId(userId);
   return memberships[0]?.organization_id || null;
+}
+
+async function ensureTelegramOrganizationMembership(userId, tokenPayload) {
+  const organizationId = normalizeOptionalOrganizationId(tokenPayload?.organization_id);
+
+  if (!organizationId) {
+    return;
+  }
+
+  await organizationsRepository.addOrganizationMember({
+    organizationId,
+    userId,
+    role: 'member'
+  });
 }
 
 async function buildAuthResponse(user) {
@@ -101,8 +124,11 @@ async function register(payload) {
   const email = normalizeEmail(body.email);
   validatePassword(body.password);
   const telegramToken = typeof body.telegram_token === 'string' ? body.telegram_token.trim() : '';
-  const telegramId = telegramToken
-    ? normalizeTelegramId(verifyTelegramLoginToken(telegramToken).telegram_id)
+  const telegramTokenPayload = telegramToken
+    ? verifyTelegramLoginToken(telegramToken)
+    : null;
+  const telegramId = telegramTokenPayload
+    ? normalizeTelegramId(telegramTokenPayload.telegram_id)
     : null;
 
   const [existingUser, telegramUser] = await Promise.all([
@@ -132,11 +158,13 @@ async function register(payload) {
         passwordHash
       });
 
+      await ensureTelegramOrganizationMembership(user.id, telegramTokenPayload);
       return buildAuthResponse(user);
     }
 
     const user = await usersRepository.createUser({ email, passwordHash, telegramId });
 
+    await ensureTelegramOrganizationMembership(user.id, telegramTokenPayload);
     return buildAuthResponse(user);
   } catch (error) {
     if (error.code === '23505') {
@@ -210,7 +238,8 @@ async function refreshAccessToken(payload) {
 async function createTelegramLogin(payload) {
   const body = payload || {};
   const telegramId = normalizeTelegramId(body.telegram_id);
-  const token = signTelegramLoginToken(telegramId);
+  const organizationId = normalizeOptionalOrganizationId(body.organization_id || body.organizationId);
+  const token = signTelegramLoginToken({ telegramId, organizationId });
   const loginLink = `${env.appBaseUrl}/telegram-login?token=${encodeURIComponent(token)}`;
 
   return { loginLink };
@@ -225,6 +254,7 @@ async function linkTelegramAccount({ userId, token }) {
   const telegramId = normalizeTelegramId(tokenPayload.telegram_id);
   try {
     const user = await usersRepository.linkTelegramToUser({ userId, telegramId });
+    await ensureTelegramOrganizationMembership(user.id, tokenPayload);
     const memberships = await organizationsRepository.ensureDefaultOrganizationForUser({
       userId: user.id,
       email: user.email

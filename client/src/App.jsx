@@ -4,6 +4,14 @@ import './App.css';
 import LoginPage from './features/login/login.page';
 import SignupPage from './features/signup/signup.page';
 import IntegrationsPage from './pages/Integrations';
+import AppShell from './components/layout/app-shell';
+import TransactionsPage from './pages/Transactions';
+import ApprovalsPage from './pages/Approvals';
+import AnalyticsPage from './pages/Analytics';
+import AISearchPage from './pages/AISearch';
+import FinancePage from './pages/Finance';
+import TeamPage from './pages/Team';
+import SettingsPage from './pages/Settings';
 import { post } from './services/http';
 import { endpoints } from './services/endpoints';
 
@@ -78,6 +86,23 @@ function App() {
   const [status, setStatus] = useState(
     initialTelegramToken ? 'Finish signup or login to link your Telegram account.' : ''
   );
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    // Default to light mode as requested by prompt "default: LIGHT mode"
+    return saved === 'dark';
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  const toggleTheme = () => setIsDarkMode(prev => !prev);
 
   const telegramMode = Boolean(pendingTelegramToken);
   const preferredOrganizationId = preferredOrganization.userId === user?.id
@@ -290,30 +315,55 @@ function App() {
 
   const isDashboardSurface = token;
 
-  return (
-    <main className={isDashboardSurface ? 'app app-dashboard' : 'app'}>
+  const renderAuthenticatedRoutes = () => (
+    <AppShell 
+      user={user}
+      activeOrganizationId={activeOrganizationId}
+      organizations={user?.organizations || []}
+      onSelectOrganization={handleSelectOrganization}
+      onLogout={handleLogout}
+      isDarkMode={isDarkMode}
+      toggleTheme={toggleTheme}
+    >
       <Routes>
+        <Route path="/" element={dashboardContent} />
+        <Route path="/telegram-login" element={dashboardContent} />
         <Route
           path="/integrations"
           element={
-            token ? (
-              <IntegrationsPage
-                activeOrganizationId={activeOrganizationId}
-                onSelectOrganization={handleSelectOrganization}
-                onBack={() => navigate('/')}
-                onLogout={handleLogout}
-                token={token}
-                user={user}
-              />
-            ) : (
-              authContent
-            )
+            <IntegrationsPage
+              activeOrganizationId={activeOrganizationId}
+              onSelectOrganization={handleSelectOrganization}
+              onBack={() => navigate('/')}
+              onLogout={handleLogout}
+              token={token}
+              user={user}
+            />
           }
         />
-        <Route path="/telegram-login" element={token ? dashboardContent : authContent} />
-        <Route path="/" element={token ? dashboardContent : authContent} />
-        <Route path="*" element={<Navigate replace to={token ? '/' : '/'} />} />
+        <Route path="/transactions" element={<TransactionsPage />} />
+        <Route path="/approvals" element={<ApprovalsPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/ai" element={<AISearchPage />} />
+        <Route path="/finance" element={<FinancePage />} />
+        <Route path="/team" element={<TeamPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="*" element={<Navigate replace to="/" />} />
       </Routes>
+    </AppShell>
+  );
+
+  const renderUnauthenticatedRoutes = () => (
+    <Routes>
+      <Route path="/telegram-login" element={authContent} />
+      <Route path="/" element={authContent} />
+      <Route path="*" element={<Navigate replace to="/" />} />
+    </Routes>
+  );
+
+  return (
+    <main className={isDashboardSurface ? 'app app-dashboard' : 'app'}>
+      {token ? renderAuthenticatedRoutes() : renderUnauthenticatedRoutes()}
     </main>
   );
 }

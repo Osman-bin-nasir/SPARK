@@ -13,4 +13,8 @@ router.use(requireAuth, requireOrganizationMembership, requireOrganizationRole([
 router.get('/team', organizationController.getTeam);
 router.post('/team/join-code/regenerate', organizationController.regenerateJoinCode);
 
+router.post('/team/members', organizationController.addMember);
+router.delete('/team/members/:userId', organizationController.removeMember);
+router.patch('/team/members/:userId/role', organizationController.updateMemberRole);
+
 module.exports = router;

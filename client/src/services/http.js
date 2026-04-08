@@ -147,3 +147,19 @@ export async function put(path, body, options = {}) {
     body: JSON.stringify(body)
   });
 }
+
+export async function patch(path, body, options = {}) {
+  return request(path, {
+    ...options,
+    method: 'PATCH',
+    body: JSON.stringify(body)
+  });
+}
+
+export async function del(path, options = {}) {
+  return request(path, {
+    ...options,
+    method: 'DELETE',
+    contentType: false
+  });
+}

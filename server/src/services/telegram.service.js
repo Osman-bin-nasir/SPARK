@@ -38,7 +38,8 @@ async function joinOrganizationByCode({ telegramId, joinCode }) {
 
   if (!user) {
     const loginResult = await authService.createTelegramLogin({
-      telegram_id: normalizedTelegramId
+      telegram_id: normalizedTelegramId,
+      organization_id: organization.id
     });
 
     return {

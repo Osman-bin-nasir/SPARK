@@ -14,5 +14,10 @@ export const endpoints = {
   googleDriveStatus: '/google-drive/status',
   googleDriveConnectUrl: '/google-drive/connect-url',
   organizationsTeam: '/organizations/team',
-  organizationsRegenerateJoinCode: '/organizations/team/join-code/regenerate'
+  organizationsRegenerateJoinCode: '/organizations/team/join-code/regenerate',
+  organizationsTeamMembers: '/organizations/team/members',
+  transactions: '/transactions',
+  performance: '/performance',
+  semanticSearch: '/semantic-search',
+  ragAnswer: '/rag/answer'
 };

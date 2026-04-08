@@ -1,4 +1,5 @@
 const organizationsRepository = require('../db/organizations.repository');
+const usersRepository = require('../db/users.repository');
 const { env } = require('../config/env');
 const { HttpError } = require('../utils/http-error');
 
@@ -48,7 +49,43 @@ async function regenerateOrganizationJoinCode({ organizationId }) {
   };
 }
 
+async function addMemberByEmail({ organizationId, email, role }) {
+  const user = await usersRepository.findUserByEmail(email);
+  if (!user) {
+    throw new HttpError(404, 'User not found. They must create an account first.');
+  }
+  
+  const result = await organizationsRepository.addOrganizationMember({
+    organizationId,
+    userId: user.id,
+    role
+  });
+  
+  return result.membership;
+}
+
+async function removeMember({ organizationId, targetUserId }) {
+  return organizationsRepository.removeOrganizationMember({ organizationId, userId: targetUserId });
+}
+
+async function updateMemberRole({ organizationId, targetUserId, role }) {
+  const membership = await organizationsRepository.updateOrganizationMemberRole({ 
+    organizationId, 
+    userId: targetUserId, 
+    role 
+  });
+  
+  if (!membership) {
+    throw new HttpError(404, 'Membership not found');
+  }
+  
+  return membership;
+}
+
 module.exports = {
   getOrganizationTeam,
-  regenerateOrganizationJoinCode
+  regenerateOrganizationJoinCode,
+  addMemberByEmail,
+  removeMember,
+  updateMemberRole
 };

@@ -41,8 +41,22 @@ async function updateTransaction(req, res, next) {
   }
 }
 
+async function createTransaction(req, res, next) {
+  try {
+    const result = await transactionService.createTransaction({
+      organizationId: req.organization.id,
+      userId: req.auth.userId,
+      payload: req.body
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getTransaction,
   listTransactions,
-  updateTransaction
+  updateTransaction,
+  createTransaction
 };
