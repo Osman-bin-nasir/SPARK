@@ -34,10 +34,12 @@ function resolveActiveOrganizationId(user) {
   return organizations[0]?.id || '';
 }
 
-export default function TransactionsPage() {
-  const token = localStorage.getItem('token') || '';
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
-  const organizationId = resolveActiveOrganizationId(user);
+export default function TransactionsPage({ activeOrganizationId, token: tokenProp, user: userProp, userSettings }) {
+  const token = tokenProp || localStorage.getItem('token') || '';
+  const user = userProp || JSON.parse(localStorage.getItem('user') || 'null');
+  const organizationId = activeOrganizationId || resolveActiveOrganizationId(user);
+  const pageSize = Number(userSettings?.transactions_page_size) || 50;
+  const preferredSheetRange = userSettings?.default_google_sheet_range || '1m';
   const authHeaders = {
     token,
     headers: organizationId ? { 'X-Organization-Id': organizationId } : {}
@@ -54,7 +56,7 @@ export default function TransactionsPage() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
-  const [sheetRange, setSheetRange] = useState('1m');
+  const [sheetRange, setSheetRange] = useState(preferredSheetRange);
   const [sheetSyncing, setSheetSyncing] = useState(false);
   const [sheetError, setSheetError] = useState('');
   const [sheetInfo, setSheetInfo] = useState(null);
@@ -69,6 +71,14 @@ export default function TransactionsPage() {
     setSheetError('');
     setSheetInfo(null);
   }, [organizationId]);
+
+  useEffect(() => {
+    setSheetRange(preferredSheetRange);
+  }, [preferredSheetRange]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [pageSize]);
 
   const fetchTransactions = async () => {
     if (!token || !organizationId) {
@@ -89,7 +99,7 @@ export default function TransactionsPage() {
     try {
       const params = new URLSearchParams({
         page,
-        pageSize: 50,
+        pageSize,
         ...(filters.status && { status: filters.status }),
         ...(filters.vendor && { vendor: filters.vendor })
       });
@@ -106,7 +116,7 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     fetchTransactions();
-  }, [organizationId, page, filters]);
+  }, [filters, organizationId, page, pageSize]);
 
   const handleExpand = async (id) => {
     if (expandedId === id) {
@@ -406,10 +416,10 @@ export default function TransactionsPage() {
           </tbody>
         </table>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderTop: '1px solid var(--border)' }}>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Showing page {page}</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Showing page {page} · {pageSize} rows</span>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button className="premium-btn" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</button>
-            <button className="premium-btn" disabled={transactions.length < 50} onClick={() => setPage(page + 1)}>Next</button>
+            <button className="premium-btn" disabled={transactions.length < pageSize} onClick={() => setPage(page + 1)}>Next</button>
           </div>
         </div>
       </div>

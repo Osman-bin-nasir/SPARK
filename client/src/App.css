@@ -87,6 +87,14 @@ body::before {
   display: none;
 }
 
+.reduced-motion *,
+.reduced-motion *::before,
+.reduced-motion *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
 .app {
   position: relative;
   min-height: 100vh;

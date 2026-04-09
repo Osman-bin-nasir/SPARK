@@ -14,6 +14,12 @@ import TeamPage from './pages/Team';
 import SettingsPage from './pages/Settings';
 import { post } from './services/http';
 import { endpoints } from './services/endpoints';
+import {
+  getUserSettings,
+  getUserSettingsEventName,
+  getUserSettingsStorageKey,
+  persistUserSettings
+} from './lib/user-settings';
 
 const TELEGRAM_TOKEN_STORAGE_KEY = 'spark.telegram-link-token';
 const DashboardPage = lazy(() => import('./features/dashboard/dashboard.page'));
@@ -73,8 +79,10 @@ function App() {
   const initialToken = localStorage.getItem('token') || '';
   const initialTelegramToken = getPendingTelegramToken();
   const initialUser = getStoredUser();
+  const initialUserSettings = getUserSettings(initialUser);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [user, setUser] = useState(initialUser);
+  const [userSettings, setUserSettings] = useState(initialUserSettings);
   const [preferredOrganization, setPreferredOrganization] = useState(() => ({
     userId: initialUser?.id || '',
     organizationId: getStoredOrganizationPreference(initialUser)
@@ -86,11 +94,11 @@ function App() {
   const [status, setStatus] = useState(
     initialTelegramToken ? 'Finish signup or login to link your Telegram account.' : ''
   );
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    // Default to light mode as requested by prompt "default: LIGHT mode"
-    return saved === 'dark';
-  });
+  const isDarkMode = userSettings.theme_mode === 'dark';
+
+  useEffect(() => {
+    setUserSettings(getUserSettings(user));
+  }, [user?.id]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -100,9 +108,57 @@ function App() {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
     }
-  }, [isDarkMode]);
 
-  const toggleTheme = () => setIsDarkMode(prev => !prev);
+    document.documentElement.dataset.density = userSettings.interface_density;
+    document.documentElement.dataset.contentWidth = userSettings.content_width;
+    document.documentElement.classList.toggle('reduced-motion', userSettings.reduce_motion);
+  }, [
+    isDarkMode,
+    userSettings.content_width,
+    userSettings.interface_density,
+    userSettings.reduce_motion
+  ]);
+
+  useEffect(() => {
+    const handleUserSettingsUpdate = (event) => {
+      if (event.detail?.userId && event.detail.userId === user?.id) {
+        setUserSettings(event.detail.settings || getUserSettings(user));
+      }
+    };
+
+    const handleStorage = (event) => {
+      const settingsKey = getUserSettingsStorageKey(user?.id);
+
+      if (!settingsKey || event.key !== settingsKey) {
+        return;
+      }
+
+      setUserSettings(getUserSettings(user));
+    };
+
+    window.addEventListener(getUserSettingsEventName(), handleUserSettingsUpdate);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener(getUserSettingsEventName(), handleUserSettingsUpdate);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [user]);
+
+  function updateUserSettings(partialSettings) {
+    const nextSettings = persistUserSettings(user, {
+      ...userSettings,
+      ...partialSettings
+    });
+
+    setUserSettings(nextSettings);
+  }
+
+  const toggleTheme = () => {
+    updateUserSettings({
+      theme_mode: isDarkMode ? 'light' : 'dark'
+    });
+  };
 
   const telegramMode = Boolean(pendingTelegramToken);
   const preferredOrganizationId = preferredOrganization.userId === user?.id
@@ -266,6 +322,7 @@ function App() {
   function handleLogout() {
     setToken('');
     setUser(null);
+    setUserSettings(getUserSettings(null));
     setPreferredOrganization({ userId: '', organizationId: '' });
     setStatus(pendingTelegramToken ? 'Finish signup or login to link your Telegram account.' : '');
     localStorage.removeItem('token');
@@ -323,6 +380,8 @@ function App() {
       onSelectOrganization={handleSelectOrganization}
       onLogout={handleLogout}
       isDarkMode={isDarkMode}
+      showTopbarSearch={userSettings.show_topbar_search}
+      contentWidth={userSettings.content_width}
       toggleTheme={toggleTheme}
     >
       <Routes>
@@ -341,13 +400,44 @@ function App() {
             />
           }
         />
-        <Route path="/transactions" element={<TransactionsPage />} />
+        <Route
+          path="/transactions"
+          element={
+            <TransactionsPage
+              activeOrganizationId={activeOrganizationId}
+              token={token}
+              user={user}
+              userSettings={userSettings}
+            />
+          }
+        />
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/ai" element={<AISearchPage />} />
-        <Route path="/finance" element={<FinancePage />} />
+        <Route
+          path="/finance"
+          element={
+            <FinancePage
+              activeOrganizationId={activeOrganizationId}
+              token={token}
+              user={user}
+            />
+          }
+        />
         <Route path="/team" element={<TeamPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route
+          path="/settings"
+          element={
+            <SettingsPage
+              user={user}
+              activeOrganizationId={activeOrganizationId}
+              organizations={user?.organizations || []}
+              onSelectOrganization={handleSelectOrganization}
+              userSettings={userSettings}
+              onUpdateUserSettings={updateUserSettings}
+            />
+          }
+        />
         <Route path="*" element={<Navigate replace to="/" />} />
       </Routes>
     </AppShell>

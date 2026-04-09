@@ -233,52 +233,54 @@ export default function TeamPage() {
           <div className="premium-card-header">
             <h3 className="premium-card-title">Invite New Member</h3>
           </div>
-          <form onSubmit={handleAddMember} style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 260px' }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                Email Address
-              </label>
-              <input
-                className="premium-input"
-                type="email"
-                placeholder="teammate@example.com"
-                value={addEmail}
-                onChange={e => { setAddEmail(e.target.value); setAddError(''); }}
-                style={{ width: '100%' }}
-                disabled={adding}
-                required
-              />
-            </div>
-            <div style={{ flex: '0 0 150px' }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                Role
-              </label>
-              <select
-                className="premium-input"
-                value={addRole}
-                onChange={e => setAddRole(e.target.value)}
-                disabled={adding}
-                style={{ width: '100%' }}
-              >
-                {ROLES.map(r => <option key={r} value={r} style={{ textTransform: 'capitalize' }}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
-              </select>
-            </div>
-            <div style={{ padding: '0 0 1px' }}>
-              <button
-                type="submit"
-                disabled={adding || !addEmail.trim()}
-                style={{ whiteSpace: 'nowrap', opacity: adding ? 0.7 : 1 }}
-              >
-                {adding ? 'Adding…' : '+ Add Member'}
-              </button>
-            </div>
-          </form>
-          {addError && (
-            <p style={{ marginTop: '10px', color: '#ef4444', fontSize: '0.85rem', margin: '10px 0 0' }}>{addError}</p>
-          )}
-          <p style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 0 }}>
-            The user must already have a SPARK account. New members can join via their Telegram invite link too.
-          </p>
+          <div style={{ padding: '22px 24px 24px' }}>
+            <form onSubmit={handleAddMember} style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 260px' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  Email Address
+                </label>
+                <input
+                  className="premium-input"
+                  type="email"
+                  placeholder="teammate@example.com"
+                  value={addEmail}
+                  onChange={e => { setAddEmail(e.target.value); setAddError(''); }}
+                  style={{ width: '100%' }}
+                  disabled={adding}
+                  required
+                />
+              </div>
+              <div style={{ flex: '0 0 150px' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  Role
+                </label>
+                <select
+                  className="premium-input"
+                  value={addRole}
+                  onChange={e => setAddRole(e.target.value)}
+                  disabled={adding}
+                  style={{ width: '100%' }}
+                >
+                  {ROLES.map(r => <option key={r} value={r} style={{ textTransform: 'capitalize' }}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+                </select>
+              </div>
+              <div style={{ padding: '0 0 1px' }}>
+                <button
+                  type="submit"
+                  disabled={adding || !addEmail.trim()}
+                  style={{ whiteSpace: 'nowrap', opacity: adding ? 0.7 : 1, padding: '0 18px' }}
+                >
+                  {adding ? 'Adding…' : '+ Add Member'}
+                </button>
+              </div>
+            </form>
+            {addError && (
+              <p style={{ marginTop: '10px', color: '#ef4444', fontSize: '0.85rem', margin: '10px 0 0' }}>{addError}</p>
+            )}
+            <p style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 0 }}>
+              The user must already have a SPARK account. New members can join via their Telegram invite link too.
+            </p>
+          </div>
         </div>
       )}
 

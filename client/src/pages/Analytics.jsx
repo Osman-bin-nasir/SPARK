@@ -50,6 +50,8 @@ export default function AnalyticsPage() {
           .timeframe-btn.active { background: var(--border); color: var(--text-primary); }
           .metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 32px; }
           .chart-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 32px; }
+          .analytics-metric-card { padding: 22px 24px; }
+          .analytics-chart-body { padding: 20px 22px 22px; }
           @media (max-width: 1024px) { .chart-grid { grid-template-columns: 1fr; } .metrics-row { grid-template-columns: repeat(2, 1fr); } }
         `}
       </style>
@@ -68,22 +70,22 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="metrics-row">
-        <div className="premium-card">
+        <div className="premium-card analytics-metric-card">
           <span className="premium-label">Total Spend</span>
           <h3 className="premium-metric" style={{ fontSize: '2rem' }}>${Number(data.summary?.total_expense || 0).toLocaleString()}</h3>
           <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0', fontSize: '0.8rem' }}>vs previous period</p>
         </div>
-        <div className="premium-card">
+        <div className="premium-card analytics-metric-card">
           <span className="premium-label">Avg Monthly Burn</span>
           <h3 className="premium-metric" style={{ fontSize: '2rem' }}>${Number((data.summary?.total_expense || 0)/(data.monthly_breakdown?.length || 6)).toLocaleString(undefined, {maximumFractionDigits:0})}</h3>
           <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0', fontSize: '0.8rem' }}>Based on active months</p>
         </div>
-        <div className="premium-card">
+        <div className="premium-card analytics-metric-card">
           <span className="premium-label">Top Category</span>
           <h3 className="premium-metric" style={{ fontSize: '1.5rem', marginTop: '8px' }}>{data.category_breakdown?.[0]?.category || 'N/A'}</h3>
           <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0', fontSize: '0.8rem' }}>{Math.round(((data.category_breakdown?.[0]?.total_expense || 0) / (data.summary?.total_expense || 1)) * 100)}% of total</p>
         </div>
-        <div className="premium-card">
+        <div className="premium-card analytics-metric-card">
           <span className="premium-label">Transaction Count</span>
           <h3 className="premium-metric" style={{ fontSize: '2rem' }}>{data.summary?.transaction_count || 0}</h3>
           <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0', fontSize: '0.8rem' }}>Processed successfully</p>
@@ -95,7 +97,7 @@ export default function AnalyticsPage() {
           <div className="premium-card-header">
              <h3 className="premium-card-title">Spend Trend</h3>
           </div>
-          <div style={{ height: '300px', width: '100%' }}>
+          <div className="analytics-chart-body" style={{ height: '300px', width: '100%' }}>
             <ResponsiveContainer>
               <AreaChart data={data.monthly_breakdown || []}>
                 <defs>
@@ -121,7 +123,7 @@ export default function AnalyticsPage() {
           <div className="premium-card-header">
              <h3 className="premium-card-title">By Category</h3>
           </div>
-          <div style={{ height: '300px', width: '100%' }}>
+          <div className="analytics-chart-body" style={{ height: '300px', width: '100%' }}>
             <ResponsiveContainer>
               <BarChart data={data.category_breakdown || []} layout="vertical" margin={{ left: 20 }}>
                 <XAxis type="number" hide />
