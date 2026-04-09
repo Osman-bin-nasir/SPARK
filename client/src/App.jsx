@@ -8,7 +8,6 @@ import AppShell from './components/layout/app-shell';
 import TransactionsPage from './pages/Transactions';
 import ApprovalsPage from './pages/Approvals';
 import AnalyticsPage from './pages/Analytics';
-import AISearchPage from './pages/AISearch';
 import FinancePage from './pages/Finance';
 import TeamPage from './pages/Team';
 import SettingsPage from './pages/Settings';
@@ -413,7 +412,6 @@ function App() {
         />
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
-        <Route path="/ai" element={<AISearchPage />} />
         <Route
           path="/finance"
           element={

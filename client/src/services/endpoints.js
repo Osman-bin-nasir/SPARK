@@ -8,6 +8,8 @@ export const endpoints = {
   login: '/auth/login',
   refresh: '/auth/refresh',
   linkTelegram: '/auth/link-telegram',
+  aiAnswer: '/ai/answer',
+  aiQuery: '/ai/query',
   dashboard: '/dashboard',
   dashboardConfig: '/dashboard/config',
   dashboardBudgets: '/dashboard/budgets',
