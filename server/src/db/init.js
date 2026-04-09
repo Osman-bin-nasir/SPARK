@@ -70,10 +70,12 @@ async function initDb() {
       refresh_token_iv           BYTEA NOT NULL,
       refresh_token_tag          BYTEA NOT NULL,
       drive_root_folder_id       TEXT NOT NULL UNIQUE,
+      transactions_sheet_id      TEXT,
       created_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await pool.query('ALTER TABLE google_integrations ADD COLUMN IF NOT EXISTS transactions_sheet_id TEXT;');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS finance_settings (

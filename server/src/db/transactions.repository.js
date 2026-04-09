@@ -315,6 +315,43 @@ async function listTransactions(
   };
 }
 
+async function listTransactionsForGoogleSheet(
+  {
+    organizationId,
+    startDate
+  },
+  client = pool
+) {
+  const params = [organizationId];
+  const filters = ['organization_id = $1'];
+
+  if (startDate) {
+    params.push(startDate);
+    filters.push(`transaction_date >= $${params.length}`);
+  }
+
+  const { rows } = await client.query(
+    `SELECT id,
+            organization_id,
+            amount,
+            vendor,
+            transaction_type,
+            category,
+            transaction_date,
+            confidence_score,
+            duplicate_of_transaction_id,
+            duplicate_score,
+            status,
+            created_at
+     FROM transactions
+     WHERE ${filters.join(' AND ')}
+     ORDER BY transaction_date DESC, created_at DESC`,
+    params
+  );
+
+  return rows.map(mapTransactionRow);
+}
+
 async function findTransactionsBySimilarity(
   {
     organizationId,
@@ -780,6 +817,7 @@ module.exports = {
   insertTransactionWithDocumentAndJobs,
   listPotentialDuplicateCandidates,
   listTransactions,
+  listTransactionsForGoogleSheet,
   mapTransactionRow,
   markEmbeddingJobCompleted,
   markEmbeddingJobFailed,

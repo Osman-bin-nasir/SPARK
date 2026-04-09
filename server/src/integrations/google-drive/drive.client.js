@@ -4,7 +4,13 @@ const { assertGoogleDriveEnv, env } = require('../../config/env');
 const { HttpError } = require('../../utils/http-error');
 
 const GOOGLE_DRIVE_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
+const GOOGLE_SHEETS_MIME_TYPE = 'application/vnd.google-apps.spreadsheet';
 const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const GOOGLE_SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+
+function getGoogleApiStatus(error) {
+  return error?.code || error?.status || error?.response?.status || null;
+}
 
 function escapeDriveQueryValue(value) {
   return String(value || '')
@@ -41,7 +47,7 @@ function buildAuthUrl(state) {
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
-    scope: [GOOGLE_DRIVE_SCOPE],
+    scope: [GOOGLE_DRIVE_SCOPE, GOOGLE_SHEETS_SCOPE],
     state
   });
 }
@@ -139,6 +145,97 @@ async function uploadFile({
   };
 }
 
+async function createSpreadsheetFile({
+  drive,
+  parentFolderId,
+  title
+}) {
+  const response = await drive.files.create({
+    requestBody: {
+      name: title,
+      mimeType: GOOGLE_SHEETS_MIME_TYPE,
+      parents: [parentFolderId]
+    },
+    fields: 'id, name, webViewLink'
+  });
+
+  return {
+    id: response.data.id,
+    name: response.data.name,
+    web_view_link: response.data.webViewLink || ''
+  };
+}
+
+async function getFileMetadata(drive, fileId) {
+  try {
+    const response = await drive.files.get({
+      fileId,
+      fields: 'id, name, mimeType, webViewLink, trashed'
+    });
+
+    return {
+      id: response.data.id,
+      name: response.data.name,
+      mime_type: response.data.mimeType,
+      web_view_link: response.data.webViewLink || '',
+      trashed: Boolean(response.data.trashed)
+    };
+  } catch (error) {
+    if (getGoogleApiStatus(error) === 404) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+async function ensureFileEditors({ drive, fileId, emails, role = 'writer' }) {
+  const uniqueEmails = Array.from(new Set(
+    (emails || [])
+      .map((email) => String(email || '').trim().toLowerCase())
+      .filter(Boolean)
+  ));
+
+  if (!uniqueEmails.length) {
+    return;
+  }
+
+  const permissionsResponse = await drive.permissions.list({
+    fileId,
+    fields: 'permissions(id, emailAddress, role)'
+  });
+
+  const existingEmails = new Set(
+    (permissionsResponse.data.permissions || [])
+      .map((permission) => String(permission.emailAddress || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  await Promise.all(uniqueEmails.map(async (email) => {
+    if (existingEmails.has(email)) {
+      return;
+    }
+
+    try {
+      await drive.permissions.create({
+        fileId,
+        sendNotificationEmail: false,
+        requestBody: {
+          role,
+          type: 'user',
+          emailAddress: email
+        }
+      });
+    } catch (error) {
+      if (getGoogleApiStatus(error) === 409) {
+        return;
+      }
+
+      throw error;
+    }
+  }));
+}
+
 async function deleteFile(drive, fileId) {
   await drive.files.delete({ fileId });
 }
@@ -181,12 +278,15 @@ async function resolveGoogleEmail({ oauth2Client, drive, tokens }) {
 module.exports = {
   buildAuthUrl,
   createDriveClient,
+  createSpreadsheetFile,
   createOAuthClient,
   downloadFile,
   deleteFile,
   ensureFolderPath,
+  ensureFileEditors,
   ensureSparkOrganizationRootFolder,
   exchangeCodeForTokens,
+  getFileMetadata,
   resolveGoogleEmail,
   uploadFile
 };

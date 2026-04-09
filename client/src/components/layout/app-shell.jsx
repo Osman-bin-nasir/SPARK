@@ -10,18 +10,26 @@ export default function AppShell({
   onSelectOrganization,
   onLogout,
   isDarkMode,
+  showTopbarSearch,
+  contentWidth,
   toggleTheme
 }) {
   return (
-    <div className="app-layout">
+    <div className={`app-layout ${contentWidth === 'wide' ? 'app-layout--wide' : ''}`}>
       <Sidebar />
       <div className="app-main">
         <header className="topbar">
           <div className="topbar-left">
-            <div className="topbar-search">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" placeholder="Search..." />
-            </div>
+            {showTopbarSearch ? (
+              <div className="topbar-search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" placeholder="Search..." />
+              </div>
+            ) : (
+              <div className="topbar-search-placeholder">
+                Workspace controls are managed from Settings.
+              </div>
+            )}
           </div>
           <div className="topbar-right">
             {organizations && organizations.length > 0 && (
@@ -49,7 +57,7 @@ export default function AppShell({
           </div>
         </header>
         <main className="content-wrapper">
-          <div className="content-container">
+          <div className={`content-container ${contentWidth === 'wide' ? 'content-container--wide' : ''}`}>
             {children}
           </div>
         </main>

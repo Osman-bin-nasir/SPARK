@@ -31,11 +31,79 @@ const EMPTY_FORM = {
   notes: '',
 };
 
-export default function FinancePage() {
-  const token = localStorage.getItem('token') || '';
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
-  const organizationId = user?.organizations?.[0]?.id || '';
-  const authHeaders = { token, headers: { 'X-Organization-Id': organizationId } };
+const FINANCE_QUERY_STOP_WORDS = new Set([
+  'a', 'about', 'all', 'an', 'and', 'any', 'are', 'did', 'do', 'for', 'from', 'get',
+  'how', 'i', 'in', 'is', 'last', 'me', 'much', 'on', 'our', 'show', 'spent', 'spend',
+  'tell', 'the', 'to', 'transaction', 'transactions', 'we', 'what'
+]);
+
+const COMPANY_SUFFIX_TOKENS = new Set([
+  'co', 'company', 'corp', 'corporation', 'group', 'inc', 'incorporated', 'international',
+  'lab', 'labs', 'limited', 'ltd', 'llc', 'services', 'software', 'solution', 'solutions',
+  'system', 'systems', 'tech', 'technologies', 'technology'
+]);
+
+function getOrganizationPreferenceKey(userId) {
+  return userId ? `spark.active-organization.${userId}` : '';
+}
+
+function resolveActiveOrganizationId(user) {
+  const organizations = Array.isArray(user?.organizations) ? user.organizations : [];
+
+  if (!organizations.length) {
+    return '';
+  }
+
+  const preferredOrganizationId = localStorage.getItem(getOrganizationPreferenceKey(user?.id)) || '';
+
+  if (preferredOrganizationId && organizations.some((item) => item.id === preferredOrganizationId)) {
+    return preferredOrganizationId;
+  }
+
+  if (user?.default_organization_id && organizations.some((item) => item.id === user.default_organization_id)) {
+    return user.default_organization_id;
+  }
+
+  return organizations[0]?.id || '';
+}
+
+function extractKeywordQuery(input) {
+  const normalized = String(input || '')
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((token) => !FINANCE_QUERY_STOP_WORDS.has(token));
+
+  return normalized.join(' ').trim();
+}
+
+function buildFinanceSearchCandidates(rawQuestion) {
+  const normalizedQuestion = String(rawQuestion || '').trim();
+  const derivedQuery = extractKeywordQuery(normalizedQuestion) || normalizedQuestion.toLowerCase();
+  const derivedTokens = derivedQuery.split(/\s+/).filter(Boolean);
+  const narrowedQuery = derivedTokens
+    .filter((token) => !COMPANY_SUFFIX_TOKENS.has(token))
+    .join(' ')
+    .trim();
+  const firstToken = derivedTokens[0] || '';
+  const candidateQueries = [
+    derivedQuery,
+    narrowedQuery,
+    firstToken,
+    normalizedQuestion
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+
+  return Array.from(new Set(candidateQueries));
+}
+
+export default function FinancePage({ activeOrganizationId, token: tokenProp, user: userProp }) {
+  const token = tokenProp || localStorage.getItem('token') || '';
+  const user = userProp || JSON.parse(localStorage.getItem('user') || 'null');
+  const organizationId = activeOrganizationId || resolveActiveOrganizationId(user);
+  const authHeaders = { token, headers: organizationId ? { 'X-Organization-Id': organizationId } : {} };
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
@@ -48,6 +116,10 @@ export default function FinancePage() {
   // Totals
   const [incomeTotal, setIncomeTotal] = useState(0);
   const [expenseTotal, setExpenseTotal] = useState(0);
+  const [financeQuestion, setFinanceQuestion] = useState('');
+  const [financeSearchResult, setFinanceSearchResult] = useState(null);
+  const [financeSearchLoading, setFinanceSearchLoading] = useState(false);
+  const [financeSearchError, setFinanceSearchError] = useState('');
 
   const fetchRecent = useCallback(async () => {
     if (!token || !organizationId) { setLoadingRecent(false); return; }
@@ -68,6 +140,61 @@ export default function FinancePage() {
   }, [token, organizationId]);
 
   useEffect(() => { fetchRecent(); }, [fetchRecent]);
+
+  async function handleFinanceSearch(event) {
+    event.preventDefault();
+
+    const rawQuestion = financeQuestion.trim();
+    const candidateQueries = buildFinanceSearchCandidates(rawQuestion);
+
+    if (!candidateQueries.length || !token || !organizationId) {
+      return;
+    }
+
+    setFinanceSearchLoading(true);
+    setFinanceSearchError('');
+
+    try {
+      let result = null;
+      let matchedQuery = candidateQueries[0];
+
+      for (const candidateQuery of candidateQueries) {
+        const response = await post(
+          endpoints.ragAnswer,
+          {
+            query: candidateQuery,
+            retrieval_mode: 'hybrid',
+            answer_mode: 'deterministic',
+            top_k: 8,
+            min_similarity: 0.25,
+            min_lexical_score: 0,
+            include_pending_review: true
+          },
+          authHeaders
+        );
+
+        result = response;
+        matchedQuery = candidateQuery;
+
+        if ((response.stats?.total_matches || 0) > 0) {
+          break;
+        }
+      }
+
+      setFinanceSearchResult({
+        ...(result || {}),
+        original_question: rawQuestion,
+        derived_query: candidateQueries[0],
+        matched_query: matchedQuery,
+        attempted_queries: candidateQueries
+      });
+    } catch (requestError) {
+      setFinanceSearchResult(null);
+      setFinanceSearchError(requestError.message || 'Unable to search transactions right now.');
+    } finally {
+      setFinanceSearchLoading(false);
+    }
+  }
 
   function handleFieldChange(field, value) {
     setForm(prev => {
@@ -137,6 +264,118 @@ export default function FinancePage() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="premium-card" style={{ marginBottom: '28px' }}>
+        <div className="premium-card-header">
+          <h3 className="premium-card-title">Finance Search</h3>
+        </div>
+        <div style={{ padding: '24px' }}>
+          <p style={{ margin: '0 0 16px', color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.6 }}>
+            Ask in plain English or just type a vendor name. The page now distills the prompt into keywords and searches with company names like `adobe systems`, `aws`, or other relevant terms.
+          </p>
+
+          <form onSubmit={handleFinanceSearch} style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              value={financeQuestion}
+              onChange={(event) => {
+                setFinanceQuestion(event.target.value);
+                setFinanceSearchError('');
+              }}
+              placeholder="e.g. how much did we spend on adobe systems"
+              style={{ ...inputStyle, flex: '1 1 420px' }}
+            />
+            <button
+              type="submit"
+              disabled={financeSearchLoading || !financeQuestion.trim()}
+              style={{ whiteSpace: 'nowrap', padding: '0 18px' }}
+            >
+              {financeSearchLoading ? 'Searching…' : 'Search Finance'}
+            </button>
+          </form>
+
+          {financeSearchError && (
+            <div style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '7px', background: 'var(--error-bg, rgba(239,68,68,0.1))', border: '1px solid var(--error-border, rgba(239,68,68,0.3))', color: 'var(--error-text, #ef4444)', fontSize: '0.875rem' }}>
+              {financeSearchError}
+            </div>
+          )}
+
+          {financeSearchResult && !financeSearchLoading && (
+            <div style={{ marginTop: '18px', display: 'grid', gap: '16px' }}>
+              <div style={{ padding: '16px 18px', borderRadius: '12px', border: '1px solid var(--border)', background: 'var(--panel-soft)' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                    Search Query
+                  </span>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--accent-blue)', fontWeight: 600 }}>
+                    {financeSearchResult.derived_query}
+                  </span>
+                  {financeSearchResult.matched_query && financeSearchResult.matched_query !== financeSearchResult.derived_query ? (
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      matched using {financeSearchResult.matched_query}
+                    </span>
+                  ) : null}
+                </div>
+                <p style={{ margin: 0, color: 'var(--text-primary)', lineHeight: 1.7, fontSize: '0.95rem' }}>
+                  {financeSearchResult.answer}
+                </p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px' }}>
+                <div className="premium-card" style={{ padding: '16px 18px' }}>
+                  <div style={{ fontSize: '0.74rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-secondary)', marginBottom: '6px' }}>Matches</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700 }}>{financeSearchResult.stats?.total_matches || 0}</div>
+                </div>
+                <div className="premium-card" style={{ padding: '16px 18px' }}>
+                  <div style={{ fontSize: '0.74rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-secondary)', marginBottom: '6px' }}>Total Amount</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700 }}>{formatCurrency(financeSearchResult.stats?.total_amount || 0)}</div>
+                </div>
+                <div className="premium-card" style={{ padding: '16px 18px' }}>
+                  <div style={{ fontSize: '0.74rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-secondary)', marginBottom: '6px' }}>Mode</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 700, textTransform: 'capitalize' }}>{financeSearchResult.generation_mode?.replace(/_/g, ' ') || 'deterministic'}</div>
+                </div>
+              </div>
+
+              <div className="premium-card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div className="premium-card-header">
+                  <h3 className="premium-card-title">Matching Transactions</h3>
+                </div>
+                {financeSearchResult.citations?.length ? (
+                  <div>
+                    {financeSearchResult.citations.map((item, index) => (
+                      <div
+                        key={`${item.transaction_id}-${index}`}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '16px',
+                          padding: '14px 22px',
+                          borderBottom: index < financeSearchResult.citations.length - 1 ? '1px solid var(--border)' : 'none'
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{item.vendor || 'Unknown Vendor'}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                            {item.category || 'Uncategorized'} · {formatDate(item.transaction_date)} · score {Number(item.similarity_score || 0).toFixed(2)}
+                          </div>
+                        </div>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', flexShrink: 0 }}>
+                          {formatCurrency(item.amount)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: '22px 24px', color: 'var(--text-secondary)' }}>
+                    No matching transactions were found for this keyword search.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'start' }}>

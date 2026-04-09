@@ -17,6 +17,7 @@ export const endpoints = {
   organizationsRegenerateJoinCode: '/organizations/team/join-code/regenerate',
   organizationsTeamMembers: '/organizations/team/members',
   transactions: '/transactions',
+  transactionsGoogleSheets: '/transactions/google-sheets',
   performance: '/performance',
   semanticSearch: '/semantic-search',
   ragAnswer: '/rag/answer'
