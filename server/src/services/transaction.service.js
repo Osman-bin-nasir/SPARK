@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { pool } = require('../db/pool');
 const transactionsRepository = require('../db/transactions.repository');
+const googleSheetsService = require('./google-sheets.service');
 const googleDriveService = require('./google-drive.service');
 const { HttpError } = require('../utils/http-error');
 
@@ -292,9 +293,19 @@ async function createTransaction({ organizationId, userId, payload }) {
   }
 }
 
+async function getTransactionsGoogleSheet({ organizationId, query }) {
+  const range = String(query.range || '1m').toLowerCase();
+
+  return googleSheetsService.getOrganizationTransactionsSheet({
+    organizationId,
+    selectedRangeKey: range
+  });
+}
+
 module.exports = {
   getTransactionDocument,
   getTransaction,
+  getTransactionsGoogleSheet,
   listTransactions,
   updateTransaction,
   createTransaction

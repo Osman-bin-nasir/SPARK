@@ -224,22 +224,36 @@ function IntegrationsPage({ activeOrganizationId, onBack, onLogout, onSelectOrga
         <div className="premium-card" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '24px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
-              <StatusBadge loading={false} connected={false} hoverText="Available Soon"
+              <StatusBadge loading={loading} connected={driveStatus.connected} hoverText={driveStatus.connected ? 'Ready in Transactions' : 'Needs Google Drive'}
                 icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none"><path fill="#0F9D58" d="M14.5 2H5C4.4 2 4 2.4 4 3v18c0 .6.4 1 1 1h14c.6 0 1-.4 1-1V7.5L14.5 2z"/><path fill="#000" fillOpacity=".2" d="M14.5 8h5.5l-5.5-6v6z"/><path fill="#fff" d="M8 12h8v2H8v-2zm0 4h8v2H8v-2zm0-8h5v2H8V8z"/></svg>}
               />
               <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text)' }}>Google Sheets Sync</h3>
             </div>
             <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              Automatically sync aggregated transaction data and budget variances into your dedicated Google Sheet.
+              Export organisation-specific transaction views into Google Sheets with dedicated `1M`, `3M`, `6M`, and `12M` tabs for high-volume browsing.
             </p>
           </div>
           <div style={{ padding: '16px 24px', flex: 1 }}>
-            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>This integration is not yet available. Stay tuned for updates.</p>
+            {driveStatus.connected ? (
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                Google Sheets is available from the Transactions page. Sheet edits stay in Sheets only and do not update database transactions.
+              </p>
+            ) : (
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                Connect Google Drive first so SPARK can create and sync the organisation&apos;s Google Sheet.
+              </p>
+            )}
           </div>
           <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', background: 'var(--panel-soft)' }}>
-            <button type="button" className="secondary-btn" disabled style={{ width: '100%', opacity: 0.55 }}>
-              Coming Soon
-            </button>
+            {!driveStatus.connected ? (
+              <button type="button" onClick={connectDrive} disabled={loading || !organizationId} style={{ width: '100%' }}>
+                Connect to Enable Sheets
+              </button>
+            ) : (
+              <button type="button" className="secondary-btn" disabled style={{ width: '100%' }}>
+                Open from Transactions
+              </button>
+            )}
           </div>
         </div>
 

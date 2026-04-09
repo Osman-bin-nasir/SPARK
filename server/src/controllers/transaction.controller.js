@@ -26,6 +26,19 @@ async function getTransaction(req, res, next) {
   }
 }
 
+async function getTransactionsGoogleSheet(req, res, next) {
+  try {
+    const result = await transactionService.getTransactionsGoogleSheet({
+      organizationId: req.organization.id,
+      query: req.query
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function getTransactionDocument(req, res, next) {
   try {
     const result = await transactionService.getTransactionDocument({
@@ -72,6 +85,7 @@ async function createTransaction(req, res, next) {
 module.exports = {
   getTransactionDocument,
   getTransaction,
+  getTransactionsGoogleSheet,
   listTransactions,
   updateTransaction,
   createTransaction

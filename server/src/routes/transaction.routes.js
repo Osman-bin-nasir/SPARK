@@ -11,6 +11,7 @@ const router = express.Router();
 router.use(requireAuth, requireOrganizationMembership);
 
 router.get('/', transactionController.listTransactions);
+router.get('/google-sheets', transactionController.getTransactionsGoogleSheet);
 router.post('/', requireOrganizationRole(['founder', 'admin']), transactionController.createTransaction);
 router.get('/:id/document', transactionController.getTransactionDocument);
 router.get('/:id', transactionController.getTransaction);
