@@ -416,21 +416,40 @@ export default function TeamPage() {
         )}
       </div>
 
-      {/* Join Code Section */}
-      {isFounder && orgInfo && (
+      {/* Join Link Section */}
+      {isFounder && orgInfo?.join_link && (
         <div className="premium-card" style={{ marginTop: '24px' }}>
           <div className="premium-card-header">
-            <h3 className="premium-card-title">Organization Join Code</h3>
+            <h3 className="premium-card-title">Telegram Join Link</h3>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0 0 16px' }}>
-            Share this code with teammates who want to join via Telegram or the join flow.
+            Share this link with teammates so they can open the bot and join your organization directly.
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <code style={{ padding: '10px 18px', borderRadius: '8px', background: 'var(--panel-soft)', border: '1px solid var(--border)', fontFamily: 'monospace', fontSize: '1rem', letterSpacing: '0.15em', fontWeight: 600 }}>
-              {orgInfo.join_code}
-            </code>
+            <a
+              href={orgInfo.join_link}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                maxWidth: '100%',
+                padding: '10px 18px',
+                borderRadius: '8px',
+                background: 'var(--panel-soft)',
+                border: '1px solid var(--border)',
+                color: '#6366f1',
+                textDecoration: 'none',
+                fontFamily: 'monospace',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                overflowWrap: 'anywhere'
+              }}
+            >
+              {orgInfo.join_link}
+            </a>
             <button
-              onClick={() => navigator.clipboard.writeText(orgInfo.join_code).then(() => setNotice('Join code copied!'))}
+              onClick={() => navigator.clipboard.writeText(orgInfo.join_link).then(() => setNotice('Telegram join link copied!'))}
               style={{ padding: '10px 18px', fontSize: '0.85rem', background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text-secondary)' }}
             >
               Copy

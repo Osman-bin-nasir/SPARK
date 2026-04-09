@@ -1,20 +1,66 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { get, patch } from '../services/http';
-import { endpoints } from '../services/endpoints';
+import { API_BASE_URL, endpoints } from '../services/endpoints';
 import { pageCache } from '../services/page-cache';
 
+function getOrganizationPreferenceKey(userId) {
+  return userId ? `spark.active-organization.${userId}` : '';
+}
+
+function resolveActiveOrganizationId(user) {
+  const organizations = Array.isArray(user?.organizations) ? user.organizations : [];
+
+  if (!organizations.length) {
+    return '';
+  }
+
+  const preferredOrganizationId = localStorage.getItem(getOrganizationPreferenceKey(user?.id)) || '';
+
+  if (preferredOrganizationId && organizations.some((item) => item.id === preferredOrganizationId)) {
+    return preferredOrganizationId;
+  }
+
+  if (user?.default_organization_id && organizations.some((item) => item.id === user.default_organization_id)) {
+    return user.default_organization_id;
+  }
+
+  return organizations[0]?.id || '';
+}
+
 export default function TransactionsPage() {
+  const token = localStorage.getItem('token') || '';
+  const user = JSON.parse(localStorage.getItem('user') || 'null');
+  const organizationId = resolveActiveOrganizationId(user);
+  const authHeaders = {
+    token,
+    headers: organizationId ? { 'X-Organization-Id': organizationId } : {}
+  };
+
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({ status: '', vendor: '' });
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState(null);
   const [expandedData, setExpandedData] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewError, setPreviewError] = useState('');
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
 
+  useEffect(() => () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+  }, [previewUrl]);
+
   const fetchTransactions = async () => {
-    const cacheQuery = JSON.stringify({ page, filters });
+    if (!token || !organizationId) {
+      setTransactions([]);
+      return;
+    }
+
+    const cacheQuery = JSON.stringify({ organizationId, page, filters });
     const cached = pageCache.get('transactions', cacheQuery);
 
     if (cached) {
@@ -31,7 +77,7 @@ export default function TransactionsPage() {
         ...(filters.status && { status: filters.status }),
         ...(filters.vendor && { vendor: filters.vendor })
       });
-      const res = await get(`${endpoints.transactions}?${params}`);
+      const res = await get(`${endpoints.transactions}?${params}`, authHeaders);
       
       pageCache.set('transactions', cacheQuery, res);
       setTransactions(res.items || []);
@@ -44,18 +90,56 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     fetchTransactions();
-  }, [page, filters]);
+  }, [organizationId, page, filters]);
 
   const handleExpand = async (id) => {
     if (expandedId === id) {
       setExpandedId(null);
+      setExpandedData(null);
+      setPreviewError('');
+      setLoadingPreview(false);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl('');
+      }
       return;
     }
+
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl('');
+    }
+
     setExpandedId(id);
     setExpandedData(null);
+    setPreviewError('');
     try {
-      const res = await get(`${endpoints.transactions}/${id}`);
+      const res = await get(`${endpoints.transactions}/${id}`, authHeaders);
       setExpandedData(res);
+
+      if (res.document) {
+        setLoadingPreview(true);
+        try {
+          const response = await fetch(`${API_BASE_URL}${endpoints.transactions}/${id}/document`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              ...(organizationId ? { 'X-Organization-Id': organizationId } : {})
+            }
+          });
+
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || 'Failed to load document preview.');
+          }
+
+          const blob = await response.blob();
+          setPreviewUrl(URL.createObjectURL(blob));
+        } catch (error) {
+          setPreviewError(error.message || 'Failed to load document preview.');
+        } finally {
+          setLoadingPreview(false);
+        }
+      }
     } catch (e) {
       console.error(e);
     }
@@ -68,7 +152,7 @@ export default function TransactionsPage() {
 
   const handleSave = async (id) => {
     try {
-      await patch(`${endpoints.transactions}/${id}`, editForm);
+      await patch(`${endpoints.transactions}/${id}`, editForm, authHeaders);
       setEditingId(null);
       // Bust namespace cache because edits change the list
       pageCache.bustNs('transactions');
@@ -203,7 +287,43 @@ export default function TransactionsPage() {
                             </div>
                             <div style={{ marginTop: '12px' }}>
                               <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px', textTransform: 'uppercase', marginBottom: '8px' }}>Raw Extracted Text</span>
-                              <div className="premium-ocr-pre">{expandedData.document?.extracted_text || 'No raw text available'}</div>
+                              <div className="premium-ocr-pre">
+                                {expandedData.document?.extracted_text || expandedData.document?.text_content || 'No raw text available'}
+                              </div>
+                            </div>
+                            <div style={{ marginTop: '12px' }}>
+                              <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px', textTransform: 'uppercase', marginBottom: '8px' }}>
+                                Source Document
+                              </span>
+                              {loadingPreview ? (
+                                <span style={{ color: 'var(--text-secondary)' }}>Loading document preview...</span>
+                              ) : previewError ? (
+                                <span style={{ color: 'var(--accent-red)' }}>{previewError}</span>
+                              ) : previewUrl && expandedData.document?.file_type?.startsWith('image/') ? (
+                                <img
+                                  src={previewUrl}
+                                  alt={expandedData.document?.original_name || 'Uploaded document'}
+                                  style={{ maxWidth: '100%', maxHeight: '480px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                                />
+                              ) : previewUrl && expandedData.document?.file_type === 'application/pdf' ? (
+                                <iframe
+                                  src={previewUrl}
+                                  title={expandedData.document?.original_name || 'Uploaded document'}
+                                  style={{ width: '100%', height: '480px', border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--bg)' }}
+                                />
+                              ) : previewUrl ? (
+                                <a
+                                  href={previewUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="premium-ghost-btn"
+                                  style={{ padding: 0 }}
+                                >
+                                  Open document
+                                </a>
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)' }}>No document preview available</span>
+                              )}
                             </div>
                           </div>
                         ) : <span style={{ color: 'var(--text-secondary)' }}>Loading secure payload...</span>}
