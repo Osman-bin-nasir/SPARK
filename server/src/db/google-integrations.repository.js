@@ -14,6 +14,7 @@ function mapIntegration(row) {
     refresh_token_iv: row.refresh_token_iv,
     refresh_token_tag: row.refresh_token_tag,
     drive_root_folder_id: row.drive_root_folder_id,
+    transactions_sheet_id: row.transactions_sheet_id,
     created_at: row.created_at,
     updated_at: row.updated_at
   };
@@ -29,6 +30,7 @@ async function findByOrganizationId(organizationId, client = pool) {
             refresh_token_iv,
             refresh_token_tag,
             drive_root_folder_id,
+            transactions_sheet_id,
             created_at,
             updated_at
      FROM google_integrations
@@ -48,7 +50,8 @@ async function upsertIntegration(
     refreshTokenCiphertext,
     refreshTokenIv,
     refreshTokenTag,
-    driveRootFolderId
+    driveRootFolderId,
+    transactionsSheetId = null
   },
   client = pool
 ) {
@@ -60,9 +63,10 @@ async function upsertIntegration(
        refresh_token_ciphertext,
        refresh_token_iv,
        refresh_token_tag,
-       drive_root_folder_id
+       drive_root_folder_id,
+       transactions_sheet_id
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (organization_id)
      DO UPDATE SET
        owner_user_id = EXCLUDED.owner_user_id,
@@ -71,6 +75,7 @@ async function upsertIntegration(
        refresh_token_iv = EXCLUDED.refresh_token_iv,
        refresh_token_tag = EXCLUDED.refresh_token_tag,
        drive_root_folder_id = EXCLUDED.drive_root_folder_id,
+       transactions_sheet_id = COALESCE(EXCLUDED.transactions_sheet_id, google_integrations.transactions_sheet_id),
        updated_at = NOW()
      RETURNING id,
                organization_id,
@@ -80,6 +85,7 @@ async function upsertIntegration(
                refresh_token_iv,
                refresh_token_tag,
                drive_root_folder_id,
+               transactions_sheet_id,
                created_at,
                updated_at`,
     [
@@ -89,8 +95,32 @@ async function upsertIntegration(
       refreshTokenCiphertext,
       refreshTokenIv,
       refreshTokenTag,
-      driveRootFolderId
+      driveRootFolderId,
+      transactionsSheetId
     ]
+  );
+
+  return mapIntegration(rows[0]);
+}
+
+async function setTransactionsSheetId({ organizationId, transactionsSheetId }, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE google_integrations
+     SET transactions_sheet_id = $2,
+         updated_at = NOW()
+     WHERE organization_id = $1
+     RETURNING id,
+               organization_id,
+               owner_user_id,
+               google_email,
+               refresh_token_ciphertext,
+               refresh_token_iv,
+               refresh_token_tag,
+               drive_root_folder_id,
+               transactions_sheet_id,
+               created_at,
+               updated_at`,
+    [organizationId, transactionsSheetId]
   );
 
   return mapIntegration(rows[0]);
@@ -99,5 +129,6 @@ async function upsertIntegration(
 module.exports = {
   findByOrganizationId,
   mapIntegration,
+  setTransactionsSheetId,
   upsertIntegration
 };

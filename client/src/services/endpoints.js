@@ -8,6 +8,17 @@ export const endpoints = {
   login: '/auth/login',
   refresh: '/auth/refresh',
   linkTelegram: '/auth/link-telegram',
+  dashboard: '/dashboard',
+  dashboardConfig: '/dashboard/config',
+  dashboardBudgets: '/dashboard/budgets',
   googleDriveStatus: '/google-drive/status',
-  googleDriveConnectUrl: '/google-drive/connect-url'
+  googleDriveConnectUrl: '/google-drive/connect-url',
+  organizationsTeam: '/organizations/team',
+  organizationsRegenerateJoinCode: '/organizations/team/join-code/regenerate',
+  organizationsTeamMembers: '/organizations/team/members',
+  transactions: '/transactions',
+  transactionsGoogleSheets: '/transactions/google-sheets',
+  performance: '/performance',
+  semanticSearch: '/semantic-search',
+  ragAnswer: '/rag/answer'
 };

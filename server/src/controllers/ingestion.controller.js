@@ -36,7 +36,7 @@ async function ingestDocument(req, res, next) {
       file
     });
 
-    res.status(201).json(result);
+    res.status(result.is_duplicate ? 200 : 201).json(result);
   } catch (error) {
     next(error);
   }
@@ -49,7 +49,7 @@ async function ingestText(req, res, next) {
       payload: req.body
     });
 
-    res.status(201).json(result);
+    res.status(result.is_duplicate ? 200 : 201).json(result);
   } catch (error) {
     next(error);
   }

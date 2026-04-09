@@ -1,14 +1,28 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import './App.css';
 import LoginPage from './features/login/login.page';
 import SignupPage from './features/signup/signup.page';
-import DashboardPage from './features/dashboard/dashboard.page';
 import IntegrationsPage from './pages/Integrations';
+import AppShell from './components/layout/app-shell';
+import TransactionsPage from './pages/Transactions';
+import ApprovalsPage from './pages/Approvals';
+import AnalyticsPage from './pages/Analytics';
+import AISearchPage from './pages/AISearch';
+import FinancePage from './pages/Finance';
+import TeamPage from './pages/Team';
+import SettingsPage from './pages/Settings';
 import { post } from './services/http';
 import { endpoints } from './services/endpoints';
+import {
+  getUserSettings,
+  getUserSettingsEventName,
+  getUserSettingsStorageKey,
+  persistUserSettings
+} from './lib/user-settings';
 
 const TELEGRAM_TOKEN_STORAGE_KEY = 'spark.telegram-link-token';
+const DashboardPage = lazy(() => import('./features/dashboard/dashboard.page'));
 
 function getStoredUser() {
   const raw = localStorage.getItem('user');
@@ -18,6 +32,33 @@ function getStoredUser() {
 function getPendingTelegramToken() {
   const params = new URLSearchParams(window.location.search);
   return params.get('token') || sessionStorage.getItem(TELEGRAM_TOKEN_STORAGE_KEY) || '';
+}
+
+function getOrganizationPreferenceKey(userId) {
+  return userId ? `spark.active-organization.${userId}` : '';
+}
+
+function getStoredOrganizationPreference(user) {
+  const storageKey = getOrganizationPreferenceKey(user?.id);
+  return storageKey ? localStorage.getItem(storageKey) || '' : '';
+}
+
+function resolveActiveOrganizationId(user, preferredOrganizationId = '') {
+  const organizations = Array.isArray(user?.organizations) ? user.organizations : [];
+
+  if (!organizations.length) {
+    return '';
+  }
+
+  if (preferredOrganizationId && organizations.some((item) => item.id === preferredOrganizationId)) {
+    return preferredOrganizationId;
+  }
+
+  if (user?.default_organization_id && organizations.some((item) => item.id === user.default_organization_id)) {
+    return user.default_organization_id;
+  }
+
+  return organizations[0]?.id || '';
 }
 
 function getInitialScreen(hasSessionToken, hasTelegramToken, pathname) {
@@ -37,8 +78,15 @@ function App() {
   const navigate = useNavigate();
   const initialToken = localStorage.getItem('token') || '';
   const initialTelegramToken = getPendingTelegramToken();
+  const initialUser = getStoredUser();
+  const initialUserSettings = getUserSettings(initialUser);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
-  const [user, setUser] = useState(getStoredUser);
+  const [user, setUser] = useState(initialUser);
+  const [userSettings, setUserSettings] = useState(initialUserSettings);
+  const [preferredOrganization, setPreferredOrganization] = useState(() => ({
+    userId: initialUser?.id || '',
+    organizationId: getStoredOrganizationPreference(initialUser)
+  }));
   const [pendingTelegramToken, setPendingTelegramToken] = useState(initialTelegramToken);
   const [screen, setScreen] = useState(() =>
     getInitialScreen(Boolean(initialToken), Boolean(initialTelegramToken), window.location.pathname)
@@ -46,8 +94,77 @@ function App() {
   const [status, setStatus] = useState(
     initialTelegramToken ? 'Finish signup or login to link your Telegram account.' : ''
   );
+  const isDarkMode = userSettings.theme_mode === 'dark';
+
+  useEffect(() => {
+    setUserSettings(getUserSettings(user));
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+
+    document.documentElement.dataset.density = userSettings.interface_density;
+    document.documentElement.dataset.contentWidth = userSettings.content_width;
+    document.documentElement.classList.toggle('reduced-motion', userSettings.reduce_motion);
+  }, [
+    isDarkMode,
+    userSettings.content_width,
+    userSettings.interface_density,
+    userSettings.reduce_motion
+  ]);
+
+  useEffect(() => {
+    const handleUserSettingsUpdate = (event) => {
+      if (event.detail?.userId && event.detail.userId === user?.id) {
+        setUserSettings(event.detail.settings || getUserSettings(user));
+      }
+    };
+
+    const handleStorage = (event) => {
+      const settingsKey = getUserSettingsStorageKey(user?.id);
+
+      if (!settingsKey || event.key !== settingsKey) {
+        return;
+      }
+
+      setUserSettings(getUserSettings(user));
+    };
+
+    window.addEventListener(getUserSettingsEventName(), handleUserSettingsUpdate);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener(getUserSettingsEventName(), handleUserSettingsUpdate);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [user]);
+
+  function updateUserSettings(partialSettings) {
+    const nextSettings = persistUserSettings(user, {
+      ...userSettings,
+      ...partialSettings
+    });
+
+    setUserSettings(nextSettings);
+  }
+
+  const toggleTheme = () => {
+    updateUserSettings({
+      theme_mode: isDarkMode ? 'light' : 'dark'
+    });
+  };
 
   const telegramMode = Boolean(pendingTelegramToken);
+  const preferredOrganizationId = preferredOrganization.userId === user?.id
+    ? preferredOrganization.organizationId
+    : getStoredOrganizationPreference(user);
+  const activeOrganizationId = resolveActiveOrganizationId(user, preferredOrganizationId);
 
   useEffect(() => {
     function handleAuthUpdated(event) {
@@ -71,6 +188,14 @@ function App() {
       window.removeEventListener('spark-auth-expired', handleAuthExpired);
     };
   }, [navigate, pendingTelegramToken]);
+
+  useEffect(() => {
+    if (!user?.id || !activeOrganizationId) {
+      return;
+    }
+
+    localStorage.setItem(getOrganizationPreferenceKey(user.id), activeOrganizationId);
+  }, [activeOrganizationId, user]);
 
   useEffect(() => {
     if (location.pathname !== '/telegram-login') {
@@ -197,12 +322,21 @@ function App() {
   function handleLogout() {
     setToken('');
     setUser(null);
+    setUserSettings(getUserSettings(null));
+    setPreferredOrganization({ userId: '', organizationId: '' });
     setStatus(pendingTelegramToken ? 'Finish signup or login to link your Telegram account.' : '');
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
     setScreen(pendingTelegramToken ? 'signup' : 'login');
     navigate(pendingTelegramToken ? '/telegram-login' : '/', { replace: true });
+  }
+
+  function handleSelectOrganization(nextOrganizationId) {
+    setPreferredOrganization({
+      userId: user?.id || '',
+      organizationId: nextOrganizationId
+    });
   }
 
   const authContent = screen === 'signup' ? (
@@ -223,37 +357,103 @@ function App() {
   );
 
   const dashboardContent = (
-    <DashboardPage
-      onLogout={handleLogout}
-      onOpenIntegrations={() => navigate('/integrations')}
-      status={status}
-      token={token}
-      user={user}
-    />
+    <Suspense fallback={<div className="card">Loading dashboard...</div>}>
+      <DashboardPage
+        activeOrganizationId={activeOrganizationId}
+        onSelectOrganization={handleSelectOrganization}
+        onLogout={handleLogout}
+        onOpenIntegrations={() => navigate('/integrations')}
+        status={status}
+        token={token}
+        user={user}
+      />
+    </Suspense>
   );
 
-  return (
-    <main className="app">
+  const isDashboardSurface = token;
+
+  const renderAuthenticatedRoutes = () => (
+    <AppShell 
+      user={user}
+      activeOrganizationId={activeOrganizationId}
+      organizations={user?.organizations || []}
+      onSelectOrganization={handleSelectOrganization}
+      onLogout={handleLogout}
+      isDarkMode={isDarkMode}
+      showTopbarSearch={userSettings.show_topbar_search}
+      contentWidth={userSettings.content_width}
+      toggleTheme={toggleTheme}
+    >
       <Routes>
+        <Route path="/" element={dashboardContent} />
+        <Route path="/telegram-login" element={dashboardContent} />
         <Route
           path="/integrations"
           element={
-            token ? (
-              <IntegrationsPage
-                onBack={() => navigate('/')}
-                onLogout={handleLogout}
-                token={token}
-                user={user}
-              />
-            ) : (
-              authContent
-            )
+            <IntegrationsPage
+              activeOrganizationId={activeOrganizationId}
+              onSelectOrganization={handleSelectOrganization}
+              onBack={() => navigate('/')}
+              onLogout={handleLogout}
+              token={token}
+              user={user}
+            />
           }
         />
-        <Route path="/telegram-login" element={token ? dashboardContent : authContent} />
-        <Route path="/" element={token ? dashboardContent : authContent} />
-        <Route path="*" element={<Navigate replace to={token ? '/' : '/'} />} />
+        <Route
+          path="/transactions"
+          element={
+            <TransactionsPage
+              activeOrganizationId={activeOrganizationId}
+              token={token}
+              user={user}
+              userSettings={userSettings}
+            />
+          }
+        />
+        <Route path="/approvals" element={<ApprovalsPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/ai" element={<AISearchPage />} />
+        <Route
+          path="/finance"
+          element={
+            <FinancePage
+              activeOrganizationId={activeOrganizationId}
+              token={token}
+              user={user}
+            />
+          }
+        />
+        <Route path="/team" element={<TeamPage />} />
+        <Route
+          path="/settings"
+          element={
+            <SettingsPage
+              user={user}
+              activeOrganizationId={activeOrganizationId}
+              organizations={user?.organizations || []}
+              onSelectOrganization={handleSelectOrganization}
+              userSettings={userSettings}
+              onUpdateUserSettings={updateUserSettings}
+            />
+          }
+        />
+        <Route path="*" element={<Navigate replace to="/" />} />
       </Routes>
+    </AppShell>
+  );
+
+  const renderUnauthenticatedRoutes = () => (
+    <Routes>
+      <Route path="/telegram-login" element={authContent} />
+      <Route path="/" element={authContent} />
+      <Route path="*" element={<Navigate replace to="/" />} />
+    </Routes>
+  );
+
+  return (
+    <main className={isDashboardSurface ? 'app app-dashboard' : 'app'}>
+      {token ? renderAuthenticatedRoutes() : renderUnauthenticatedRoutes()}
     </main>
   );
 }

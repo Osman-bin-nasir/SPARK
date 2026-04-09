@@ -50,11 +50,15 @@ async function processEmbeddingJobs() {
     }
 
     const jobs = await transactionsRepository.claimEmbeddingJobs(5);
-    let completedCount = 0;
-    let failedCount = 0;
 
-    for (const job of jobs) {
-      try {
+    if (jobs.length === 0) {
+      return;
+    }
+
+    // Process all claimed jobs concurrently — each one makes an independent
+    // network call to the embedding service, so parallelism is safe here.
+    const results = await Promise.allSettled(
+      jobs.map(async (job) => {
         const source = await transactionsRepository.findTransactionEmbeddingSource(job.transaction_id);
 
         if (!source) {
@@ -67,25 +71,34 @@ async function processEmbeddingJobs() {
           transactionId: job.transaction_id,
           embedding
         });
+      })
+    );
+
+    let completedCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < results.length; i += 1) {
+      const result = results[i];
+      const job = jobs[i];
+
+      if (result.status === 'fulfilled') {
         completedCount += 1;
-      } catch (error) {
+      } else {
+        failedCount += 1;
         const attemptCount = Number(job.attempt_count || 0) + 1;
         await transactionsRepository.markEmbeddingJobFailed({
           id: job.id,
           attemptCount,
           maxAttempts: Number(job.max_attempts || 5),
-          message: error.message
+          message: result.reason?.message || 'Unknown error'
         });
-        failedCount += 1;
-        console.warn(`[embedding-worker] Failed job ${job.id} (tx=${job.transaction_id}): ${error.message}`);
+        console.warn(`[embedding-worker] Failed job ${job.id} (tx=${job.transaction_id}): ${result.reason?.message}`);
       }
     }
 
-    if (jobs.length > 0) {
-      console.info(
-        `[embedding-worker] Processed ${jobs.length} job(s), completed=${completedCount}, failed=${failedCount}`
-      );
-    }
+    console.info(
+      `[embedding-worker] Processed ${jobs.length} job(s), completed=${completedCount}, failed=${failedCount}`
+    );
   } catch (error) {
     console.error('Embedding worker iteration failed:', error.message);
   } finally {

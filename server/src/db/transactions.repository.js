@@ -315,6 +315,43 @@ async function listTransactions(
   };
 }
 
+async function listTransactionsForGoogleSheet(
+  {
+    organizationId,
+    startDate
+  },
+  client = pool
+) {
+  const params = [organizationId];
+  const filters = ['organization_id = $1'];
+
+  if (startDate) {
+    params.push(startDate);
+    filters.push(`transaction_date >= $${params.length}`);
+  }
+
+  const { rows } = await client.query(
+    `SELECT id,
+            organization_id,
+            amount,
+            vendor,
+            transaction_type,
+            category,
+            transaction_date,
+            confidence_score,
+            duplicate_of_transaction_id,
+            duplicate_score,
+            status,
+            created_at
+     FROM transactions
+     WHERE ${filters.join(' AND ')}
+     ORDER BY transaction_date DESC, created_at DESC`,
+    params
+  );
+
+  return rows.map(mapTransactionRow);
+}
+
 async function findTransactionsBySimilarity(
   {
     organizationId,
@@ -457,26 +494,29 @@ async function findTransactionsByKeywordSearch(
 
   params.push(topK);
 
+  // Build the tsvector once in a CTE and reuse it for filtering and ranking.
+  // Previously to_tsvector() was computed three times per row (SELECT, WHERE, AND),
+  // which triples the per-row CPU cost. This CTE makes it a single computation.
   const { rows } = await client.query(
-    `SELECT t.id,
-            t.organization_id,
-            t.amount,
-            t.vendor,
-            t.transaction_type,
-            t.category,
-            t.transaction_date,
-            t.confidence_score,
-            t.duplicate_of_transaction_id,
-            t.duplicate_score,
-            t.status,
-            t.created_at,
-            d.id AS document_id,
-            d.storage_kind,
-            d.original_name,
-            d.stored_name,
-            d.file_type,
-            d.extraction_confidence,
-            ts_rank_cd(
+    `WITH base AS (
+       SELECT t.id,
+              t.organization_id,
+              t.amount,
+              t.vendor,
+              t.transaction_type,
+              t.category,
+              t.transaction_date,
+              t.confidence_score,
+              t.duplicate_of_transaction_id,
+              t.duplicate_score,
+              t.status,
+              t.created_at,
+              d.id AS document_id,
+              d.storage_kind,
+              d.original_name,
+              d.stored_name,
+              d.file_type,
+              d.extraction_confidence,
               to_tsvector(
                 'simple',
                 concat_ws(
@@ -489,44 +529,36 @@ async function findTransactionsByKeywordSearch(
                   COALESCE(d.original_name, ''),
                   COALESCE(d.stored_name, '')
                 )
-              ),
-              plainto_tsquery('simple', $2)
-            ) AS lexical_score
-     FROM transactions t
-     LEFT JOIN documents d ON d.transaction_id = t.id
-     WHERE t.organization_id = $1
-       AND t.status = ANY($3::text[])
-       AND to_tsvector(
-         'simple',
-         concat_ws(
-           ' ',
-           t.vendor,
-           t.category,
-           t.transaction_type,
-           COALESCE(d.extracted_text, ''),
-           COALESCE(d.text_content, ''),
-           COALESCE(d.original_name, ''),
-           COALESCE(d.stored_name, '')
-         )
-       ) @@ plainto_tsquery('simple', $2)
-       AND ts_rank_cd(
-         to_tsvector(
-           'simple',
-           concat_ws(
-             ' ',
-             t.vendor,
-             t.category,
-             t.transaction_type,
-             COALESCE(d.extracted_text, ''),
-             COALESCE(d.text_content, ''),
-             COALESCE(d.original_name, ''),
-             COALESCE(d.stored_name, '')
-           )
-         ),
-         plainto_tsquery('simple', $2)
-       ) >= $4
-       ${optionalFilters.length > 0 ? `AND ${optionalFilters.join(' AND ')}` : ''}
-     ORDER BY lexical_score DESC, t.transaction_date DESC
+              ) AS doc_vector
+       FROM transactions t
+       LEFT JOIN documents d ON d.transaction_id = t.id
+       WHERE t.organization_id = $1
+         AND t.status = ANY($3::text[])
+         ${optionalFilters.length > 0 ? `AND ${optionalFilters.join(' AND ')}` : ''}
+     )
+     SELECT id,
+            organization_id,
+            amount,
+            vendor,
+            transaction_type,
+            category,
+            transaction_date,
+            confidence_score,
+            duplicate_of_transaction_id,
+            duplicate_score,
+            status,
+            created_at,
+            document_id,
+            storage_kind,
+            original_name,
+            stored_name,
+            file_type,
+            extraction_confidence,
+            ts_rank_cd(doc_vector, plainto_tsquery('simple', $2)) AS lexical_score
+     FROM base
+     WHERE doc_vector @@ plainto_tsquery('simple', $2)
+       AND ts_rank_cd(doc_vector, plainto_tsquery('simple', $2)) >= $4
+     ORDER BY lexical_score DESC, transaction_date DESC
      LIMIT $${params.length}`,
     params
   );
@@ -1016,6 +1048,7 @@ module.exports = {
   listPotentialDuplicateCandidates,
   listTransactions,
   summarizeTransactions,
+  listTransactionsForGoogleSheet,
   mapTransactionRow,
   markEmbeddingJobCompleted,
   markEmbeddingJobFailed,

@@ -1,10 +1,15 @@
 const crypto = require('crypto');
 const { pool } = require('../db/pool');
 const transactionsRepository = require('../db/transactions.repository');
+const googleSheetsService = require('./google-sheets.service');
+const googleDriveService = require('./google-drive.service');
 const { HttpError } = require('../utils/http-error');
 
 const ALLOWED_TRANSACTION_TYPES = ['expense', 'income', 'salary'];
 const ALLOWED_STATUSES = ['auto_verified', 'pending_review'];
+
+const INCOME_CATEGORIES = ['funding', 'revenue', 'grant', 'loan', 'other_income'];
+const EXPENSE_CATEGORIES = ['software', 'cloud', 'payroll', 'marketing', 'office', 'travel', 'legal', 'hardware', 'other'];
 
 function parsePositiveInteger(value, fallback) {
   const parsed = Number(value);
@@ -128,6 +133,36 @@ async function getTransaction({ organizationId, transactionId }) {
   return transaction;
 }
 
+async function getTransactionDocument({ organizationId, transactionId }) {
+  const transaction = await getTransaction({ organizationId, transactionId });
+  const document = transaction.document;
+
+  if (!document) {
+    throw new HttpError(404, 'Document not found');
+  }
+
+  if (document.storage_kind === 'inline_text') {
+    const text = document.text_content || document.extracted_text || '';
+
+    return {
+      file_name: document.original_name || document.stored_name || 'document.txt',
+      mime_type: document.file_type || 'text/plain; charset=utf-8',
+      buffer: Buffer.from(text, 'utf8')
+    };
+  }
+
+  const file = await googleDriveService.getOrganizationDocumentFile({
+    organizationId,
+    driveFileId: document.drive_file_id
+  });
+
+  return {
+    file_name: document.original_name || document.stored_name || 'document',
+    mime_type: document.file_type || 'application/octet-stream',
+    buffer: file.buffer
+  };
+}
+
 async function updateTransaction({ organizationId, transactionId, userId, payload }) {
   const changes = validateTransactionUpdatePayload(payload);
 
@@ -185,8 +220,93 @@ async function updateTransaction({ organizationId, transactionId, userId, payloa
   }
 }
 
+async function createTransaction({ organizationId, userId, payload }) {
+  const body = payload || {};
+
+  const amount = Number(body.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new HttpError(400, 'amount must be a positive number');
+  }
+
+  const vendor = String(body.vendor || '').trim();
+  if (!vendor) {
+    throw new HttpError(400, 'vendor / source is required');
+  }
+
+  const transactionType = body.transaction_type;
+  if (!ALLOWED_TRANSACTION_TYPES.includes(transactionType)) {
+    throw new HttpError(400, 'transaction_type must be expense, income, or salary');
+  }
+
+  const category = String(body.category || '').trim().toLowerCase();
+  if (!category) {
+    throw new HttpError(400, 'category is required');
+  }
+
+  const transactionDate = body.transaction_date || new Date().toISOString().slice(0, 10);
+  if (Number.isNaN(Date.parse(transactionDate))) {
+    throw new HttpError(400, 'transaction_date must be a valid date');
+  }
+
+  const notes = String(body.notes || '').trim();
+
+  const id = crypto.randomUUID();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `INSERT INTO transactions (
+         id, organization_id, amount, vendor, transaction_type,
+         category, transaction_date, confidence_score, status, created_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0, 'auto_verified', NOW())
+       RETURNING *`,
+      [id, organizationId, amount.toFixed(2), vendor, transactionType, category, transactionDate]
+    );
+
+    const transaction = rows[0];
+
+    await transactionsRepository.insertAuditLog({
+      id: crypto.randomUUID(),
+      userId,
+      transactionId: id,
+      action: 'transaction.manual_entry',
+      previousValue: null,
+      newValue: transaction
+    }, client);
+
+    await transactionsRepository.upsertEmbeddingJob({
+      id: crypto.randomUUID(),
+      transactionId: id,
+      organizationId
+    }, client);
+
+    await client.query('COMMIT');
+    return transaction;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function getTransactionsGoogleSheet({ organizationId, query }) {
+  const range = String(query.range || '1m').toLowerCase();
+
+  return googleSheetsService.getOrganizationTransactionsSheet({
+    organizationId,
+    selectedRangeKey: range
+  });
+}
+
 module.exports = {
+  getTransactionDocument,
   getTransaction,
+  getTransactionsGoogleSheet,
   listTransactions,
-  updateTransaction
+  updateTransaction,
+  createTransaction
 };

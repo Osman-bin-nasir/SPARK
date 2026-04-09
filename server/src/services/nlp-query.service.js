@@ -202,6 +202,36 @@ function detectMetricLabel(query) {
 function detectComparisonRange(query, now = new Date()) {
   const normalized = normalizeQuery(query).toLowerCase();
 
+  if (/\bthis month\b/.test(normalized) && /\blast month\b/.test(normalized) && COMPARISON_KEYWORDS.test(normalized)) {
+    const currentMonth = detectDateRange('this month', now);
+    const previousMonth = detectDateRange('last month', now);
+    return {
+      label: 'this month vs last month',
+      current: currentMonth,
+      previous: previousMonth
+    };
+  }
+
+  if (/\bthis quarter\b/.test(normalized) && /\blast quarter\b/.test(normalized) && COMPARISON_KEYWORDS.test(normalized)) {
+    const currentQuarter = detectDateRange('this quarter', now);
+    const previousQuarter = detectDateRange('last quarter', now);
+    return {
+      label: 'this quarter vs last quarter',
+      current: currentQuarter,
+      previous: previousQuarter
+    };
+  }
+
+  if (/\bthis year\b/.test(normalized) && /\blast year\b/.test(normalized) && COMPARISON_KEYWORDS.test(normalized)) {
+    const currentYear = detectDateRange('this year', now);
+    const previousYear = detectDateRange('last year', now);
+    return {
+      label: 'this year vs last year',
+      current: currentYear,
+      previous: previousYear
+    };
+  }
+
   if (/\blast quarter\b/.test(normalized) && COMPARISON_KEYWORDS.test(normalized)) {
     const currentQuarter = detectDateRange('last quarter', now);
     const currentStart = new Date(currentQuarter.start_date);
@@ -304,6 +334,7 @@ function detectComparisonRange(query, now = new Date()) {
 function detectIntent(query) {
   const normalized = normalizeQuery(query).toLowerCase();
   const entity = extractEntityCandidate(normalized);
+  const dateRange = detectDateRange(normalized);
 
   if (COMPARISON_KEYWORDS.test(normalized)) {
     return 'comparison';
@@ -322,7 +353,7 @@ function detectIntent(query) {
   }
 
   if (SEARCH_KEYWORDS.test(normalized)) {
-    return entity ? 'lookup' : 'search';
+    return entity && dateRange.label ? 'lookup' : 'search';
   }
 
   return 'rag';
@@ -587,7 +618,7 @@ function composeComparisonAnswer(plan, currentSummary, previousSummary) {
     answer: [
       `For ${label}, the current period total is $${currentTotal.toFixed(2)}.`,
       `The comparison period total is $${previousTotal.toFixed(2)}.`,
-      `Change is $${delta.toFixed(2)}${percentageChange === null ? '' : ` (${percentageChange >= 0 ? '+' : ''}${percentageChange}%)`}.
+      `Change is $${delta.toFixed(2)}${percentageChange === null ? '' : ` (${percentageChange >= 0 ? '+' : ''}${percentageChange}%)`}.`
     ].join(' '),
     current_total: Number(currentTotal.toFixed(2)),
     previous_total: Number(previousTotal.toFixed(2)),
