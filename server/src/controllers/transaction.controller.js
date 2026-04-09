@@ -26,6 +26,21 @@ async function getTransaction(req, res, next) {
   }
 }
 
+async function getTransactionDocument(req, res, next) {
+  try {
+    const result = await transactionService.getTransactionDocument({
+      organizationId: req.organization.id,
+      transactionId: req.params.id
+    });
+
+    res.setHeader('Content-Type', result.mime_type);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(result.file_name)}"`);
+    res.status(200).send(result.buffer);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function updateTransaction(req, res, next) {
   try {
     const result = await transactionService.updateTransaction({
@@ -55,6 +70,7 @@ async function createTransaction(req, res, next) {
 }
 
 module.exports = {
+  getTransactionDocument,
   getTransaction,
   listTransactions,
   updateTransaction,
