@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { pool } = require('../db/pool');
 const transactionsRepository = require('../db/transactions.repository');
+const googleDriveService = require('./google-drive.service');
 const { HttpError } = require('../utils/http-error');
 
 const ALLOWED_TRANSACTION_TYPES = ['expense', 'income', 'salary'];
@@ -129,6 +130,36 @@ async function getTransaction({ organizationId, transactionId }) {
   }
 
   return transaction;
+}
+
+async function getTransactionDocument({ organizationId, transactionId }) {
+  const transaction = await getTransaction({ organizationId, transactionId });
+  const document = transaction.document;
+
+  if (!document) {
+    throw new HttpError(404, 'Document not found');
+  }
+
+  if (document.storage_kind === 'inline_text') {
+    const text = document.text_content || document.extracted_text || '';
+
+    return {
+      file_name: document.original_name || document.stored_name || 'document.txt',
+      mime_type: document.file_type || 'text/plain; charset=utf-8',
+      buffer: Buffer.from(text, 'utf8')
+    };
+  }
+
+  const file = await googleDriveService.getOrganizationDocumentFile({
+    organizationId,
+    driveFileId: document.drive_file_id
+  });
+
+  return {
+    file_name: document.original_name || document.stored_name || 'document',
+    mime_type: document.file_type || 'application/octet-stream',
+    buffer: file.buffer
+  };
 }
 
 async function updateTransaction({ organizationId, transactionId, userId, payload }) {
@@ -262,6 +293,7 @@ async function createTransaction({ organizationId, userId, payload }) {
 }
 
 module.exports = {
+  getTransactionDocument,
   getTransaction,
   listTransactions,
   updateTransaction,

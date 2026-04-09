@@ -143,6 +143,15 @@ async function deleteFile(drive, fileId) {
   await drive.files.delete({ fileId });
 }
 
+async function downloadFile(drive, fileId) {
+  const response = await drive.files.get(
+    { fileId, alt: 'media' },
+    { responseType: 'arraybuffer' }
+  );
+
+  return Buffer.from(response.data);
+}
+
 async function resolveGoogleEmail({ oauth2Client, drive, tokens }) {
   if (tokens?.id_token) {
     const ticket = await oauth2Client.verifyIdToken({
@@ -173,6 +182,7 @@ module.exports = {
   buildAuthUrl,
   createDriveClient,
   createOAuthClient,
+  downloadFile,
   deleteFile,
   ensureFolderPath,
   ensureSparkOrganizationRootFolder,

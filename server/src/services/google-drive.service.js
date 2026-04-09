@@ -4,6 +4,7 @@ const { env } = require('../config/env');
 const {
   buildAuthUrl,
   createDriveClient,
+  downloadFile,
   ensureSparkOrganizationRootFolder,
   exchangeCodeForTokens,
   resolveGoogleEmail
@@ -168,10 +169,22 @@ async function getOrganizationDriveClient(organizationId) {
   };
 }
 
+async function getOrganizationDocumentFile({ organizationId, driveFileId }) {
+  if (!driveFileId) {
+    throw new HttpError(404, 'Document file not found');
+  }
+
+  const { drive } = await getOrganizationDriveClient(organizationId);
+  const buffer = await downloadFile(drive, driveFileId);
+
+  return { buffer };
+}
+
 module.exports = {
   createConnectUrl,
   createDevelopmentConnectUrl,
   getDriveStatus,
+  getOrganizationDocumentFile,
   getOrganizationDriveClient,
   handleOauthCallback
 };
