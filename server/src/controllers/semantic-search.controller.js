@@ -21,7 +21,12 @@ async function search(req, res, next) {
       minSimilarity: req.body?.min_similarity,
       minLexicalScore: req.body?.min_lexical_score,
       includePendingReview: parseBoolean(req.body?.include_pending_review),
-      retrievalMode: req.body?.retrieval_mode
+      retrievalMode: req.body?.retrieval_mode,
+      vendor: req.body?.vendor,
+      category: req.body?.category,
+      transactionType: req.body?.transaction_type || req.body?.transactionType,
+      startDate: req.body?.start_date || req.body?.startDate,
+      endDate: req.body?.end_date || req.body?.endDate
     });
 
     res.status(200).json(result);

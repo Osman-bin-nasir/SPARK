@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
+    "seed:startup-demo": "node src/db/seed-realistic.js",
     "test": "node --test",
     "python-ai:venv": "py -3.12 -m venv .venv",
     "python-ai:install": ".venv\\Scripts\\python.exe -m pip install -r python_ai/requirements.txt",
