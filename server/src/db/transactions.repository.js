@@ -581,7 +581,7 @@ async function findTransactionsByKeywordSearch(
 }
 
 function buildStatusFilter(includePendingReview) {
-  return includePendingReview ? ['auto_verified', 'pending_review'] : ['auto_verified'];
+  return includePendingReview ? ['auto_verified', 'pending_review', 'verified', 'rejected'] : ['auto_verified', 'verified'];
 }
 
 function buildSummaryGroupExpression(groupBy) {
@@ -1035,6 +1035,17 @@ async function markEmbeddingJobFailed({ id, attemptCount, maxAttempts, message }
   );
 }
 
+async function insertApproval({ id, transactionId, approvedBy }, client = pool) {
+  await client.query(
+    `INSERT INTO approvals (id, transaction_id, approved_by, approved_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (transaction_id) DO UPDATE SET
+       approved_by = EXCLUDED.approved_by,
+       approved_at = NOW()`,
+    [id, transactionId, approvedBy]
+  );
+}
+
 module.exports = {
   claimEmbeddingJobs,
   enqueueBackfillEmbeddingJobs,
@@ -1043,6 +1054,7 @@ module.exports = {
   findTransactionById,
   findTransactionsBySimilarity,
   findTransactionEmbeddingSource,
+  insertApproval,
   insertAuditLog,
   insertTransactionWithDocumentAndJobs,
   listPotentialDuplicateCandidates,

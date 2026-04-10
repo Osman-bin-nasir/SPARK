@@ -6,7 +6,7 @@ const googleDriveService = require('./google-drive.service');
 const { HttpError } = require('../utils/http-error');
 
 const ALLOWED_TRANSACTION_TYPES = ['expense', 'income', 'salary'];
-const ALLOWED_STATUSES = ['auto_verified', 'pending_review'];
+const ALLOWED_STATUSES = ['auto_verified', 'pending_review', 'verified', 'rejected'];
 
 const INCOME_CATEGORIES = ['funding', 'revenue', 'grant', 'loan', 'other_income'];
 const EXPENSE_CATEGORIES = ['software', 'cloud', 'payroll', 'marketing', 'office', 'travel', 'legal', 'hardware', 'other'];
@@ -76,7 +76,7 @@ function validateTransactionUpdatePayload(payload) {
 
   if (body.status !== undefined) {
     if (!ALLOWED_STATUSES.includes(body.status)) {
-      throw new HttpError(400, 'status must be auto_verified or pending_review');
+      throw new HttpError(400, 'status must be auto_verified, pending_review, verified, or rejected');
     }
 
     changes.status = body.status;
@@ -189,6 +189,14 @@ async function updateTransaction({ organizationId, transactionId, userId, payloa
       transactionId,
       changes
     }, client);
+
+    if (changes.status === 'verified') {
+      await transactionsRepository.insertApproval({
+        id: crypto.randomUUID(),
+        transactionId,
+        approvedBy: userId
+      }, client);
+    }
 
     await transactionsRepository.insertAuditLog({
       id: crypto.randomUUID(),

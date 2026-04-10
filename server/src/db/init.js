@@ -111,7 +111,7 @@ async function initDb() {
       confidence_score            NUMERIC(5, 4),
       duplicate_of_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,
       duplicate_score             NUMERIC(4, 3) CHECK (duplicate_score IS NULL OR (duplicate_score >= 0 AND duplicate_score <= 1)),
-      status                      TEXT NOT NULL CHECK (status IN ('auto_verified', 'pending_review')),
+      status                      TEXT NOT NULL CHECK (status IN ('auto_verified', 'pending_review', 'verified', 'rejected')),
       created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -277,6 +277,13 @@ async function initDb() {
       approved_by    UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
       approved_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query('ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_status_check;');
+  await pool.query(`
+    ALTER TABLE transactions
+    ADD CONSTRAINT transactions_status_check
+    CHECK (status IN ('auto_verified', 'pending_review', 'verified', 'rejected'));
   `);
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_members_user_org ON organization_members (user_id, organization_id);');

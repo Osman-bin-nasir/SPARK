@@ -7,6 +7,7 @@ export default function ApprovalsPage() {
   const [pending, setPending] = useState([]);
   const [loading, setLoading] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [formData, setFormData] = useState({});
 
   const fetchApprovals = async () => {
     const cached = pageCache.get('approvals', 'pending');
@@ -32,9 +33,34 @@ export default function ApprovalsPage() {
     fetchApprovals();
   }, []);
 
+  useEffect(() => {
+    const tx = pending[currentIndex];
+    if (tx) {
+      setFormData({
+        vendor: tx.vendor || '',
+        transaction_date: tx.transaction_date ? tx.transaction_date.slice(0, 10) : '',
+        amount: tx.amount ? Number(tx.amount).toFixed(2) : '',
+        category: tx.category || ''
+      });
+    }
+  }, [pending, currentIndex]);
+
   const handleAction = async (id, newStatus) => {
     try {
-      await patch(`${endpoints.transactions}/${id}`, { status: newStatus });
+      const payload = { status: newStatus };
+      if (newStatus === 'verified') {
+        if (formData.vendor !== pending[currentIndex].vendor) payload.vendor = formData.vendor;
+        if (formData.category !== pending[currentIndex].category) payload.category = formData.category;
+        
+        let cleanedAmount = String(formData.amount).replace(/[^0-9.]/g, '');
+        if (cleanedAmount && Number(cleanedAmount) !== Number(pending[currentIndex].amount)) payload.amount = cleanedAmount;
+        
+        if (formData.transaction_date && formData.transaction_date !== pending[currentIndex].transaction_date?.slice(0, 10)) {
+          payload.transaction_date = formData.transaction_date;
+        }
+      }
+
+      await patch(`${endpoints.transactions}/${id}`, payload);
       const newPending = pending.filter(t => t.id !== id);
       setPending(newPending);
       
@@ -147,19 +173,19 @@ export default function ApprovalsPage() {
             <div className="ocr-grid">
               <div className="ocr-field">
                 <label>Merchant</label>
-                <input type="text" defaultValue={tx.vendor} />
+                <input type="text" value={formData.vendor || ''} onChange={e => setFormData({ ...formData, vendor: e.target.value })} />
               </div>
               <div className="ocr-field">
                 <label>Date</label>
-                <input type="text" defaultValue={new Date(tx.transaction_date).toLocaleDateString()} />
+                <input type="date" value={formData.transaction_date || ''} onChange={e => setFormData({ ...formData, transaction_date: e.target.value })} />
               </div>
               <div className="ocr-field">
                 <label>Amount</label>
-                <input type="text" defaultValue={`$${Number(tx.amount).toFixed(2)}`} />
+                <input type="text" value={formData.amount || ''} onChange={e => setFormData({ ...formData, amount: e.target.value })} />
               </div>
               <div className="ocr-field">
                 <label>Category</label>
-                <input type="text" defaultValue={tx.category} />
+                <input type="text" value={formData.category || ''} onChange={e => setFormData({ ...formData, category: e.target.value })} />
               </div>
             </div>
           </div>
