@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { get, post } from '../services/http';
 import { endpoints } from '../services/endpoints';
 import { pageCache } from '../services/page-cache';
@@ -48,7 +48,7 @@ function StatusBadge({ icon, loading, connected, hoverText }) {
   );
 }
 
-function IntegrationsPage({ activeOrganizationId, onBack, onLogout, onSelectOrganization, token, user }) {
+function IntegrationsPage({ activeOrganizationId, onBack, token, user }) {
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -171,6 +171,14 @@ function IntegrationsPage({ activeOrganizationId, onBack, onLogout, onSelectOrga
             </div>
             <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               Connect your organization's Google Drive to automatically store uploaded finance documents and generate reports.
+            </p>
+            <p style={{ margin: '10px 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              SPARK requests Google Drive file access only for files, folders, and Google Sheets reports created or used
+              through SPARK. It does not request access to browse every file in your Drive. Review the{' '}
+              <Link className="legal-link" to="/privacy-policy">Privacy Policy</Link>
+              {' '}and{' '}
+              <Link className="legal-link" to="/terms-of-service">Terms</Link>
+              .
             </p>
           </div>
           <div style={{ padding: '16px 24px', flex: 1 }}>

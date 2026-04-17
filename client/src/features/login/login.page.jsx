@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { post } from '../../services/http';
 import { endpoints } from '../../services/endpoints';
 
@@ -49,6 +50,21 @@ function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode }) {
       </form>
       <p className="auth-footer">
         No account? <button type="button" className="link-btn" onClick={onSwitchToSignup}>Sign up</button>
+      </p>
+      <p className="legal-copy">
+        By continuing, you agree to the{' '}
+        <Link className="legal-link" to="/terms-of-service">
+          Terms of Service
+        </Link>{' '}
+        and{' '}
+        <Link className="legal-link" to="/privacy-policy">
+          Privacy Policy
+        </Link>
+        . Need help?{' '}
+        <Link className="legal-link" to="/contact">
+          Contact SPARK
+        </Link>
+        .
       </p>
     </div>
   );

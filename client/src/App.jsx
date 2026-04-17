@@ -11,6 +11,9 @@ import AnalyticsPage from './pages/Analytics';
 import FinancePage from './pages/Finance';
 import TeamPage from './pages/Team';
 import SettingsPage from './pages/Settings';
+import PrivacyPolicyPage from './pages/PrivacyPolicy';
+import TermsOfServicePage from './pages/TermsOfService';
+import ContactPage from './pages/Contact';
 import { post } from './services/http';
 import { endpoints } from './services/endpoints';
 import {
@@ -72,9 +75,18 @@ function getInitialScreen(hasSessionToken, hasTelegramToken, pathname) {
   return 'login';
 }
 
+function normalizePathname(pathname) {
+  if (!pathname || pathname === '/') {
+    return '/';
+  }
+
+  return pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+}
+
 function App() {
   const location = useLocation();
   const navigate = useNavigate();
+  const normalizedPathname = normalizePathname(location.pathname);
   const initialToken = localStorage.getItem('token') || '';
   const initialTelegramToken = getPendingTelegramToken();
   const initialUser = getStoredUser();
@@ -370,6 +382,19 @@ function App() {
   );
 
   const isDashboardSurface = token;
+
+  const publicPageByPath = {
+    '/privacy-policy': <PrivacyPolicyPage />,
+    '/privacy-policy.html': <PrivacyPolicyPage />,
+    '/terms-of-service': <TermsOfServicePage />,
+    '/terms-of-service.html': <TermsOfServicePage />,
+    '/contact': <ContactPage />,
+    '/contact.html': <ContactPage />
+  };
+
+  if (publicPageByPath[normalizedPathname]) {
+    return publicPageByPath[normalizedPathname];
+  }
 
   const renderAuthenticatedRoutes = () => (
     <AppShell 
