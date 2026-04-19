@@ -36,15 +36,41 @@ async function joinOrganizationByCode({ telegramId, joinCode }) {
 
   const user = await usersRepository.findUserByTelegramId(normalizedTelegramId);
 
-  if (!user) {
-    const loginResult = await authService.createTelegramLogin({
-      telegram_id: normalizedTelegramId,
-      organization_id: organization.id
+  const memberships = user
+    ? await organizationsRepository.listMembershipsByUserId(user.id)
+    : [];
+
+  if (memberships.length > 0) {
+    return {
+      status: 'already_in_org',
+      user_id: user.id,
+      organization: {
+        id: memberships[0].organization_id,
+        name: memberships[0].organization_name
+      }
+    };
+  }
+
+  if (user?.email) {
+    const membershipResult = await organizationsRepository.addOrganizationMember({
+      organizationId: organization.id,
+      userId: user.id,
+      role: 'member'
     });
 
+    if (membershipResult.blocked) {
+      return {
+        status: 'already_in_org',
+        user_id: user.id,
+        organization: {
+          id: membershipResult.membership?.organization_id || null
+        }
+      };
+    }
+
     return {
-      status: 'requires_account_link',
-      login_link: loginResult.loginLink,
+      status: membershipResult.inserted ? 'joined' : 'already_member',
+      user_id: user.id,
       organization: {
         id: organization.id,
         name: organization.name
@@ -52,15 +78,14 @@ async function joinOrganizationByCode({ telegramId, joinCode }) {
     };
   }
 
-  const membershipResult = await organizationsRepository.addOrganizationMember({
-    organizationId: organization.id,
-    userId: user.id,
-    role: 'member'
+  const loginResult = await authService.createTelegramLogin({
+    telegram_id: normalizedTelegramId,
+    organization_id: organization.id
   });
 
   return {
-    status: membershipResult.inserted ? 'joined' : 'already_member',
-    user_id: user.id,
+    status: 'pending_registration',
+    login_link: loginResult.loginLink,
     organization: {
       id: organization.id,
       name: organization.name
@@ -72,15 +97,23 @@ async function getTelegramMemberships({ telegramId }) {
   const normalizedTelegramId = normalizeTelegramId(telegramId);
   const user = await usersRepository.findUserByTelegramId(normalizedTelegramId);
 
-  if (!user) {
+  if (!user || !user.email) {
     return {
       linked: false,
-      user_id: null,
+      user_id: user?.id || null,
       organizations: []
     };
   }
 
   const memberships = await organizationsRepository.listMembershipsByUserId(user.id);
+
+  if (memberships.length === 0) {
+    return {
+      linked: false,
+      user_id: user.id,
+      organizations: []
+    };
+  }
 
   return {
     linked: true,

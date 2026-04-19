@@ -60,6 +60,10 @@ async function addMemberByEmail({ organizationId, email, role }) {
     userId: user.id,
     role
   });
+
+  if (result.blocked) {
+    throw new HttpError(409, 'User already belongs to another organization');
+  }
   
   return result.membership;
 }

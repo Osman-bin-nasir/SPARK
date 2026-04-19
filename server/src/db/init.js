@@ -12,7 +12,8 @@ async function initDb() {
       first_name    TEXT,
       password_hash TEXT,
       telegram_id   BIGINT UNIQUE,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
@@ -20,6 +21,7 @@ async function initDb() {
     ALTER TABLE users
     ALTER COLUMN created_at SET DEFAULT NOW();
   `);
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();');
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at);');
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower_unique ON users (LOWER(email)) WHERE email IS NOT NULL;');
@@ -48,6 +50,7 @@ async function initDb() {
   await organizationsRepository.ensureOrganizationJoinCodes(pool);
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_join_code_unique ON organizations (join_code);');
   await pool.query('ALTER TABLE organizations ALTER COLUMN join_code SET NOT NULL;');
+  await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS organization_members (
@@ -56,7 +59,29 @@ async function initDb() {
       user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       role            TEXT NOT NULL CHECK (role IN ('founder', 'admin', 'member')),
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (organization_id, user_id)
+      UNIQUE (organization_id, user_id),
+      UNIQUE (user_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS telegram_join_intents (
+      telegram_id     BIGINT PRIMARY KEY REFERENCES users(telegram_id) ON DELETE CASCADE,
+      organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      join_code       TEXT NOT NULL,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at      TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '7 days'
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS telegram_login_tokens (
+      token       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      telegram_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at  TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '15 minutes',
+      used_at     TIMESTAMPTZ
     );
   `);
 
@@ -281,6 +306,8 @@ async function initDb() {
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_members_user_org ON organization_members (user_id, organization_id);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_organization_members_org_created_at ON organization_members (organization_id, created_at);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_telegram_join_intents_expires_at ON telegram_join_intents (expires_at);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_telegram_login_tokens_active ON telegram_login_tokens (telegram_id, expires_at) WHERE used_at IS NULL;');
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_category_budgets_org_normalized_category ON category_budgets (organization_id, normalized_category);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_category_budgets_org_category ON category_budgets (organization_id, category);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_transactions_org_date ON transactions (organization_id, transaction_date DESC);');
