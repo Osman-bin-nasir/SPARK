@@ -14,8 +14,8 @@ function mapUser(row) {
   };
 }
 
-async function findUserByEmail(email) {
-  const { rows } = await pool.query(
+async function findUserByEmail(email, client = pool) {
+  const { rows } = await client.query(
     `SELECT id, email, password_hash, telegram_id, created_at
      FROM users
      WHERE LOWER(email) = LOWER($1)
@@ -26,8 +26,8 @@ async function findUserByEmail(email) {
   return rows[0] || null;
 }
 
-async function findUserByTelegramId(telegramId) {
-  const { rows } = await pool.query(
+async function findUserByTelegramId(telegramId, client = pool) {
+  const { rows } = await client.query(
     `SELECT id, email, password_hash, telegram_id, created_at
      FROM users
      WHERE telegram_id = $1
@@ -38,8 +38,8 @@ async function findUserByTelegramId(telegramId) {
   return rows[0] || null;
 }
 
-async function findUserById(id) {
-  const { rows } = await pool.query(
+async function findUserById(id, client = pool) {
+  const { rows } = await client.query(
     `SELECT id, email, password_hash, telegram_id, created_at
      FROM users
      WHERE id = $1
@@ -50,8 +50,8 @@ async function findUserById(id) {
   return rows[0] || null;
 }
 
-async function createUser({ email, passwordHash, telegramId = null }) {
-  const { rows } = await pool.query(
+async function createUser({ email, passwordHash, telegramId = null }, client = pool) {
+  const { rows } = await client.query(
     `INSERT INTO users (email, password_hash, telegram_id)
      VALUES ($1, $2, $3)
      RETURNING id, email, telegram_id, created_at`,
@@ -61,11 +61,19 @@ async function createUser({ email, passwordHash, telegramId = null }) {
   return mapUser(rows[0]);
 }
 
-async function completeTelegramUserRegistration({ userId, email, passwordHash }) {
-  const { rows } = await pool.query(
+async function completeTelegramUserRegistration(
+  {
+    userId,
+    email,
+    passwordHash
+  },
+  client = pool
+) {
+  const { rows } = await client.query(
     `UPDATE users
      SET email = $1,
-         password_hash = $2
+         password_hash = $2,
+         updated_at = NOW()
      WHERE id = $3
      RETURNING id, email, telegram_id, created_at`,
     [email, passwordHash, userId]
@@ -74,59 +82,69 @@ async function completeTelegramUserRegistration({ userId, email, passwordHash })
   return mapUser(rows[0]);
 }
 
-async function linkTelegramToUser({ userId, telegramId }) {
-  const client = await pool.connect();
+async function upsertTelegramPlaceholder({ telegramId }, client = pool) {
+  const { rows } = await client.query(
+    `INSERT INTO users (telegram_id)
+     VALUES ($1)
+     ON CONFLICT (telegram_id)
+     DO UPDATE SET updated_at = NOW()
+     RETURNING id, email, telegram_id, created_at`,
+    [telegramId]
+  );
 
-  try {
-    await client.query('BEGIN');
+  return mapUser(rows[0]);
+}
 
-    const { rows: userRows } = await client.query(
-      `SELECT id, email, telegram_id, created_at
-       FROM users
-       WHERE id = $1
-       FOR UPDATE`,
-      [userId]
-    );
+async function linkTelegramToUser({ userId, telegramId }, client = pool) {
+  const { rows: userRows } = await client.query(
+    `SELECT id, email, telegram_id, created_at
+     FROM users
+     WHERE id = $1
+     FOR UPDATE`,
+    [userId]
+  );
 
-    const user = userRows[0];
+  const user = userRows[0];
 
-    if (!user) {
-      throw new HttpError(404, 'User not found');
-    }
+  if (!user) {
+    throw new HttpError(404, 'User not found');
+  }
 
-    if (user.telegram_id && String(user.telegram_id) !== String(telegramId)) {
-      throw new HttpError(409, 'This web account is already linked to another Telegram account');
-    }
+  if (user.telegram_id && String(user.telegram_id) !== String(telegramId)) {
+    throw new HttpError(409, 'This web account is already linked to another Telegram account');
+  }
 
-    const { rows: conflictRows } = await client.query(
-      `SELECT id
-       FROM users
-       WHERE telegram_id = $1
-         AND id <> $2
-       LIMIT 1`,
-      [telegramId, userId]
-    );
+  const { rows: conflictRows } = await client.query(
+    `SELECT id, email
+     FROM users
+     WHERE telegram_id = $1
+       AND id <> $2
+     LIMIT 1`,
+    [telegramId, userId]
+  );
 
-    if (conflictRows[0]) {
+  const conflictUser = conflictRows[0];
+
+  if (conflictUser) {
+    if (conflictUser.email) {
       throw new HttpError(409, 'This Telegram account is already linked to another user');
     }
 
-    const { rows } = await client.query(
-      `UPDATE users
-       SET telegram_id = $1
-       WHERE id = $2
-       RETURNING id, email, telegram_id, created_at`,
-      [telegramId, userId]
-    );
-
-    await client.query('COMMIT');
-    return mapUser(rows[0]);
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
+    await client.query('DELETE FROM telegram_login_tokens WHERE telegram_id = $1', [telegramId]);
+    await client.query('DELETE FROM telegram_join_intents WHERE telegram_id = $1', [telegramId]);
+    await client.query('DELETE FROM users WHERE id = $1', [conflictUser.id]);
   }
+
+  const { rows } = await client.query(
+    `UPDATE users
+     SET telegram_id = $1,
+         updated_at = NOW()
+     WHERE id = $2
+     RETURNING id, email, telegram_id, created_at`,
+    [telegramId, userId]
+  );
+
+  return mapUser(rows[0]);
 }
 
 module.exports = {
@@ -136,5 +154,6 @@ module.exports = {
   findUserById,
   findUserByTelegramId,
   linkTelegramToUser,
-  mapUser
+  mapUser,
+  upsertTelegramPlaceholder
 };

@@ -73,7 +73,8 @@ async function ensureUser(client, template, passwordHash, createdAt) {
       `UPDATE users
        SET first_name = COALESCE(first_name, $2),
            password_hash = COALESCE(password_hash, $3),
-           telegram_id = COALESCE(telegram_id, $4::bigint)
+           telegram_id = COALESCE(telegram_id, $4::bigint),
+           updated_at = NOW()
        WHERE id = $1
        RETURNING id, email, telegram_id, created_at`,
       [existingRows[0].id, template.first_name, passwordHash, template.telegram_id]

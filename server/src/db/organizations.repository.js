@@ -151,9 +151,7 @@ async function findOrganizationDriveOwner(organizationId, client = pool) {
   return rows[0] || null;
 }
 
-async function createOrganizationForUser({ userId, organizationName }, client = pool) {
-  let organization = null;
-
+async function createOrganization({ organizationName }, client = pool) {
   for (let attempt = 0; attempt < 25; attempt += 1) {
     const joinCode = await generateUniqueJoinCode(client);
 
@@ -165,8 +163,7 @@ async function createOrganizationForUser({ userId, organizationName }, client = 
         [organizationName, joinCode]
       );
 
-      organization = mapOrganization(rows[0]);
-      break;
+      return mapOrganization(rows[0]);
     } catch (error) {
       if (error.code === '23505' && String(error.constraint || '').includes('join_code')) {
         continue;
@@ -176,9 +173,11 @@ async function createOrganizationForUser({ userId, organizationName }, client = 
     }
   }
 
-  if (!organization) {
-    throw new Error('Unable to create organization with a unique join code');
-  }
+  throw new Error('Unable to create organization with a unique join code');
+}
+
+async function createOrganizationForUser({ userId, organizationName }, client = pool) {
+  const organization = await createOrganization({ organizationName }, client);
 
   await client.query(
     `INSERT INTO organization_members (organization_id, user_id, role)
@@ -266,16 +265,93 @@ async function addOrganizationMember(
   },
   client = pool
 ) {
-  const { rows } = await client.query(
-    `INSERT INTO organization_members (organization_id, user_id, role)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (organization_id, user_id) DO NOTHING
-     RETURNING organization_id,
-               user_id,
-               role,
-               created_at AS joined_at`,
-    [organizationId, userId, role]
+  const { rows: userRows } = await client.query(
+    `SELECT id, email
+     FROM users
+     WHERE id = $1
+     FOR UPDATE`,
+    [userId]
   );
+  const user = userRows[0];
+
+  if (!user) {
+    return {
+      inserted: false,
+      membership: null
+    };
+  }
+
+  const { rows: existingMembershipRows } = await client.query(
+    `SELECT organization_id,
+            user_id,
+            role,
+            created_at AS joined_at
+     FROM organization_members
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  if (existingMembershipRows[0]) {
+    if (String(existingMembershipRows[0].organization_id) !== String(organizationId)) {
+      return {
+        inserted: false,
+        membership: existingMembershipRows[0],
+        blocked: true
+      };
+    }
+
+    return {
+      inserted: false,
+      membership: existingMembershipRows[0]
+    };
+  }
+
+  if (!user.email) {
+    return {
+      inserted: false,
+      membership: null,
+      blocked: true
+    };
+  }
+
+  let rows;
+
+  try {
+    ({ rows } = await client.query(
+      `INSERT INTO organization_members (organization_id, user_id, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (organization_id, user_id) DO NOTHING
+       RETURNING organization_id,
+                 user_id,
+                 role,
+                 created_at AS joined_at`,
+      [organizationId, userId, role]
+    ));
+  } catch (error) {
+    if (error.code === '23505' && String(error.constraint || '').includes('user')) {
+      const { rows: conflictRows } = await client.query(
+        `SELECT organization_id,
+                user_id,
+                role,
+                created_at AS joined_at
+         FROM organization_members
+         WHERE user_id = $1
+         LIMIT 1`,
+        [userId]
+      );
+
+      return {
+        inserted: false,
+        membership: conflictRows[0] || null,
+        blocked: conflictRows[0]
+          ? String(conflictRows[0].organization_id) !== String(organizationId)
+          : true
+      };
+    }
+
+    throw error;
+  }
 
   if (rows[0]) {
     return {
@@ -370,6 +446,8 @@ async function updateOrganizationMemberRole({ organizationId, userId, role }, cl
 
 module.exports = {
   addOrganizationMember,
+  buildDefaultOrganizationName,
+  createOrganization,
   ensureDefaultOrganizationForUser,
   ensureOrganizationJoinCodes,
   findOrganizationById,
