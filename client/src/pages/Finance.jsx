@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { post, get } from '../services/http';
 import { endpoints } from '../services/endpoints';
+import { markDashboardSnapshotStale } from '../features/dashboard/dashboard.cache';
 
 const INCOME_CATEGORIES = ['funding', 'revenue', 'grant', 'loan', 'other_income'];
 const EXPENSE_CATEGORIES = ['software', 'cloud', 'payroll', 'marketing', 'office', 'travel', 'legal', 'hardware', 'other'];
@@ -328,6 +329,7 @@ export default function FinancePage({ activeOrganizationId, token: tokenProp, us
         category: form.category,
         transaction_date: form.transaction_date,
       }, authHeaders);
+      markDashboardSnapshotStale(organizationId);
       setNotice(`✓ Entry recorded: ${form.vendor} — ${formatCurrency(form.amount)}`);
       setForm({ ...EMPTY_FORM, transaction_type: form.transaction_type });
       fetchRecent();

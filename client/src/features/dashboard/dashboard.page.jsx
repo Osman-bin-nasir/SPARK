@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Area,
   AreaChart,
@@ -22,6 +22,7 @@ import {
   updateDashboardBudgets,
   updateDashboardConfig
 } from './dashboard.api';
+import { getDashboardInvalidationStamp, markDashboardSnapshotStale } from './dashboard.cache';
 import '../../styles/dashboard.css';
 
 // ── Module-level SWR-style cache ──────────────────────────────────────────────
@@ -211,9 +212,10 @@ function DashboardPage({
     let isActive = true;
     const cacheKey = `${activeOrganizationId}:${months}`;
     const cached = _snapshotCache.get(cacheKey);
+    const invalidationStamp = getDashboardInvalidationStamp(activeOrganizationId);
 
     // Serve from cache immediately — no spinner on revisit
-    if (cached) {
+    if (cached && cached.ts >= invalidationStamp) {
       setSnapshot(cached.data);
       setLoadingSnapshot(false);
 
@@ -368,6 +370,7 @@ function DashboardPage({
     const cacheKey = `${activeOrganizationId}:${months}`;
     _snapshotCache.delete(cacheKey);
     _setupCache.delete(organizationId);
+    markDashboardSnapshotStale(activeOrganizationId);
 
     const result = await getDashboardSnapshot({
       token,
@@ -590,9 +593,7 @@ function DashboardPage({
           <span className="premium-label">Cash Balance</span>
           <div className="premium-hero-value" style={{ fontSize: '2.6rem', color: snapshotReady && snapshot.metrics.cash_on_hand != null ? 'var(--accent-green)' : 'var(--text-primary)' }}>
             {snapshotReady
-              ? snapshot.metrics.cash_on_hand != null
-                ? formatCurrency(snapshot.metrics.cash_on_hand)
-                : 'Not configured'
+              ? formatCurrency(snapshot.metrics.cash_on_hand, { fallback: '$0' })
               : metricFallback}
           </div>
           <div className="premium-hero-meta">
@@ -609,13 +610,10 @@ function DashboardPage({
                       {up ? '+' : ''}{pct}% vs last month
                     </span>
                   )}
-                  <span className="premium-badge">Liquid</span>
+                  <span className="premium-badge">Live from Finance</span>
                 </>
               );
             })()}
-            {(!snapshotReady || snapshot.metrics.cash_on_hand == null) && (
-              <span className="premium-badge">Configure cash setup on Dashboard</span>
-            )}
           </div>
         </div>
 
