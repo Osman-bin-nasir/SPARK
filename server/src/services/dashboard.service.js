@@ -165,6 +165,61 @@ function buildMonthlySeries(startMonth, months, totalsByMonth) {
   });
 }
 
+function getDaysInUtcMonth(date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+}
+
+function projectCurrentMonthBurn(currentMonthSpendTotal, now) {
+  const spend = Number(currentMonthSpendTotal || 0);
+
+  if (spend <= 0) {
+    return null;
+  }
+
+  const daysElapsed = Math.max(now.getUTCDate(), 1);
+  const daysInMonth = getDaysInUtcMonth(now);
+
+  return roundAmount((spend / daysElapsed) * daysInMonth);
+}
+
+function buildBurnMetrics({
+  burnHistoryReady,
+  cashOnHand,
+  currentMonthSpendTotal,
+  historicalMonthlyBurn,
+  now
+}) {
+  const projectedMonthlyBurn = projectCurrentMonthBurn(currentMonthSpendTotal, now);
+
+  let monthlyBurn = null;
+  let monthlyBurnSource = 'pending';
+
+  if (burnHistoryReady) {
+    monthlyBurn = historicalMonthlyBurn;
+    monthlyBurnSource = 'historical';
+  } else if (projectedMonthlyBurn !== null) {
+    monthlyBurn = projectedMonthlyBurn;
+    monthlyBurnSource = 'projected_current_month';
+  }
+
+  let runwayMonths = null;
+  let estimatedDepletionMonth = null;
+
+  if (monthlyBurn !== null && monthlyBurn > 0) {
+    runwayMonths = roundRatio(cashOnHand / monthlyBurn);
+    estimatedDepletionMonth = toMonthKey(addUtcMonths(now, Math.floor(runwayMonths)));
+  }
+
+  return {
+    monthly_burn: monthlyBurn,
+    monthly_burn_source: monthlyBurnSource,
+    historical_monthly_burn: historicalMonthlyBurn,
+    projected_monthly_burn: projectedMonthlyBurn,
+    runway_months: runwayMonths,
+    estimated_depletion_month: estimatedDepletionMonth
+  };
+}
+
 function serializeFinanceConfig(settings) {
   return {
     configured: Boolean(settings),
@@ -352,6 +407,9 @@ async function getDashboardSnapshot({ organization, query }) {
       amount: roundAmount(item.amount)
     }))
     .sort((left, right) => right.amount - left.amount);
+  const currentMonthSpendTotal = roundAmount(
+    currentMonthCategories.reduce((sum, item) => sum + Number(item.amount || 0), 0)
+  );
 
   const selectedTotalsByMonth = new Map(
     selectedRangeMonthlyTotals.map((item) => [item.month, item.total])
@@ -361,13 +419,13 @@ async function getDashboardSnapshot({ organization, query }) {
   );
 
   const burnSeries = buildMonthlySeries(burnWindowStart, 3, burnTotalsByMonth);
-  const monthlyBurn = roundAmount(
+  const historicalMonthlyBurn = roundAmount(
     burnSeries.reduce((sum, item) => sum + item.amount, 0) / burnSeries.length
   );
   const trends = buildMonthlySeries(selectedRangeStart, months, selectedTotalsByMonth);
 
   const budgetAlerts = buildBudgetAlerts(budgets, currentMonthSpend);
-  const historyReady = Boolean(
+  const burnHistoryReady = Boolean(
     earliestTransactionDate
       && earliestTransactionDate <= toDateString(burnWindowStart)
   );
@@ -377,21 +435,24 @@ async function getDashboardSnapshot({ organization, query }) {
     budgetLabelMap,
     currentMonthKey,
     historyMonths: burnMonths,
-    historyReady
+    historyReady: burnHistoryReady
   });
 
   let cashOnHand = roundAmount(financeSettings?.opening_cash_balance || 0);
-  let runwayMonths = null;
 
   if (cashFlowTotals) {
     cashOnHand = roundAmount(
       cashOnHand + cashFlowTotals.income_total - cashFlowTotals.outflow_total
     );
-
-    if (monthlyBurn > 0) {
-      runwayMonths = roundRatio(cashOnHand / monthlyBurn);
-    }
   }
+
+  const burnMetrics = buildBurnMetrics({
+    burnHistoryReady,
+    cashOnHand,
+    currentMonthSpendTotal,
+    historicalMonthlyBurn,
+    now
+  });
 
   const hasTransactions = Boolean(earliestTransactionDate);
 
@@ -400,8 +461,12 @@ async function getDashboardSnapshot({ organization, query }) {
     dashboard_state: hasTransactions ? 'ready' : 'no_history',
     metrics: {
       cash_on_hand: cashOnHand,
-      runway_months: runwayMonths,
-      monthly_burn: monthlyBurn,
+      runway_months: burnMetrics.runway_months,
+      monthly_burn: burnMetrics.monthly_burn,
+      monthly_burn_source: burnMetrics.monthly_burn_source,
+      historical_monthly_burn: burnMetrics.historical_monthly_burn,
+      projected_monthly_burn: burnMetrics.projected_monthly_burn,
+      estimated_depletion_month: burnMetrics.estimated_depletion_month,
       monthly_revenue: roundAmount(currentMonthRevenue),
       budget_alert_count: budgetAlerts.length
     },
@@ -417,7 +482,8 @@ async function getDashboardSnapshot({ organization, query }) {
       cash_configured: Boolean(financeSettings),
       budgets_configured: budgets.length > 0,
       has_transactions: hasTransactions,
-      history_ready_for_spikes: historyReady
+      history_ready_for_spikes: burnHistoryReady,
+      history_ready_for_burn: burnHistoryReady
     }
   };
 }

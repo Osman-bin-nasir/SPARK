@@ -59,36 +59,20 @@ function formatCurrency(value, options = {}) {
   }).format(Number(value));
 }
 
-function formatRunway(value) {
-  if (value === null || value === undefined) {
-    return 'Not configured';
-  }
-
-  return `${Number(value).toFixed(1)} mo`;
+function sumCategoryAmounts(items = []) {
+  return items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
 }
 
-function formatPercent(value) {
-  if (value === null || value === undefined) {
-    return 'New spend pattern';
-  }
-
-  return `${Number(value).toFixed(1)}%`;
-}
-
-function formatShortDate(value) {
-  if (!value) {
+function formatMonthKey(monthKey) {
+  if (!monthKey) {
     return 'Unknown';
   }
 
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  }).format(new Date(value));
-}
-
-function formatMonthLabel(value) {
-  return value.replace(' months', 'M');
+    year: 'numeric',
+    timeZone: 'UTC'
+  }).format(new Date(`${monthKey}-01T00:00:00.000Z`));
 }
 
 function renderChartTooltip(value, name) {
@@ -201,6 +185,28 @@ function DashboardPage({
   const unavailable = dashboardState === 'unavailable';
   const budgetsConfigured = snapshot?.config.budgets_configured ?? budgets.items.length > 0;
   const metricFallback = busy ? 'Loading...' : 'Unavailable';
+  const currentMonthSpendTotal = sumCategoryAmounts(snapshot?.category_breakdown);
+  const displayMonthlyBurn = snapshot?.metrics?.monthly_burn ?? null;
+  const displayRunwayMonths = snapshot?.metrics?.runway_months ?? null;
+  const monthlyBurnSource = snapshot?.metrics?.monthly_burn_source;
+  const estimatedDepletionMonth = snapshot?.metrics?.estimated_depletion_month;
+  const burnStatusLabel = snapshotReady
+    ? (
+        monthlyBurnSource === 'projected_current_month'
+          ? 'Projected from current month'
+          : monthlyBurnSource === 'historical'
+            ? 'Trailing 3 full months'
+            : 'No completed month yet'
+      )
+    : '...';
+  const runwayStatusLabel = !snapshotReady
+    ? 'Unknown'
+    : estimatedDepletionMonth
+      ? `${monthlyBurnSource === 'projected_current_month' ? 'Projected' : 'Estimated'} depletion: ${formatMonthKey(estimatedDepletionMonth)}`
+      : currentMonthSpendTotal > 0
+        ? 'Runway will update as more backend history accumulates'
+        : 'Add expenses to generate a runway forecast';
+  const runwayBadgeClass = displayRunwayMonths != null && displayRunwayMonths <= 3 ? 'danger' : 'success';
 
   useEffect(() => {
     if (!token) {
@@ -621,11 +627,15 @@ function DashboardPage({
         <div className="premium-card">
           <span className="premium-label">Total Net Burn (Monthly)</span>
           <div className="premium-hero-value" style={{ fontSize: '2.4rem' }}>
-            {snapshotReady ? formatCurrency(snapshot.metrics.monthly_burn) : metricFallback}
+            {snapshotReady ? formatCurrency(displayMonthlyBurn, { fallback: 'Pending' }) : metricFallback}
           </div>
           <div className="premium-hero-meta">
-            <span className="premium-badge">Projected: {snapshotReady ? formatCurrency((snapshot.metrics.monthly_burn || 0) * 1.1) : '...'}</span>
-            <span className="premium-badge danger">Critical Threshold</span>
+            <span className="premium-badge">{burnStatusLabel}</span>
+            <span className={`premium-badge ${snapshotReady && displayRunwayMonths != null ? runwayBadgeClass : ''}`}>
+              {snapshotReady && displayRunwayMonths != null
+                ? (displayRunwayMonths <= 3 ? 'Critical Threshold' : 'Runway Healthy')
+                : 'Awaiting forecast'}
+            </span>
           </div>
         </div>
 
@@ -633,16 +643,16 @@ function DashboardPage({
           <div className="premium-runway-circle">
             <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
               <circle cx="50" cy="50" r="45" fill="none" stroke="var(--border)" strokeWidth="6" />
-              <circle cx="50" cy="50" r="45" fill="none" stroke="var(--accent-green)" strokeWidth="6" strokeDasharray="282" strokeDashoffset={282 - (282 * Math.min(snapshot?.metrics?.runway_months || 0, 12) / 12)} style={{ transition: 'stroke-dashoffset 1s ease', filter: 'drop-shadow(0 0 6px var(--accent-green))' }} />
+              <circle cx="50" cy="50" r="45" fill="none" stroke="var(--accent-green)" strokeWidth="6" strokeDasharray="282" strokeDashoffset={282 - (282 * Math.min(displayRunwayMonths || 0, 12) / 12)} style={{ transition: 'stroke-dashoffset 1s ease', filter: 'drop-shadow(0 0 6px var(--accent-green))' }} />
             </svg>
             <div className="premium-runway-text">
-              <strong>{snapshotReady ? Number(snapshot.metrics.runway_months || 0).toFixed(0) : '-'}</strong>
-              <span>Months</span>
+              <strong>{snapshotReady && displayRunwayMonths != null ? Number(displayRunwayMonths).toFixed(0) : '-'}</strong>
+              <span>{snapshotReady && displayRunwayMonths != null ? 'Months' : 'Pending'}</span>
             </div>
           </div>
           <div className="premium-runway-footer">
             <h3>Cash Runway</h3>
-            <p>Estimated depletion: {snapshotReady ? new Date(Date.now() + (snapshot.metrics.runway_months || 0) * 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'Unknown'}</p>
+            <p>{runwayStatusLabel}</p>
           </div>
         </div>
       </div>
@@ -687,7 +697,7 @@ function DashboardPage({
                 </ResponsiveContainer>
                 <div className="premium-donut-center">
                   <span>Total</span>
-                  <strong>{formatCurrency(snapshot.category_breakdown.reduce((sum, item) => sum + Number(item.amount), 0), { maximumFractionDigits: 0 })}</strong>
+                  <strong>{formatCurrency(currentMonthSpendTotal, { maximumFractionDigits: 0 })}</strong>
                 </div>
               </div>
 
@@ -700,7 +710,7 @@ function DashboardPage({
                     </div>
                     <div className="premium-legend-value">
                       <strong>{formatCurrency(item.amount, { maximumFractionDigits: 0 })}</strong>
-                      <span>{((Number(item.amount) / snapshot.category_breakdown.reduce((sum, item) => sum + Number(item.amount), 0)) * 100).toFixed(1)}% OF TOTAL</span>
+                      <span>{currentMonthSpendTotal > 0 ? ((Number(item.amount) / currentMonthSpendTotal) * 100).toFixed(1) : '0.0'}% OF TOTAL</span>
                     </div>
                   </div>
                 ))}

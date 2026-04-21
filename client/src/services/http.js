@@ -1,6 +1,8 @@
 import { API_BASE_URL } from './endpoints';
 import { endpoints } from './endpoints';
 
+let refreshPromise = null;
+
 function getStoredAccessToken() {
   return localStorage.getItem('token') || '';
 }
@@ -58,6 +60,20 @@ function buildHeaders(options = {}) {
 }
 
 async function tryRefreshAccessToken() {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = refreshAccessToken();
+
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+async function refreshAccessToken() {
   const refreshToken = getStoredRefreshToken();
 
   if (!refreshToken) {
