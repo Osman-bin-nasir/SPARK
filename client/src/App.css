@@ -23,6 +23,11 @@
   --accent-strong: #1d4ed8;
   --success: var(--accent-green);
   --error: var(--accent-red);
+
+  /* Hover / interaction */
+  --btn-hover-shadow: 0 4px 14px rgba(37, 99, 235, 0.2);
+  --btn-secondary-hover-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --link-hover: #1d4ed8;
 }
 
 .dark {
@@ -49,6 +54,11 @@
   --accent-strong: #2563eb;
   --success: var(--accent-green);
   --error: var(--accent-red);
+
+  /* Hover / interaction */
+  --btn-hover-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
+  --btn-secondary-hover-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --link-hover: #93b4ff;
 
   /* Input specific */
   --input-bg: #0d1117;
@@ -205,12 +215,19 @@ button {
   font-weight: 600;
   cursor: pointer;
   background: var(--accent);
-  transition: background 160ms ease;
+  transition: background 200ms ease, transform 200ms ease, box-shadow 200ms ease;
   border-radius: 6px;
 }
 
 button:hover:not(:disabled) {
   background: var(--accent-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--btn-hover-shadow);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 button:disabled {
@@ -228,6 +245,8 @@ button:disabled {
 .secondary-btn:hover:not(:disabled) {
   background: var(--panel-soft);
   color: var(--text);
+  transform: translateY(-1px);
+  box-shadow: var(--btn-secondary-hover-shadow);
 }
 
 .link-btn {
@@ -236,12 +255,14 @@ button:disabled {
   background: transparent;
   color: var(--accent);
   box-shadow: none;
+  transition: color 200ms ease;
 }
 
 .link-btn:hover:not(:disabled) {
   transform: none;
   box-shadow: none;
-  color: #9ae7ff;
+  background: transparent;
+  color: var(--link-hover);
 }
 
 .auth-footer {
@@ -260,10 +281,11 @@ button:disabled {
 .legal-link {
   color: var(--accent);
   text-decoration: none;
+  transition: color 200ms ease;
 }
 
 .legal-link:hover {
-  color: #9ae7ff;
+  color: var(--link-hover);
 }
 
 .error,

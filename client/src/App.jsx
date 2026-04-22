@@ -14,6 +14,7 @@ import SettingsPage from './pages/Settings';
 import PrivacyPolicyPage from './pages/PrivacyPolicy';
 import TermsOfServicePage from './pages/TermsOfService';
 import ContactPage from './pages/Contact';
+import LandingPage from './pages/Landing';
 import { post } from './services/http';
 import { endpoints } from './services/endpoints';
 import {
@@ -188,7 +189,7 @@ function App() {
       setUser(null);
       setStatus(pendingTelegramToken ? 'Finish signup or login to link your Telegram account.' : '');
       setScreen(pendingTelegramToken ? 'signup' : 'login');
-      navigate(pendingTelegramToken ? '/telegram-login' : '/', { replace: true });
+      navigate(pendingTelegramToken ? '/telegram-login' : '/login', { replace: true });
     }
 
     window.addEventListener('spark-auth-updated', handleAuthUpdated);
@@ -279,7 +280,7 @@ function App() {
         setStatus('Telegram account linked successfully.');
 
         if (location.pathname === '/telegram-login') {
-          navigate('/', { replace: true });
+          navigate('/dashboard', { replace: true });
         }
       } catch (error) {
         if (!isActive) {
@@ -318,7 +319,7 @@ function App() {
       sessionStorage.removeItem(TELEGRAM_TOKEN_STORAGE_KEY);
       setPendingTelegramToken('');
       setStatus('Telegram account linked successfully.');
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
       return;
     }
 
@@ -327,7 +328,7 @@ function App() {
       return;
     }
 
-    navigate('/', { replace: true });
+    navigate('/dashboard', { replace: true });
   }
 
   function handleLogout() {
@@ -340,7 +341,7 @@ function App() {
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
     setScreen(pendingTelegramToken ? 'signup' : 'login');
-    navigate(pendingTelegramToken ? '/telegram-login' : '/', { replace: true });
+    navigate(pendingTelegramToken ? '/telegram-login' : '/login', { replace: true });
   }
 
   function handleSelectOrganization(nextOrganizationId) {
@@ -396,6 +397,14 @@ function App() {
     return publicPageByPath[normalizedPathname];
   }
 
+  if (normalizedPathname === '/') {
+    return <LandingPage isAuthenticated={Boolean(token)} />;
+  }
+
+  if (normalizedPathname === '/login') {
+    return <main className="app">{authContent}</main>;
+  }
+
   const renderAuthenticatedRoutes = () => (
     <AppShell 
       user={user}
@@ -409,7 +418,7 @@ function App() {
       toggleTheme={toggleTheme}
     >
       <Routes>
-        <Route path="/" element={dashboardContent} />
+        <Route path="/dashboard" element={dashboardContent} />
         <Route path="/telegram-login" element={dashboardContent} />
         <Route
           path="/integrations"
@@ -417,7 +426,7 @@ function App() {
             <IntegrationsPage
               activeOrganizationId={activeOrganizationId}
               onSelectOrganization={handleSelectOrganization}
-              onBack={() => navigate('/')}
+              onBack={() => navigate('/dashboard')}
               onLogout={handleLogout}
               token={token}
               user={user}
@@ -461,7 +470,7 @@ function App() {
             />
           }
         />
-        <Route path="*" element={<Navigate replace to="/" />} />
+        <Route path="*" element={<Navigate replace to="/dashboard" />} />
       </Routes>
     </AppShell>
   );
@@ -469,7 +478,7 @@ function App() {
   const renderUnauthenticatedRoutes = () => (
     <Routes>
       <Route path="/telegram-login" element={authContent} />
-      <Route path="/" element={authContent} />
+      <Route path="/login" element={authContent} />
       <Route path="*" element={<Navigate replace to="/" />} />
     </Routes>
   );

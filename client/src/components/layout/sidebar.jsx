@@ -10,7 +10,7 @@ export default function Sidebar() {
         <div className="sidebar-brand">SPARK</div>
       </div>
       <nav className="sidebar-nav">
-        <NavLink to="/" className={linkClass}>Dashboard</NavLink>
+        <NavLink to="/dashboard" className={linkClass}>Dashboard</NavLink>
         <NavLink to="/transactions" className={linkClass}>Transactions</NavLink>
         <NavLink to="/approvals" className={linkClass}>Approvals</NavLink>
         <NavLink to="/analytics" className={linkClass}>Analytics</NavLink>
