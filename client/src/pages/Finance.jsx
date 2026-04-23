@@ -252,8 +252,8 @@ export default function FinancePage({ activeOrganizationId, token: tokenProp, us
       const result = await get(`${endpoints.transactions}?page_size=8`, authHeaders);
       setRecent(result.items || []);
       // compute quick totals from all (page 1 only as a proxy)
-      const inc = (result.items || []).filter(t => t.transaction_type === 'income' || t.transaction_type === 'salary').reduce((s, t) => s + Number(t.amount || 0), 0);
-      const exp = (result.items || []).filter(t => t.transaction_type === 'expense').reduce((s, t) => s + Number(t.amount || 0), 0);
+      const inc = (result.items || []).filter(t => t.transaction_type === 'income').reduce((s, t) => s + Number(t.amount || 0), 0);
+      const exp = (result.items || []).filter(t => t.transaction_type === 'expense' || t.transaction_type === 'salary').reduce((s, t) => s + Number(t.amount || 0), 0);
       setIncomeTotal(inc);
       setExpenseTotal(exp);
     } catch (e) {
@@ -724,7 +724,7 @@ export default function FinancePage({ activeOrganizationId, token: tokenProp, us
                     {/* Amount */}
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: '0.9rem', color: m.color }}>
-                        {tx.transaction_type === 'expense' ? '−' : '+'}{formatCurrency(tx.amount)}
+                        {tx.transaction_type === 'expense' || tx.transaction_type === 'salary' ? '−' : '+'}{formatCurrency(tx.amount)}
                       </div>
                       <div style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '20px', background: m.bg, color: m.color, border: `1px solid ${m.border}`, display: 'inline-block', marginTop: '3px', textTransform: 'capitalize' }}>
                         {tx.transaction_type}
