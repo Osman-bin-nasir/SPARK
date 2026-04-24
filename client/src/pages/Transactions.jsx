@@ -34,6 +34,30 @@ function resolveActiveOrganizationId(user) {
   return organizations[0]?.id || '';
 }
 
+const REVIEW_STATUS_META = {
+  approved: {
+    label: 'Approved',
+    badgeClass: 'badge-green'
+  },
+  auto_verified: {
+    label: 'Auto Verified',
+    badgeClass: 'badge-blue'
+  },
+  pending_review: {
+    label: 'Pending Review',
+    badgeClass: 'badge-yellow'
+  }
+};
+
+function getReviewStatusMeta(transaction) {
+  const reviewStatus = transaction?.review_status || transaction?.status || 'pending_review';
+
+  return REVIEW_STATUS_META[reviewStatus] || {
+    label: reviewStatus.replace(/_/g, ' '),
+    badgeClass: 'badge-yellow'
+  };
+}
+
 export default function TransactionsPage({ activeOrganizationId, token: tokenProp, user: userProp, userSettings }) {
   const token = tokenProp || localStorage.getItem('token') || '';
   const user = userProp || JSON.parse(localStorage.getItem('user') || 'null');
@@ -182,6 +206,7 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
       setEditingId(null);
       // Bust namespace cache because edits change the list
       pageCache.bustNs('transactions');
+      pageCache.bustNs('approvals');
       fetchTransactions();
     } catch (e) {
       console.error(e);
@@ -227,6 +252,7 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
           .premium-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
           .premium-table tbody tr:last-child td { border-bottom: none; }
           .premium-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 100px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+          .badge-blue { background: rgba(59, 130, 246, 0.12); color: var(--accent-blue); border: 1px solid rgba(59, 130, 246, 0.22); }
           .badge-green { background: rgba(34, 197, 94, 0.1); color: var(--accent-green); border: 1px solid rgba(34, 197, 94, 0.2); }
           .badge-yellow { background: rgba(234, 179, 8, 0.1); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.2); }
           .badge-red { background: rgba(239, 68, 68, 0.1); color: var(--accent-red); border: 1px solid rgba(239, 68, 68, 0.2); }
@@ -251,6 +277,7 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
         <div className="premium-controls">
           <select className="premium-select" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
             <option value="">All Statuses</option>
+            <option value="approved">Approved</option>
             <option value="auto_verified">Auto Verified</option>
             <option value="pending_review">Pending Review</option>
           </select>
@@ -305,114 +332,118 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
           </thead>
           <tbody>
             {loading && <tr><td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>Loading transactions...</td></tr>}
-            {!loading && transactions.map(tx => (
-              <React.Fragment key={tx.id}>
-                <tr>
-                  <td>{new Date(tx.transaction_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {editingId === tx.id ? 
-                        <input className="premium-input" style={{width: '100%', padding: '4px 8px'}} value={editForm.vendor} onChange={e => setEditForm({...editForm, vendor: e.target.value})} /> 
-                        : <span style={{ fontWeight: 500 }}>{tx.vendor}</span>
-                      }
-                      {tx.duplicate_score > 0.8 && <span className="premium-badge badge-red" style={{ padding: '2px 6px', fontSize: '10px' }}>Possible Dup</span>}
-                    </div>
-                  </td>
-                  <td>
-                    {editingId === tx.id ? 
-                      <input className="premium-input" style={{width: '100%', padding: '4px 8px'}} value={editForm.category} onChange={e => setEditForm({...editForm, category: e.target.value})} /> 
-                      : <span style={{ color: 'var(--text-secondary)' }}>{tx.category}</span>
-                    }
-                  </td>
-                  <td style={{ fontWeight: 600 }}>
-                    {editingId === tx.id ? 
-                      <input className="premium-input" style={{width: '100%', padding: '4px 8px'}} value={editForm.amount} onChange={e => setEditForm({...editForm, amount: e.target.value})} /> 
-                      : `$${Number(tx.amount).toFixed(2)}`
-                    }
-                  </td>
-                  <td>
-                    <span className={`premium-badge ${tx.status === 'auto_verified' ? 'badge-green' : 'badge-yellow'}`}>
-                      {tx.status.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button className="premium-ghost-btn" onClick={() => handleExpand(tx.id)}>{expandedId === tx.id ? 'Hide OCR' : 'View OCR'}</button>
-                      {editingId === tx.id ? 
-                        <button className="premium-ghost-btn" style={{ color: 'var(--accent-green)' }} onClick={() => handleSave(tx.id)}>Save</button> 
-                        : <button className="premium-ghost-btn" onClick={() => handleEdit(tx)}>Edit</button>
-                      }
-                    </div>
-                  </td>
-                </tr>
-                {expandedId === tx.id && (
+            {!loading && transactions.map((tx) => {
+              const statusMeta = getReviewStatusMeta(tx);
+
+              return (
+                <React.Fragment key={tx.id}>
                   <tr>
-                    <td colSpan="6" style={{ padding: 0 }}>
-                      <div className="premium-ocr-panel">
-                        {expandedData ? (
-                          <div className="premium-ocr-grid">
-                            <div style={{ display: 'flex', gap: '24px' }}>
-                              <div>
-                                <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px', textTransform: 'uppercase', marginBottom: '4px' }}>Extraction Confidence</span>
-                                <strong style={{ color: (expandedData.document?.extraction_confidence || tx.confidence_score) > 0.8 ? 'var(--accent-green)' : 'var(--accent-yellow)' }}>
-                                  {Number((expandedData.document?.extraction_confidence || tx.confidence_score) * 100).toFixed(1)}%
-                                </strong>
-                              </div>
-                              {tx.duplicate_score > 0.8 && (
-                                <div>
-                                  <span style={{ color: 'var(--accent-red)', display: 'block', fontSize: '10px', textTransform: 'uppercase', marginBottom: '4px' }}>Duplicate Warning</span>
-                                  <strong>Matches #{tx.duplicate_of_transaction_id?.substring(0,8)}...</strong>
-                                </div>
-                              )}
-                            </div>
-                            <div style={{ marginTop: '12px' }}>
-                              <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px', textTransform: 'uppercase', marginBottom: '8px' }}>Raw Extracted Text</span>
-                              <div className="premium-ocr-pre">
-                                {expandedData.document?.extracted_text || expandedData.document?.text_content || 'No raw text available'}
-                              </div>
-                            </div>
-                            <div style={{ marginTop: '12px' }}>
-                              <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px', textTransform: 'uppercase', marginBottom: '8px' }}>
-                                Source Document
-                              </span>
-                              {loadingPreview ? (
-                                <span style={{ color: 'var(--text-secondary)' }}>Loading document preview...</span>
-                              ) : previewError ? (
-                                <span style={{ color: 'var(--accent-red)' }}>{previewError}</span>
-                              ) : previewUrl && expandedData.document?.file_type?.startsWith('image/') ? (
-                                <img
-                                  src={previewUrl}
-                                  alt={expandedData.document?.original_name || 'Uploaded document'}
-                                  style={{ maxWidth: '100%', maxHeight: '480px', borderRadius: '8px', border: '1px solid var(--border)' }}
-                                />
-                              ) : previewUrl && expandedData.document?.file_type === 'application/pdf' ? (
-                                <iframe
-                                  src={previewUrl}
-                                  title={expandedData.document?.original_name || 'Uploaded document'}
-                                  style={{ width: '100%', height: '480px', border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--bg)' }}
-                                />
-                              ) : previewUrl ? (
-                                <a
-                                  href={previewUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="premium-ghost-btn"
-                                  style={{ padding: 0 }}
-                                >
-                                  Open document
-                                </a>
-                              ) : (
-                                <span style={{ color: 'var(--text-secondary)' }}>No document preview available</span>
-                              )}
-                            </div>
-                          </div>
-                        ) : <span style={{ color: 'var(--text-secondary)' }}>Loading secure payload...</span>}
+                    <td>{new Date(tx.transaction_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {editingId === tx.id
+                          ? <input className="premium-input" style={{ width: '100%', padding: '4px 8px' }} value={editForm.vendor} onChange={e => setEditForm({ ...editForm, vendor: e.target.value })} />
+                          : <span style={{ fontWeight: 500 }}>{tx.vendor}</span>
+                        }
+                        {tx.duplicate_score > 0.8 && <span className="premium-badge badge-red" style={{ padding: '2px 6px', fontSize: '10px' }}>Possible Dup</span>}
+                      </div>
+                    </td>
+                    <td>
+                      {editingId === tx.id
+                        ? <input className="premium-input" style={{ width: '100%', padding: '4px 8px' }} value={editForm.category} onChange={e => setEditForm({ ...editForm, category: e.target.value })} />
+                        : <span style={{ color: 'var(--text-secondary)' }}>{tx.category}</span>
+                      }
+                    </td>
+                    <td style={{ fontWeight: 600 }}>
+                      {editingId === tx.id
+                        ? <input className="premium-input" style={{ width: '100%', padding: '4px 8px' }} value={editForm.amount} onChange={e => setEditForm({ ...editForm, amount: e.target.value })} />
+                        : `$${Number(tx.amount).toFixed(2)}`
+                      }
+                    </td>
+                    <td>
+                      <span className={`premium-badge ${statusMeta.badgeClass}`}>
+                        {statusMeta.label}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="premium-ghost-btn" onClick={() => handleExpand(tx.id)}>{expandedId === tx.id ? 'Hide OCR' : 'View OCR'}</button>
+                        {editingId === tx.id
+                          ? <button className="premium-ghost-btn" style={{ color: 'var(--accent-green)' }} onClick={() => handleSave(tx.id)}>Save</button>
+                          : <button className="premium-ghost-btn" onClick={() => handleEdit(tx)}>Edit</button>
+                        }
                       </div>
                     </td>
                   </tr>
-                )}
-              </React.Fragment>
-            ))}
+                  {expandedId === tx.id && (
+                    <tr>
+                      <td colSpan="6" style={{ padding: 0 }}>
+                        <div className="premium-ocr-panel">
+                          {expandedData ? (
+                            <div className="premium-ocr-grid">
+                              <div style={{ display: 'flex', gap: '24px' }}>
+                                <div>
+                                  <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px', textTransform: 'uppercase', marginBottom: '4px' }}>Extraction Confidence</span>
+                                  <strong style={{ color: (expandedData.document?.extraction_confidence || tx.confidence_score) > 0.8 ? 'var(--accent-green)' : 'var(--accent-yellow)' }}>
+                                    {Number((expandedData.document?.extraction_confidence || tx.confidence_score) * 100).toFixed(1)}%
+                                  </strong>
+                                </div>
+                                {tx.duplicate_score > 0.8 && (
+                                  <div>
+                                    <span style={{ color: 'var(--accent-red)', display: 'block', fontSize: '10px', textTransform: 'uppercase', marginBottom: '4px' }}>Duplicate Warning</span>
+                                    <strong>Matches #{tx.duplicate_of_transaction_id?.substring(0,8)}...</strong>
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ marginTop: '12px' }}>
+                                <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px', textTransform: 'uppercase', marginBottom: '8px' }}>Raw Extracted Text</span>
+                                <div className="premium-ocr-pre">
+                                  {expandedData.document?.extracted_text || expandedData.document?.text_content || 'No raw text available'}
+                                </div>
+                              </div>
+                              <div style={{ marginTop: '12px' }}>
+                                <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px', textTransform: 'uppercase', marginBottom: '8px' }}>
+                                  Source Document
+                                </span>
+                                {loadingPreview ? (
+                                  <span style={{ color: 'var(--text-secondary)' }}>Loading document preview...</span>
+                                ) : previewError ? (
+                                  <span style={{ color: 'var(--accent-red)' }}>{previewError}</span>
+                                ) : previewUrl && expandedData.document?.file_type?.startsWith('image/') ? (
+                                  <img
+                                    src={previewUrl}
+                                    alt={expandedData.document?.original_name || 'Uploaded document'}
+                                    style={{ maxWidth: '100%', maxHeight: '480px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                                  />
+                                ) : previewUrl && expandedData.document?.file_type === 'application/pdf' ? (
+                                  <iframe
+                                    src={previewUrl}
+                                    title={expandedData.document?.original_name || 'Uploaded document'}
+                                    style={{ width: '100%', height: '480px', border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--bg)' }}
+                                  />
+                                ) : previewUrl ? (
+                                  <a
+                                    href={previewUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="premium-ghost-btn"
+                                    style={{ padding: 0 }}
+                                  >
+                                    Open document
+                                  </a>
+                                ) : (
+                                  <span style={{ color: 'var(--text-secondary)' }}>No document preview available</span>
+                                )}
+                              </div>
+                            </div>
+                          ) : <span style={{ color: 'var(--text-secondary)' }}>Loading secure payload...</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderTop: '1px solid var(--border)' }}>

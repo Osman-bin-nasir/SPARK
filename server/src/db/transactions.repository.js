@@ -5,6 +5,8 @@ function mapTransactionRow(row) {
     return null;
   }
 
+  const hasManualApproval = Boolean(row.approval_id);
+
   return {
     id: row.id,
     organization_id: row.organization_id,
@@ -17,6 +19,7 @@ function mapTransactionRow(row) {
     duplicate_of_transaction_id: row.duplicate_of_transaction_id,
     duplicate_score: row.duplicate_score === null ? null : Number(row.duplicate_score),
     status: row.status,
+    review_status: hasManualApproval ? 'approved' : row.status,
     created_at: row.created_at
   };
 }
@@ -240,8 +243,16 @@ async function listTransactions(
   const filters = ['t.organization_id = $1'];
 
   if (status) {
-    params.push(status);
-    filters.push(`t.status = $${params.length}`);
+    if (status === 'approved') {
+      filters.push('a.id IS NOT NULL');
+    } else {
+      params.push(status);
+      filters.push(`t.status = $${params.length}`);
+
+      if (status === 'auto_verified') {
+        filters.push('a.id IS NULL');
+      }
+    }
   }
 
   if (transactionType) {
@@ -283,9 +294,13 @@ async function listTransactions(
            t.created_at,
            d.id AS document_id,
            d.stored_name,
-           d.file_type
+           d.file_type,
+           a.id AS approval_id,
+           a.approved_by,
+           a.approved_at
     FROM transactions t
     LEFT JOIN documents d ON d.transaction_id = t.id
+    LEFT JOIN approvals a ON a.transaction_id = t.id
     WHERE ${whereClause}
     ORDER BY t.transaction_date DESC, t.created_at DESC
     LIMIT $${params.length - 1}
@@ -293,7 +308,12 @@ async function listTransactions(
   `;
 
   const countParams = params.slice(0, params.length - 2);
-  const countQuery = `SELECT COUNT(*)::int AS count FROM transactions t WHERE ${whereClause}`;
+  const countQuery = `
+    SELECT COUNT(*)::int AS count
+    FROM transactions t
+    LEFT JOIN approvals a ON a.transaction_id = t.id
+    WHERE ${whereClause}
+  `;
 
   const [{ rows }, { rows: countRows }] = await Promise.all([
     client.query(listQuery, params),
@@ -308,6 +328,13 @@ async function listTransactions(
             id: row.document_id,
             stored_name: row.stored_name,
             file_type: row.file_type
+          }
+        : null,
+      approval: row.approval_id
+        ? {
+            id: row.approval_id,
+            approved_by: row.approved_by,
+            approved_at: row.approved_at
           }
         : null
     })),
@@ -853,6 +880,52 @@ async function updateTransaction({ organizationId, transactionId, changes }, cli
   return mapTransactionRow(rows[0]);
 }
 
+async function deleteTransaction({ organizationId, transactionId }, client = pool) {
+  const { rows } = await client.query(
+    `DELETE FROM transactions
+     WHERE organization_id = $1
+       AND id = $2
+     RETURNING id,
+               organization_id,
+               amount,
+               vendor,
+               transaction_type,
+               category,
+               transaction_date,
+               confidence_score,
+               duplicate_of_transaction_id,
+               duplicate_score,
+               status,
+               created_at`,
+    [organizationId, transactionId]
+  );
+
+  return mapTransactionRow(rows[0]);
+}
+
+async function upsertApproval({ id, transactionId, approvedBy, approvedAt }, client = pool) {
+  const { rows } = await client.query(
+    `INSERT INTO approvals (id, transaction_id, approved_by, approved_at)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (transaction_id)
+     DO UPDATE SET
+       approved_by = EXCLUDED.approved_by,
+       approved_at = EXCLUDED.approved_at
+     RETURNING id, transaction_id, approved_by, approved_at`,
+    [id, transactionId, approvedBy, approvedAt]
+  );
+
+  return rows[0] || null;
+}
+
+async function deleteApproval({ transactionId }, client = pool) {
+  await client.query(
+    `DELETE FROM approvals
+     WHERE transaction_id = $1`,
+    [transactionId]
+  );
+}
+
 async function insertAuditLog({ id, userId, transactionId, action, previousValue, newValue }, client = pool) {
   await client.query(
     `INSERT INTO audit_logs (id, user_id, transaction_id, action, previous_value, new_value)
@@ -1037,6 +1110,7 @@ async function markEmbeddingJobFailed({ id, attemptCount, maxAttempts, message }
 
 module.exports = {
   claimEmbeddingJobs,
+  deleteTransaction,
   enqueueBackfillEmbeddingJobs,
   findExactDuplicateDocument,
   findTransactionsByKeywordSearch,
@@ -1052,6 +1126,8 @@ module.exports = {
   mapTransactionRow,
   markEmbeddingJobCompleted,
   markEmbeddingJobFailed,
+  deleteApproval,
   updateTransaction,
+  upsertApproval,
   upsertEmbeddingJob
 };

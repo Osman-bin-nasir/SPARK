@@ -16,5 +16,6 @@ router.post('/', requireOrganizationRole(['founder', 'admin']), transactionContr
 router.get('/:id/document', transactionController.getTransactionDocument);
 router.get('/:id', transactionController.getTransaction);
 router.patch('/:id', requireOrganizationRole(['founder', 'admin']), transactionController.updateTransaction);
+router.delete('/:id', requireOrganizationRole(['founder', 'admin']), transactionController.deleteTransaction);
 
 module.exports = router;

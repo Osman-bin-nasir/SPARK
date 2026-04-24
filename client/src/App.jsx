@@ -444,7 +444,16 @@ function App() {
             />
           }
         />
-        <Route path="/approvals" element={<ApprovalsPage />} />
+        <Route
+          path="/approvals"
+          element={
+            <ApprovalsPage
+              activeOrganizationId={activeOrganizationId}
+              token={token}
+              user={user}
+            />
+          }
+        />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route
           path="/finance"

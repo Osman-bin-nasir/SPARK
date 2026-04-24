@@ -6,7 +6,8 @@ const googleDriveService = require('./google-drive.service');
 const { HttpError } = require('../utils/http-error');
 
 const ALLOWED_TRANSACTION_TYPES = ['expense', 'income', 'salary'];
-const ALLOWED_STATUSES = ['auto_verified', 'pending_review'];
+const ALLOWED_STATUSES = ['approved', 'auto_verified', 'pending_review'];
+const SEARCHABLE_FIELDS = ['amount', 'vendor', 'transaction_type', 'category', 'transaction_date'];
 
 const INCOME_CATEGORIES = ['funding', 'revenue', 'grant', 'loan', 'other_income'];
 const EXPENSE_CATEGORIES = ['software', 'cloud', 'payroll', 'marketing', 'office', 'travel', 'legal', 'hardware', 'other'];
@@ -27,9 +28,28 @@ function validateDate(value, fieldName) {
   }
 }
 
+function normalizeRequestedStatus(status) {
+  if (!ALLOWED_STATUSES.includes(status)) {
+    throw new HttpError(400, 'status must be approved, auto_verified, or pending_review');
+  }
+
+  if (status === 'approved') {
+    return {
+      persistedStatus: 'auto_verified',
+      approvalAction: 'upsert'
+    };
+  }
+
+  return {
+    persistedStatus: status,
+    approvalAction: 'delete'
+  };
+}
+
 function validateTransactionUpdatePayload(payload) {
   const changes = {};
   const body = payload || {};
+  let statusUpdate = null;
 
   if (body.amount !== undefined) {
     const amount = Number(body.amount);
@@ -75,11 +95,8 @@ function validateTransactionUpdatePayload(payload) {
   }
 
   if (body.status !== undefined) {
-    if (!ALLOWED_STATUSES.includes(body.status)) {
-      throw new HttpError(400, 'status must be auto_verified or pending_review');
-    }
-
-    changes.status = body.status;
+    statusUpdate = normalizeRequestedStatus(body.status);
+    changes.status = statusUpdate.persistedStatus;
   }
 
   if (body.confidence_score !== undefined) {
@@ -92,7 +109,10 @@ function validateTransactionUpdatePayload(payload) {
     changes.confidence_score = score;
   }
 
-  return changes;
+  return {
+    changes,
+    statusUpdate
+  };
 }
 
 async function listTransactions({ organizationId, query }) {
@@ -164,7 +184,7 @@ async function getTransactionDocument({ organizationId, transactionId }) {
 }
 
 async function updateTransaction({ organizationId, transactionId, userId, payload }) {
-  const changes = validateTransactionUpdatePayload(payload);
+  const { changes, statusUpdate } = validateTransactionUpdatePayload(payload);
 
   if (Object.keys(changes).length === 0) {
     throw new HttpError(400, 'At least one editable field is required');
@@ -184,10 +204,28 @@ async function updateTransaction({ organizationId, transactionId, userId, payloa
       throw new HttpError(404, 'Transaction not found');
     }
 
-    const updatedTransaction = await transactionsRepository.updateTransaction({
+    await transactionsRepository.updateTransaction({
       organizationId,
       transactionId,
       changes
+    }, client);
+
+    if (statusUpdate?.approvalAction === 'upsert') {
+      await transactionsRepository.upsertApproval({
+        id: crypto.randomUUID(),
+        transactionId,
+        approvedBy: userId,
+        approvedAt: new Date().toISOString()
+      }, client);
+    }
+
+    if (statusUpdate?.approvalAction === 'delete') {
+      await transactionsRepository.deleteApproval({ transactionId }, client);
+    }
+
+    const updatedTransaction = await transactionsRepository.findTransactionById({
+      organizationId,
+      transactionId
     }, client);
 
     await transactionsRepository.insertAuditLog({
@@ -199,8 +237,7 @@ async function updateTransaction({ organizationId, transactionId, userId, payloa
       newValue: updatedTransaction
     }, client);
 
-    const searchableFields = ['amount', 'vendor', 'transaction_type', 'category', 'transaction_date'];
-    const shouldRequeueEmbedding = searchableFields.some((field) => Object.prototype.hasOwnProperty.call(changes, field));
+    const shouldRequeueEmbedding = SEARCHABLE_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(changes, field));
 
     if (shouldRequeueEmbedding) {
       await transactionsRepository.upsertEmbeddingJob({
@@ -212,6 +249,36 @@ async function updateTransaction({ organizationId, transactionId, userId, payloa
 
     await client.query('COMMIT');
     return updatedTransaction;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function deleteTransaction({ organizationId, transactionId }) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const existingTransaction = await transactionsRepository.findTransactionById({
+      organizationId,
+      transactionId
+    }, client);
+
+    if (!existingTransaction) {
+      throw new HttpError(404, 'Transaction not found');
+    }
+
+    const deletedTransaction = await transactionsRepository.deleteTransaction({
+      organizationId,
+      transactionId
+    }, client);
+
+    await client.query('COMMIT');
+    return deletedTransaction;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -308,5 +375,6 @@ module.exports = {
   getTransactionsGoogleSheet,
   listTransactions,
   updateTransaction,
+  deleteTransaction,
   createTransaction
 };

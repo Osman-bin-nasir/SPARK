@@ -82,11 +82,25 @@ async function createTransaction(req, res, next) {
   }
 }
 
+async function deleteTransaction(req, res, next) {
+  try {
+    const result = await transactionService.deleteTransaction({
+      organizationId: req.organization.id,
+      transactionId: req.params.id
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getTransactionDocument,
   getTransaction,
   getTransactionsGoogleSheet,
   listTransactions,
   updateTransaction,
+  deleteTransaction,
   createTransaction
 };
