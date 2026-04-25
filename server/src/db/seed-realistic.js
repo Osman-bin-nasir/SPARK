@@ -54,7 +54,7 @@ async function assertRequiredSeedTables(client) {
 
   if (missingTables.length > 0) {
     throw new Error(
-      `Database schema is missing required tables: ${missingTables.join(', ')}. Run the app initializer before seeding.`
+      `Database schema is missing required tables: ${missingTables.join(', ')}. Run \`npm run migrate\` before seeding.`
     );
   }
 }

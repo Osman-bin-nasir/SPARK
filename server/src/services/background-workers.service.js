@@ -8,9 +8,16 @@ const googleDriveService = require('./google-drive.service');
 
 let embeddingWorkerRunning = false;
 let orphanCleanupRunning = false;
-let embeddingInterval = null;
-let orphanCleanupInterval = null;
+let embeddingTimer = null;
+let orphanCleanupTimer = null;
+let workersStarted = false;
+let shutdownRequested = false;
+let embeddingDelayMs = env.embeddingWorkerIntervalMs;
+let orphanCleanupDelayMs = env.orphanCleanupIntervalMs;
 const MAX_EMBEDDING_TEXT_CHARS = 4000;
+const MIN_EMBEDDING_BUSY_DELAY_MS = 5000;
+const MIN_ORPHAN_BUSY_DELAY_MS = 10000;
+const MAX_IDLE_BACKOFF_MULTIPLIER = 8;
 
 function buildEmbeddingSourceText(source) {
   const extractedText = typeof source.extracted_text === 'string'
@@ -35,14 +42,16 @@ function buildEmbeddingSourceText(source) {
 
 async function processEmbeddingJobs() {
   if (embeddingWorkerRunning) {
-    return;
+    return { didWork: false, skipped: true, jobsClaimed: 0, jobsEnqueued: 0 };
   }
 
   embeddingWorkerRunning = true;
 
   try {
+    let enqueued = 0;
+
     if (env.embeddingBackfillBatchSize > 0) {
-      const enqueued = await transactionsRepository.enqueueBackfillEmbeddingJobs(env.embeddingBackfillBatchSize);
+      enqueued = await transactionsRepository.enqueueBackfillEmbeddingJobs(env.embeddingBackfillBatchSize);
 
       if (enqueued > 0) {
         console.info(`[embedding-worker] Enqueued ${enqueued} backfill job(s)`);
@@ -52,7 +61,13 @@ async function processEmbeddingJobs() {
     const jobs = await transactionsRepository.claimEmbeddingJobs(5);
 
     if (jobs.length === 0) {
-      return;
+      return {
+        didWork: enqueued > 0,
+        jobsClaimed: 0,
+        jobsCompleted: 0,
+        jobsFailed: 0,
+        jobsEnqueued: enqueued
+      };
     }
 
     // Process all claimed jobs concurrently — each one makes an independent
@@ -99,8 +114,17 @@ async function processEmbeddingJobs() {
     console.info(
       `[embedding-worker] Processed ${jobs.length} job(s), completed=${completedCount}, failed=${failedCount}`
     );
+
+    return {
+      didWork: true,
+      jobsClaimed: jobs.length,
+      jobsCompleted: completedCount,
+      jobsFailed: failedCount,
+      jobsEnqueued: enqueued
+    };
   } catch (error) {
     console.error('Embedding worker iteration failed:', error.message);
+    throw error;
   } finally {
     embeddingWorkerRunning = false;
   }
@@ -108,7 +132,7 @@ async function processEmbeddingJobs() {
 
 async function processOrphanDriveFiles() {
   if (orphanCleanupRunning) {
-    return;
+    return { didWork: false, skipped: true, recordsClaimed: 0 };
   }
 
   orphanCleanupRunning = true;
@@ -116,45 +140,134 @@ async function processOrphanDriveFiles() {
   try {
     const records = await ingestionRepository.claimOrphanDriveFiles(10);
 
+    if (records.length === 0) {
+      return {
+        didWork: false,
+        recordsClaimed: 0,
+        recordsDeleted: 0,
+        recordsFailed: 0
+      };
+    }
+
+    let deletedCount = 0;
+    let failedCount = 0;
+
     for (const record of records) {
       try {
         const { drive } = await googleDriveService.getOrganizationDriveClient(record.organization_id);
         await deleteFile(drive, record.drive_file_id);
         await ingestionRepository.markOrphanDriveFileCleanupStatus(record.id, 'deleted');
+        deletedCount += 1;
       } catch (error) {
         await ingestionRepository.markOrphanDriveFileCleanupStatus(record.id, 'failed');
+        failedCount += 1;
       }
     }
+
+    return {
+      didWork: true,
+      recordsClaimed: records.length,
+      recordsDeleted: deletedCount,
+      recordsFailed: failedCount
+    };
   } catch (error) {
     console.error('Orphan Drive cleanup iteration failed:', error.message);
+    throw error;
   } finally {
     orphanCleanupRunning = false;
   }
 }
 
-function startBackgroundWorkers() {
-  if (!embeddingInterval) {
-    embeddingInterval = setInterval(processEmbeddingJobs, env.embeddingWorkerIntervalMs);
-    embeddingInterval.unref?.();
-    processEmbeddingJobs();
-  }
+function scheduleNextRun(kind, runner, delayMs) {
+  const normalizedDelayMs = Math.max(1000, Number(delayMs) || 1000);
+  const schedule = setTimeout(runner, normalizedDelayMs);
 
-  if (!orphanCleanupInterval) {
-    orphanCleanupInterval = setInterval(processOrphanDriveFiles, env.orphanCleanupIntervalMs);
-    orphanCleanupInterval.unref?.();
-    processOrphanDriveFiles();
+  if (kind === 'embedding') {
+    embeddingTimer = schedule;
+  } else {
+    orphanCleanupTimer = schedule;
   }
 }
 
-async function stopBackgroundWorkers() {
-  if (embeddingInterval) {
-    clearInterval(embeddingInterval);
-    embeddingInterval = null;
+function calculateNextDelay({ didWork, previousDelayMs, defaultDelayMs, busyDelayFloorMs }) {
+  if (didWork) {
+    return Math.max(busyDelayFloorMs, Math.floor(defaultDelayMs / 2));
   }
 
-  if (orphanCleanupInterval) {
-    clearInterval(orphanCleanupInterval);
-    orphanCleanupInterval = null;
+  const nextDelayMs = previousDelayMs > 0 ? previousDelayMs * 2 : defaultDelayMs;
+  return Math.min(defaultDelayMs * MAX_IDLE_BACKOFF_MULTIPLIER, nextDelayMs);
+}
+
+async function runEmbeddingLoop() {
+  if (shutdownRequested) {
+    return;
+  }
+
+  try {
+    const summary = await processEmbeddingJobs();
+    embeddingDelayMs = calculateNextDelay({
+      didWork: Boolean(summary?.didWork),
+      previousDelayMs: embeddingDelayMs,
+      defaultDelayMs: env.embeddingWorkerIntervalMs,
+      busyDelayFloorMs: MIN_EMBEDDING_BUSY_DELAY_MS
+    });
+  } catch (error) {
+    embeddingDelayMs = Math.max(env.embeddingWorkerIntervalMs, MIN_EMBEDDING_BUSY_DELAY_MS);
+  }
+
+  if (!shutdownRequested) {
+    scheduleNextRun('embedding', runEmbeddingLoop, embeddingDelayMs);
+  }
+}
+
+async function runOrphanCleanupLoop() {
+  if (shutdownRequested) {
+    return;
+  }
+
+  try {
+    const summary = await processOrphanDriveFiles();
+    orphanCleanupDelayMs = calculateNextDelay({
+      didWork: Boolean(summary?.didWork),
+      previousDelayMs: orphanCleanupDelayMs,
+      defaultDelayMs: env.orphanCleanupIntervalMs,
+      busyDelayFloorMs: MIN_ORPHAN_BUSY_DELAY_MS
+    });
+  } catch (error) {
+    orphanCleanupDelayMs = Math.max(env.orphanCleanupIntervalMs, MIN_ORPHAN_BUSY_DELAY_MS);
+  }
+
+  if (!shutdownRequested) {
+    scheduleNextRun('orphan', runOrphanCleanupLoop, orphanCleanupDelayMs);
+  }
+}
+
+function startBackgroundWorkers() {
+  if (workersStarted) {
+    return;
+  }
+
+  workersStarted = true;
+  shutdownRequested = false;
+  embeddingDelayMs = env.embeddingWorkerIntervalMs;
+  orphanCleanupDelayMs = env.orphanCleanupIntervalMs;
+
+  runEmbeddingLoop();
+  runOrphanCleanupLoop();
+}
+
+async function stopBackgroundWorkers() {
+  shutdownRequested = true;
+  workersStarted = false;
+
+  if (embeddingTimer) {
+    clearTimeout(embeddingTimer);
+    embeddingTimer = null;
+  }
+
+  if (orphanCleanupTimer) {
+    clearTimeout(orphanCleanupTimer);
+    orphanCleanupTimer = null;
   }
 
   await pool.end();

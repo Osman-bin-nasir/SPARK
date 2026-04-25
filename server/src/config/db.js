@@ -1,4 +1,4 @@
 const { pool } = require('../db/pool');
-const { initDb } = require('../db/init');
+const { assertDatabaseReady } = require('../db/init');
 
-module.exports = { initDb, pool };
+module.exports = { assertDatabaseReady, pool };

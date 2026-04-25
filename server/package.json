@@ -6,7 +6,10 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "dev:worker": "nodemon src/worker.js",
+    "migrate": "node src/scripts/migrate.js",
     "start": "node src/server.js",
+    "start:worker": "node src/worker.js",
     "seed:startup-demo": "node src/db/seed-realistic.js",
     "test": "node --test",
     "python-ai:venv": "py -3.12 -m venv .venv",
