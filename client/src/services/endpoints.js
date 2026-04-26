@@ -8,8 +8,6 @@ export const endpoints = {
   login: '/auth/login',
   refresh: '/auth/refresh',
   linkTelegram: '/auth/link-telegram',
-  aiAnswer: '/ai/answer',
-  aiQuery: '/ai/query',
   dashboard: '/dashboard',
   dashboardConfig: '/dashboard/config',
   dashboardBudgets: '/dashboard/budgets',
@@ -19,8 +17,8 @@ export const endpoints = {
   organizationsRegenerateJoinCode: '/organizations/team/join-code/regenerate',
   organizationsTeamMembers: '/organizations/team/members',
   transactions: '/transactions',
+  transactionsSearch: '/transactions/search',
   transactionsGoogleSheets: '/transactions/google-sheets',
   performance: '/performance',
-  semanticSearch: '/semantic-search',
   ragAnswer: '/rag/answer'
 };
