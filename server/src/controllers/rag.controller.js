@@ -1,4 +1,4 @@
-const semanticSearchService = require('../services/semantic-search.service');
+const transactionService = require('../services/transaction.service');
 const ragService = require('../services/rag.service');
 
 function parseBoolean(value) {
@@ -15,37 +15,28 @@ function parseBoolean(value) {
 
 async function answer(req, res, next) {
   try {
-    const searchResult = await semanticSearchService.semanticSearch({
+    const searchResult = await transactionService.searchTransactions({
       organizationId: req.organization.id,
-      query: req.body?.query,
-      topK: req.body?.top_k,
-      minSimilarity: req.body?.min_similarity,
-      minLexicalScore: req.body?.min_lexical_score,
-      includePendingReview: parseBoolean(req.body?.include_pending_review),
-      retrievalMode: req.body?.retrieval_mode,
-      vendor: req.body?.vendor,
-      category: req.body?.category,
-      transactionType: req.body?.transaction_type || req.body?.transactionType,
-      startDate: req.body?.start_date || req.body?.startDate,
-      endDate: req.body?.end_date || req.body?.endDate
+      payload: {
+        ...req.body,
+        include_pending_review: parseBoolean(req.body?.include_pending_review)
+      }
     });
 
     const answerPayload = await ragService.composeAnswer({
       query: searchResult.query,
-      items: searchResult.items,
-      answerMode: req.body?.answer_mode
+      items: searchResult.items
     });
 
     res.status(200).json({
       query: searchResult.query,
       retrieval: {
-        mode: searchResult.retrieval_mode,
+        mode: searchResult.mode,
         top_k: searchResult.top_k,
-        min_similarity: searchResult.min_similarity,
-        min_lexical_score: searchResult.min_lexical_score,
         include_pending_review: searchResult.include_pending_review,
         total: searchResult.total
       },
+      items: searchResult.items,
       ...answerPayload
     });
   } catch (error) {

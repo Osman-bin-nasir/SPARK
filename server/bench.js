@@ -7,17 +7,18 @@ const { pool } = require('./src/db/pool');
 console.log('pool:', Date.now() - t1);
 
 const t2 = Date.now();
-const { initDb } = require('./src/db/init');
-console.log('initDb loaded:', Date.now() - t2);
+const { assertDatabaseReady } = require('./src/db/init');
+console.log('assertDatabaseReady loaded:', Date.now() - t2);
 
 async function run() {
   const t3 = Date.now();
   try {
-    await initDb();
-    console.log('initDb executed:', Date.now() - t3);
+    await assertDatabaseReady();
+    console.log('assertDatabaseReady executed:', Date.now() - t3);
   } catch (e) {
-    console.error('initDb error:', e.message);
+    console.error('assertDatabaseReady error:', e.message);
   }
+  await pool.end();
   process.exit(0);
 }
 

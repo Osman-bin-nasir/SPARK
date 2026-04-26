@@ -5,6 +5,7 @@ const {
   requireOrganizationMembership,
   requireOrganizationRole
 } = require('../middleware/organization.middleware');
+const { createSearchMetricsMiddleware } = require('../middleware/search-metrics.middleware');
 
 const router = express.Router();
 
@@ -12,6 +13,7 @@ router.use(requireAuth, requireOrganizationMembership);
 
 router.get('/', transactionController.listTransactions);
 router.get('/google-sheets', transactionController.getTransactionsGoogleSheet);
+router.post('/search', createSearchMetricsMiddleware('/api/transactions/search'), transactionController.searchTransactions);
 router.post('/', requireOrganizationRole(['founder', 'admin']), transactionController.createTransaction);
 router.get('/:id/document', transactionController.getTransactionDocument);
 router.get('/:id', transactionController.getTransaction);

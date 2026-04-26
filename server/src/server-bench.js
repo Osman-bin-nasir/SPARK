@@ -3,8 +3,7 @@ const app = require('./app');
 console.log('require app:', Date.now() - t0);
 
 const { env, validateEnv } = require('./config/env');
-const { initDb } = require('./db/init');
-const { startBackgroundWorkers } = require('./services/background-workers.service');
+const { assertDatabaseReady } = require('./db/init');
 
 async function start() {
   try {
@@ -13,12 +12,8 @@ async function start() {
     console.log('validateEnv:', Date.now() - t1);
 
     const t2 = Date.now();
-    await initDb();
-    console.log('initDb:', Date.now() - t2);
-
-    const t3 = Date.now();
-    startBackgroundWorkers();
-    console.log('startBackgroundWorkers:', Date.now() - t3);
+    await assertDatabaseReady();
+    console.log('assertDatabaseReady:', Date.now() - t2);
 
     const t4 = Date.now();
     app.listen(env.port, () => {

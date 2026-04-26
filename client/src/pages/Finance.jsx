@@ -102,6 +102,12 @@ function getFinanceBreakdownRows(response) {
 }
 
 function getFinanceResultTransactions(response) {
+  const resultItems = normalizeFinanceTransactionItems(response?.items);
+
+  if (resultItems.length > 0) {
+    return resultItems;
+  }
+
   const citationItems = normalizeFinanceTransactionItems(response?.citations);
 
   if (citationItems.length > 0) {
@@ -124,10 +130,15 @@ function getFinanceResultTransactions(response) {
 }
 
 function getFinanceMatchCount(response) {
+  const directCount = response?.retrieval?.total;
   const summaryCount = response?.summary?.totals?.transaction_count;
   const currentCount = response?.current?.totals?.transaction_count;
   const searchCount = response?.search?.total;
   const citationCount = Array.isArray(response?.citations) ? response.citations.length : null;
+
+  if (directCount != null) {
+    return Number(directCount || 0);
+  }
 
   if (summaryCount != null) {
     return Number(summaryCount || 0);
@@ -149,6 +160,7 @@ function getFinanceMatchCount(response) {
 }
 
 function getFinanceTotalAmount(response) {
+  const directItems = response?.items;
   const summaryTotal = response?.summary?.totals?.total_amount;
   const currentTotal = response?.current?.totals?.total_amount;
 
@@ -158,6 +170,10 @@ function getFinanceTotalAmount(response) {
 
   if (currentTotal != null) {
     return Number(currentTotal || 0);
+  }
+
+  if (Array.isArray(directItems)) {
+    return sumTransactionAmounts(directItems);
   }
 
   return sumTransactionAmounts(response?.search?.items || response?.citations);
@@ -191,7 +207,7 @@ function buildFinanceSearchResult(response, originalQuestion) {
       : (matchCount > 0 ? 'Transactions found for this query.' : 'No matching transactions were found for this query.'),
     original_question: originalQuestion,
     query: response?.query || response?.plan?.search_query || originalQuestion,
-    mode: response?.mode || 'lookup',
+    mode: response?.mode || response?.retrieval?.mode || 'lookup',
     intent: response?.intent || response?.plan?.intent || null,
     plan: response?.plan || null,
     matchCount,
@@ -279,14 +295,10 @@ export default function FinancePage({ activeOrganizationId, token: tokenProp, us
 
     try {
       const response = await post(
-        endpoints.aiQuery,
+        endpoints.ragAnswer,
         {
           query: rawQuestion,
-          retrieval_mode: 'hybrid',
-          answer_mode: 'deterministic',
           top_k: 8,
-          min_similarity: 0.25,
-          min_lexical_score: 0,
           include_pending_review: true
         },
         authHeaders

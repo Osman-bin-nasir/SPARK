@@ -33,11 +33,11 @@ Users submit finance data through a Telegram bot as:
 - PDF invoices
 - Manual or forwarded text
 
-### 2. AI + OCR + RAG Processing
+### 2. AI + Extraction + RAG Processing
 
 Each submission is expected to flow through:
 
-1. OCR or text extraction
+1. External text extraction
 2. AI processing
 3. Structured field extraction
 
@@ -114,7 +114,7 @@ Target dashboard modules:
 | Bot | n8n + Python Telegram Bot API | Implemented and tested through the external n8n/Python workflow; not fully versioned in this repository |
 | Security | JWT access/refresh, CORS, bcrypt, OAuth, Helmet, Rate Limiting | JWT, refresh-token backend, CORS, bcrypt, and Google OAuth are present; Helmet and rate limiting are not implemented |
 | Database | Neon PostgreSQL (pgvector) + Google Drive API | PostgreSQL schema and pgvector support exist; Google Drive integration exists; Google Sheets mirror is not implemented |
-| OCR | PaddleOCR | Implemented and tested in the external ingestion workflow; not fully represented in this repository |
+| Extraction | External document/text extraction | Handled outside this repository and passed into the backend |
 | AI / RAG | Sentence Transformers + pgvector | Embedding worker and vector storage exist; Sentence Transformers, semantic search API, and RAG answers are not implemented |
 | DevOps | Docker, Docker Compose, Vercel, Railway, GitHub Actions | `client/vercel.json` exists; Docker, Compose, Railway config, and GitHub Actions are not present |
 | Version Control | GitHub | In use |
@@ -126,7 +126,7 @@ Target dashboard modules:
 - [x] React frontend shell with login, signup, Telegram login-link consumption, a basic dashboard shell, and an integrations page
 - [x] Express backend with mounted route groups for auth, Google Drive, ingestion, and transactions
 - [x] Telegram bot implementation with n8n integration, connected and tested outside this repository
-- [x] OCR pipeline for receipts and PDFs, connected and tested in the ingestion workflow
+- [x] External document/text extraction flow connected to ingestion
 - [x] Email/password authentication with bcrypt hashing
 - [x] JWT access token issuance
 - [x] JWT refresh token backend support
@@ -151,7 +151,7 @@ Target dashboard modules:
 - Partial: Ingestion pipeline
   - The backend accepts signed text and multipart document submissions.
   - Uploaded documents can be stored in Google Drive and transactions are persisted in PostgreSQL.
-  - OCR is now connected and tested through the external workflow.
+  - Extraction is handled through the external workflow.
   - AI extraction and structured field generation are still not fully implemented in this repository; the current ingestion endpoints expect already-structured payload fields.
 
 - Partial: Duplicate detection
@@ -267,18 +267,18 @@ Important notes:
 - The repository contains empty placeholder frontend files for approvals, budgets, month close, transactions, and activity feed.
 - The repository also contains an older empty `server/src/api` tree that is not the active backend route surface.
 - Google Sheets and Telegram client files exist only as empty placeholders.
-- The Telegram bot and OCR flow are working through your external n8n-connected setup, but that implementation is not fully captured in this repository.
+- The Telegram bot and external extraction flow are working through your n8n-connected setup, but that implementation is not fully captured in this repository.
 - There is no Python service directory, no Docker setup, and no CI workflow in the repo today.
 
 ## Team Roles
 
-- Osman: Telegram bot (`n8n + Python`), file ingestion pipeline, PaddleOCR implementation, Neon PostgreSQL schema design, pgvector setup, Google Drive storage integration, Socket.IO integration, selected frontend components
-- Saif: AI / RAG, PaddleOCR integration support, embeddings, pgvector similarity search, duplicate detection, auto-categorization, confidence scoring, LLM integration
+- Osman: Telegram bot (`n8n + Python`), file ingestion pipeline, external extraction integration, Neon PostgreSQL schema design, pgvector setup, Google Drive storage integration, Socket.IO integration, selected frontend components
+- Saif: AI / RAG, extraction integration support, embeddings, pgvector similarity search, duplicate detection, auto-categorization, confidence scoring, LLM integration
 - Razzaq: Main frontend and backend, React dashboard UI, Tailwind styling, charts, Express APIs, authentication, approval workflows, audit logs, realtime events, business logic implementation
 
 ## Suggested Build Order
 
-1. Build structured extraction, confidence scoring, and review routing on top of the working bot-to-backend OCR ingestion path.
+1. Build structured extraction, confidence scoring, and review routing on top of the working bot-to-backend ingestion path.
 2. Add transaction listing, detail, and review UI on the frontend.
 3. Implement approval workflows and activity feed APIs plus screens.
 4. Build dashboard metrics and Recharts visualizations.
