@@ -11,10 +11,7 @@
     "start": "node src/server.js",
     "start:worker": "node src/worker.js",
     "seed:startup-demo": "node src/db/seed-realistic.js",
-    "test": "node --test",
-    "python-ai:venv": "py -3.12 -m venv .venv",
-    "python-ai:install": ".venv\\Scripts\\python.exe -m pip install -r python_ai/requirements.txt",
-    "python-ai:dev": ".venv\\Scripts\\python.exe -m uvicorn python_ai.app:app --host 0.0.0.0 --port 8001 --reload"
+    "test": "node --test"
   },
   "dependencies": {
     "@langchain/core": "^0.3.40",

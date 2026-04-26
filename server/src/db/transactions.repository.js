@@ -171,33 +171,35 @@ async function insertTransactionWithDocumentAndJobs(
     ]
   );
 
-  await client.query(
-    `INSERT INTO embedding_jobs (
-       id,
-       transaction_id,
-       organization_id,
-       status,
-       attempt_count,
-       max_attempts,
-       next_attempt_at,
-       last_error,
-       created_at,
-       updated_at
-     )
-     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, NOW()), $8, COALESCE($9, NOW()), COALESCE($10, NOW()))`,
-    [
-      embeddingJob.id,
-      embeddingJob.transaction_id,
-      embeddingJob.organization_id,
-      embeddingJob.status,
-      embeddingJob.attempt_count,
-      embeddingJob.max_attempts,
-      embeddingJob.next_attempt_at || null,
-      embeddingJob.last_error || null,
-      embeddingJob.created_at || null,
-      embeddingJob.updated_at || null
-    ]
-  );
+  if (embeddingJob) {
+    await client.query(
+      `INSERT INTO embedding_jobs (
+         id,
+         transaction_id,
+         organization_id,
+         status,
+         attempt_count,
+         max_attempts,
+         next_attempt_at,
+         last_error,
+         created_at,
+         updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, NOW()), $8, COALESCE($9, NOW()), COALESCE($10, NOW()))`,
+      [
+        embeddingJob.id,
+        embeddingJob.transaction_id,
+        embeddingJob.organization_id,
+        embeddingJob.status,
+        embeddingJob.attempt_count,
+        embeddingJob.max_attempts,
+        embeddingJob.next_attempt_at || null,
+        embeddingJob.last_error || null,
+        embeddingJob.created_at || null,
+        embeddingJob.updated_at || null
+      ]
+    );
+  }
 
   if (auditLog) {
     await client.query(
@@ -379,12 +381,15 @@ async function listTransactionsForGoogleSheet(
   return rows.map(mapTransactionRow);
 }
 
-async function findTransactionsBySimilarity(
+function escapeLikePattern(value) {
+  return String(value || '').replace(/[\\%_]/g, '\\$&');
+}
+
+async function searchTransactionsByText(
   {
     organizationId,
-    queryEmbedding,
-    topK = 5,
-    minSimilarity = 0.6,
+    query,
+    limit = 10,
     includePendingReview = false,
     vendor,
     category,
@@ -394,13 +399,22 @@ async function findTransactionsBySimilarity(
   },
   client = pool
 ) {
-  const vectorLiteral = `[${queryEmbedding.join(',')}]`;
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  const likePattern = `%${escapeLikePattern(normalizedQuery)}%`;
   const statuses = includePendingReview ? ['auto_verified', 'pending_review'] : ['auto_verified'];
-  const params = [organizationId, vectorLiteral, statuses, minSimilarity];
+  const params = [organizationId, statuses, likePattern, normalizedQuery];
   const filters = [
     't.organization_id = $1',
-    't.status = ANY($3::text[])',
-    '(1 - (te.embedding <=> $2::vector)) >= $4'
+    't.status = ANY($2::text[])',
+    `(
+      LOWER(t.vendor) LIKE $3 ESCAPE '\\'
+      OR LOWER(t.category) LIKE $3 ESCAPE '\\'
+      OR LOWER(t.transaction_type) LIKE $3 ESCAPE '\\'
+      OR LOWER(COALESCE(d.original_name, '')) LIKE $3 ESCAPE '\\'
+      OR LOWER(COALESCE(d.stored_name, '')) LIKE $3 ESCAPE '\\'
+      OR LOWER(COALESCE(d.extracted_text, '')) LIKE $3 ESCAPE '\\'
+      OR LOWER(COALESCE(d.text_content, '')) LIKE $3 ESCAPE '\\'
+    )`
   ];
 
   if (transactionType) {
@@ -428,7 +442,7 @@ async function findTransactionsBySimilarity(
     filters.push(`t.transaction_date <= $${params.length}::date`);
   }
 
-  params.push(topK);
+  params.push(limit);
 
   const { rows } = await client.query(
     `SELECT t.id,
@@ -448,20 +462,33 @@ async function findTransactionsBySimilarity(
             d.original_name,
             d.stored_name,
             d.file_type,
+            d.text_content,
+            d.extracted_text,
             d.extraction_confidence,
-            ROUND((1 - (te.embedding <=> $2::vector))::numeric, 6) AS similarity_score
+            CASE
+              WHEN LOWER(t.vendor) = $4 THEN 1.0
+              WHEN LOWER(t.vendor) LIKE $3 ESCAPE '\\' THEN 0.95
+              WHEN LOWER(t.category) = $4 THEN 0.85
+              WHEN LOWER(t.category) LIKE $3 ESCAPE '\\' THEN 0.8
+              WHEN LOWER(t.transaction_type) = $4 THEN 0.75
+              WHEN LOWER(COALESCE(d.original_name, '')) LIKE $3 ESCAPE '\\' THEN 0.7
+              WHEN LOWER(COALESCE(d.stored_name, '')) LIKE $3 ESCAPE '\\' THEN 0.68
+              WHEN LOWER(COALESCE(d.extracted_text, '')) LIKE $3 ESCAPE '\\' THEN 0.65
+              WHEN LOWER(COALESCE(d.text_content, '')) LIKE $3 ESCAPE '\\' THEN 0.6
+              ELSE 0.5
+            END AS relevance_score
      FROM transactions t
-     JOIN transaction_embeddings te ON te.transaction_id = t.id
      LEFT JOIN documents d ON d.transaction_id = t.id
      WHERE ${filters.join(' AND ')}
-     ORDER BY te.embedding <=> $2::vector ASC
+     ORDER BY relevance_score DESC, t.transaction_date DESC, t.created_at DESC
      LIMIT $${params.length}`,
     params
   );
 
   return rows.map((row) => ({
     ...mapTransactionRow(row),
-    similarity_score: Number(row.similarity_score),
+    relevance_score: Number(row.relevance_score),
+    similarity_score: Number(row.relevance_score),
     document: row.document_id
       ? {
           id: row.document_id,
@@ -469,138 +496,8 @@ async function findTransactionsBySimilarity(
           original_name: row.original_name,
           stored_name: row.stored_name,
           file_type: row.file_type,
-          extraction_confidence: row.extraction_confidence === null ? null : Number(row.extraction_confidence)
-        }
-      : null
-  }));
-}
-
-async function findTransactionsByKeywordSearch(
-  {
-    organizationId,
-    query,
-    topK = 5,
-    minLexicalScore = 0,
-    includePendingReview = false,
-    vendor,
-    category,
-    transactionType,
-    startDate,
-    endDate
-  },
-  client = pool
-) {
-  const statuses = includePendingReview ? ['auto_verified', 'pending_review'] : ['auto_verified'];
-  const params = [organizationId, query, statuses, minLexicalScore];
-  const optionalFilters = [];
-
-  if (transactionType) {
-    params.push(transactionType);
-    optionalFilters.push(`LOWER(t.transaction_type) = LOWER($${params.length})`);
-  }
-
-  if (vendor) {
-    params.push(`%${String(vendor).trim().toLowerCase()}%`);
-    optionalFilters.push(`LOWER(t.vendor) LIKE $${params.length}`);
-  }
-
-  if (category) {
-    params.push(`%${String(category).trim().toLowerCase()}%`);
-    optionalFilters.push(`LOWER(t.category) LIKE $${params.length}`);
-  }
-
-  if (startDate) {
-    params.push(startDate);
-    optionalFilters.push(`t.transaction_date >= $${params.length}::date`);
-  }
-
-  if (endDate) {
-    params.push(endDate);
-    optionalFilters.push(`t.transaction_date <= $${params.length}::date`);
-  }
-
-  params.push(topK);
-
-  // Build the tsvector once in a CTE and reuse it for filtering and ranking.
-  // Previously to_tsvector() was computed three times per row (SELECT, WHERE, AND),
-  // which triples the per-row CPU cost. This CTE makes it a single computation.
-  const { rows } = await client.query(
-    `WITH base AS (
-       SELECT t.id,
-              t.organization_id,
-              t.amount,
-              t.vendor,
-              t.transaction_type,
-              t.category,
-              t.transaction_date,
-              t.confidence_score,
-              t.duplicate_of_transaction_id,
-              t.duplicate_score,
-              t.status,
-              t.created_at,
-              d.id AS document_id,
-              d.storage_kind,
-              d.original_name,
-              d.stored_name,
-              d.file_type,
-              d.extraction_confidence,
-              to_tsvector(
-                'simple',
-                concat_ws(
-                  ' ',
-                  t.vendor,
-                  t.category,
-                  t.transaction_type,
-                  COALESCE(d.extracted_text, ''),
-                  COALESCE(d.text_content, ''),
-                  COALESCE(d.original_name, ''),
-                  COALESCE(d.stored_name, '')
-                )
-              ) AS doc_vector
-       FROM transactions t
-       LEFT JOIN documents d ON d.transaction_id = t.id
-       WHERE t.organization_id = $1
-         AND t.status = ANY($3::text[])
-         ${optionalFilters.length > 0 ? `AND ${optionalFilters.join(' AND ')}` : ''}
-     )
-     SELECT id,
-            organization_id,
-            amount,
-            vendor,
-            transaction_type,
-            category,
-            transaction_date,
-            confidence_score,
-            duplicate_of_transaction_id,
-            duplicate_score,
-            status,
-            created_at,
-            document_id,
-            storage_kind,
-            original_name,
-            stored_name,
-            file_type,
-            extraction_confidence,
-            ts_rank_cd(doc_vector, plainto_tsquery('simple', $2)) AS lexical_score
-     FROM base
-     WHERE doc_vector @@ plainto_tsquery('simple', $2)
-       AND ts_rank_cd(doc_vector, plainto_tsquery('simple', $2)) >= $4
-     ORDER BY lexical_score DESC, transaction_date DESC
-     LIMIT $${params.length}`,
-    params
-  );
-
-  return rows.map((row) => ({
-    ...mapTransactionRow(row),
-    lexical_score: Number(row.lexical_score),
-    similarity_score: Number(row.lexical_score),
-    document: row.document_id
-      ? {
-          id: row.document_id,
-          storage_kind: row.storage_kind,
-          original_name: row.original_name,
-          stored_name: row.stored_name,
-          file_type: row.file_type,
+          text_content: row.text_content,
+          extracted_text: row.extracted_text,
           extraction_confidence: row.extraction_confidence === null ? null : Number(row.extraction_confidence)
         }
       : null
@@ -1113,14 +1010,13 @@ module.exports = {
   deleteTransaction,
   enqueueBackfillEmbeddingJobs,
   findExactDuplicateDocument,
-  findTransactionsByKeywordSearch,
   findTransactionById,
-  findTransactionsBySimilarity,
   findTransactionEmbeddingSource,
   insertAuditLog,
   insertTransactionWithDocumentAndJobs,
   listPotentialDuplicateCandidates,
   listTransactions,
+  searchTransactionsByText,
   summarizeTransactions,
   listTransactionsForGoogleSheet,
   mapTransactionRow,

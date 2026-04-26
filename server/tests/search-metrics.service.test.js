@@ -10,12 +10,12 @@ const {
 test('search metrics aggregate counts and latency percentiles per route', () => {
   resetSearchMetrics();
 
-  recordSearchMetric({ routeKey: '/api/ai/query', durationMs: 20, statusCode: 200 });
-  recordSearchMetric({ routeKey: '/api/ai/query', durationMs: 60, statusCode: 200 });
-  recordSearchMetric({ routeKey: '/api/ai/query', durationMs: 100, statusCode: 503 });
+  recordSearchMetric({ routeKey: '/api/rag/answer', durationMs: 20, statusCode: 200 });
+  recordSearchMetric({ routeKey: '/api/rag/answer', durationMs: 60, statusCode: 200 });
+  recordSearchMetric({ routeKey: '/api/rag/answer', durationMs: 100, statusCode: 503 });
 
   const snapshot = getSearchMetricsSnapshot();
-  const metric = snapshot.routes.find((route) => route.route === '/api/ai/query');
+  const metric = snapshot.routes.find((route) => route.route === '/api/rag/answer');
 
   assert.equal(snapshot.route_count, 1);
   assert.ok(metric);

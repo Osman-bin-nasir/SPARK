@@ -9,15 +9,13 @@ const {
   ensureFolderPath,
   uploadFile
 } = require('../integrations/google-drive/drive.client');
-const { extractTextFromDocument } = require('../integrations/ocr/ocr.client');
 const { env } = require('../config/env');
 const {
-  OCR_EXTRACTION_METHODS,
-  OCR_FAILURE_CODES,
+  EXTRACTION_METHODS,
   clampConfidence,
   normalizeExtractedText,
   shouldRouteToPendingReview
-} = require('../contracts/ocr.contract');
+} = require('../utils/document-extraction');
 const { buildStoredFileName } = require('../utils/file');
 const { HttpError } = require('../utils/http-error');
 const { normalizeComparableText } = require('../utils/vendor');
@@ -117,24 +115,6 @@ function validateTextPayload(payload) {
   };
 }
 
-function inferFailureCode(error) {
-  const message = String(error?.message || '').toLowerCase();
-
-  if (error?.name === 'AbortError' || message.includes('timeout')) {
-    return OCR_FAILURE_CODES.EXTRACTOR_TIMEOUT;
-  }
-
-  if (message.includes('failed with status')) {
-    return OCR_FAILURE_CODES.EXTRACTOR_UNAVAILABLE;
-  }
-
-  if (message.includes('unsupported')) {
-    return OCR_FAILURE_CODES.UNSUPPORTED_FILE_TYPE;
-  }
-
-  return OCR_FAILURE_CODES.UNKNOWN;
-}
-
 function buildFallbackExtractedText(payload = {}) {
   const fromPayload = typeof payload.extracted_text === 'string' ? payload.extracted_text : '';
   const fromRawExtraction = typeof payload.raw_extraction?.text === 'string' ? payload.raw_extraction.text : '';
@@ -143,35 +123,16 @@ function buildFallbackExtractedText(payload = {}) {
 }
 
 async function buildDocumentExtraction(file, payload) {
-  try {
-    const extracted = await extractTextFromDocument({
-      fileName: file.filename,
-      mimeType: file.mimeType,
-      buffer: file.buffer,
-      fallbackText: buildFallbackExtractedText(payload)
-    });
+  const fallbackText = normalizeExtractedText(buildFallbackExtractedText(payload), env.extractionMaxTextChars);
+  const rawConfidence = payload?.raw_extraction?.confidence ?? payload?.confidence_score ?? null;
 
-    return {
-      extracted_text: normalizeExtractedText(extracted.text, env.ocrMaxExtractedTextChars),
-      extraction_confidence: clampConfidence(extracted.confidence),
-      extraction_method: extracted.method || OCR_EXTRACTION_METHODS.UNKNOWN,
-      extraction_version: extracted.version || null,
-      extraction_error: null
-    };
-  } catch (error) {
-    console.warn(
-      `[ingestion][ocr] Extraction fallback used for file=${file?.filename || 'unknown'}: ${error.message}`
-    );
-    const fallbackText = normalizeExtractedText(buildFallbackExtractedText(payload), env.ocrMaxExtractedTextChars);
-
-    return {
-      extracted_text: fallbackText,
-      extraction_confidence: null,
-      extraction_method: OCR_EXTRACTION_METHODS.UNKNOWN,
-      extraction_version: null,
-      extraction_error: `${inferFailureCode(error)}: ${error.message}`
-    };
-  }
+  return {
+    extracted_text: fallbackText,
+    extraction_confidence: rawConfidence === null || rawConfidence === undefined ? null : clampConfidence(rawConfidence),
+    extraction_method: payload?.raw_extraction?.method || EXTRACTION_METHODS.EXTERNAL,
+    extraction_version: payload?.raw_extraction?.version || null,
+    extraction_error: null
+  };
 }
 
 function calculateDuplicateScore(candidate, incoming) {
@@ -259,7 +220,6 @@ async function prepareIngestion({ organizationId, normalizedPayload, contentHash
   return {
     transactionId: crypto.randomUUID(),
     documentId: crypto.randomUUID(),
-    embeddingJobId: crypto.randomUUID(),
     duplicateDocument,
     duplicateMatch,
     contentHash
@@ -286,7 +246,6 @@ async function createTransactionAndDocument({
   ingestionJobId,
   transactionId,
   documentId,
-  embeddingJobId,
   duplicateMatch,
   forcePendingReview,
   document
@@ -328,14 +287,6 @@ async function createTransactionAndDocument({
         extraction_version: document.extraction_version || null,
         extraction_error: document.extraction_error || null
       },
-      embeddingJob: {
-        id: embeddingJobId,
-        transaction_id: transactionId,
-        organization_id: organizationId,
-        status: 'pending',
-        attempt_count: 0,
-        max_attempts: 5
-      },
       auditLog: {
         id: crypto.randomUUID(),
         user_id: normalizedPayload.submitted_by_user_id,
@@ -365,7 +316,7 @@ async function createTransactionAndDocument({
       ingestion_job_id: ingestionJobId,
       transaction_id: transaction.id,
       document_id: documentId,
-      embedding_status: 'pending',
+      embedding_status: null,
       ingested: true,
       is_duplicate: false
     };
@@ -458,9 +409,8 @@ async function ingestDocument({ organizationId, payload, file }) {
         ingestionJobId: ingestionJob.id,
         transactionId: prepared.transactionId,
         documentId: prepared.documentId,
-        embeddingJobId: prepared.embeddingJobId,
         duplicateMatch: prepared.duplicateMatch,
-        forcePendingReview: shouldRouteToPendingReview(effectiveConfidence, env.ocrConfidenceThreshold),
+        forcePendingReview: shouldRouteToPendingReview(effectiveConfidence, env.extractionConfidenceThreshold),
         document: {
           storage_kind: 'google_drive',
           drive_file_id: uploadedFile.id,
@@ -514,7 +464,7 @@ async function ingestText({ organizationId, payload }) {
   });
 
   try {
-    const normalizedText = normalizeExtractedText(normalizedPayload.text, env.ocrMaxExtractedTextChars);
+    const normalizedText = normalizeExtractedText(normalizedPayload.text, env.extractionMaxTextChars);
     const textBuffer = Buffer.from(normalizedText, 'utf8');
     const contentHash = hashBuffer(textBuffer);
     const effectiveConfidence = clampConfidence(
@@ -552,9 +502,8 @@ async function ingestText({ organizationId, payload }) {
       ingestionJobId: ingestionJob.id,
       transactionId: prepared.transactionId,
       documentId: prepared.documentId,
-      embeddingJobId: prepared.embeddingJobId,
       duplicateMatch: prepared.duplicateMatch,
-      forcePendingReview: shouldRouteToPendingReview(effectiveConfidence, env.ocrConfidenceThreshold),
+      forcePendingReview: shouldRouteToPendingReview(effectiveConfidence, env.extractionConfidenceThreshold),
       document: {
         storage_kind: 'inline_text',
         drive_file_id: null,
@@ -566,7 +515,7 @@ async function ingestText({ organizationId, payload }) {
         text_content: nextPayload.text,
         extracted_text: nextPayload.text,
         extraction_confidence: effectiveConfidence,
-        extraction_method: OCR_EXTRACTION_METHODS.INLINE_TEXT_PASSTHROUGH,
+        extraction_method: EXTRACTION_METHODS.INLINE_TEXT,
         extraction_version: null,
         extraction_error: null
       }

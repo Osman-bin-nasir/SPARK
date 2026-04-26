@@ -3,11 +3,11 @@ const { pool } = require('../db/pool');
 const transactionsRepository = require('../db/transactions.repository');
 const googleSheetsService = require('./google-sheets.service');
 const googleDriveService = require('./google-drive.service');
+const { env } = require('../config/env');
 const { HttpError } = require('../utils/http-error');
 
 const ALLOWED_TRANSACTION_TYPES = ['expense', 'income', 'salary'];
 const ALLOWED_STATUSES = ['approved', 'auto_verified', 'pending_review'];
-const SEARCHABLE_FIELDS = ['amount', 'vendor', 'transaction_type', 'category', 'transaction_date'];
 
 const INCOME_CATEGORIES = ['funding', 'revenue', 'grant', 'loan', 'other_income'];
 const EXPENSE_CATEGORIES = ['software', 'cloud', 'payroll', 'marketing', 'office', 'travel', 'legal', 'hardware', 'other'];
@@ -26,6 +26,22 @@ function validateDate(value, fieldName) {
   if (!value || Number.isNaN(Date.parse(value))) {
     throw new HttpError(400, `${fieldName} must be a valid date`);
   }
+}
+
+function parseSearchLimit(value) {
+  const fallback = 10;
+
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new HttpError(400, 'top_k must be a positive integer');
+  }
+
+  return Math.min(parsed, env.ragMaxTopK);
 }
 
 function normalizeRequestedStatus(status) {
@@ -140,6 +156,41 @@ async function listTransactions({ organizationId, query }) {
   };
 }
 
+async function searchTransactions({ organizationId, payload }) {
+  const normalizedQuery = String(payload?.query || '').trim();
+
+  if (!normalizedQuery) {
+    throw new HttpError(400, 'query is required');
+  }
+
+  if (normalizedQuery.length > env.ragMaxQueryChars) {
+    throw new HttpError(400, `query must be at most ${env.ragMaxQueryChars} characters`);
+  }
+
+  const topK = parseSearchLimit(payload?.top_k ?? payload?.topK);
+  const includePendingReview = payload?.include_pending_review === true || payload?.includePendingReview === true;
+  const items = await transactionsRepository.searchTransactionsByText({
+    organizationId,
+    query: normalizedQuery,
+    limit: topK,
+    includePendingReview,
+    vendor: payload?.vendor,
+    category: payload?.category,
+    transactionType: payload?.transaction_type || payload?.transactionType,
+    startDate: payload?.start_date || payload?.startDate,
+    endDate: payload?.end_date || payload?.endDate
+  });
+
+  return {
+    query: normalizedQuery,
+    mode: 'keyword',
+    top_k: topK,
+    include_pending_review: includePendingReview,
+    total: items.length,
+    items
+  };
+}
+
 async function getTransaction({ organizationId, transactionId }) {
   const transaction = await transactionsRepository.findTransactionById({
     organizationId,
@@ -236,16 +287,6 @@ async function updateTransaction({ organizationId, transactionId, userId, payloa
       previousValue: existingTransaction,
       newValue: updatedTransaction
     }, client);
-
-    const shouldRequeueEmbedding = SEARCHABLE_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(changes, field));
-
-    if (shouldRequeueEmbedding) {
-      await transactionsRepository.upsertEmbeddingJob({
-        id: crypto.randomUUID(),
-        transactionId,
-        organizationId
-      }, client);
-    }
 
     await client.query('COMMIT');
     return updatedTransaction;
@@ -344,12 +385,6 @@ async function createTransaction({ organizationId, userId, payload }) {
       newValue: transaction
     }, client);
 
-    await transactionsRepository.upsertEmbeddingJob({
-      id: crypto.randomUUID(),
-      transactionId: id,
-      organizationId
-    }, client);
-
     await client.query('COMMIT');
     return transaction;
   } catch (error) {
@@ -374,6 +409,7 @@ module.exports = {
   getTransaction,
   getTransactionsGoogleSheet,
   listTransactions,
+  searchTransactions,
   updateTransaction,
   deleteTransaction,
   createTransaction
