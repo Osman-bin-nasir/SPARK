@@ -34,6 +34,29 @@ function formatCategoryLabel(value) {
   return String(value || '').trim() || 'Uncategorized';
 }
 
+function normalizeDateOnly(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString().slice(0, 10);
+  }
+
+  const normalized = String(value).trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return normalized;
+  }
+
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+
 function parseDashboardMonths(value) {
   if (value === undefined || value === null || value === '') {
     return 6;
@@ -229,11 +252,13 @@ function getAvailableBurnSeries({
   earliestTransactionDate,
   currentMonthStart
 }) {
-  if (!earliestTransactionDate) {
+  const normalizedEarliestTransactionDate = normalizeDateOnly(earliestTransactionDate);
+
+  if (!normalizedEarliestTransactionDate) {
     return [];
   }
 
-  const earliestMonthStart = toUtcMonthStart(new Date(`${earliestTransactionDate}T00:00:00.000Z`));
+  const earliestMonthStart = toUtcMonthStart(new Date(`${normalizedEarliestTransactionDate}T00:00:00.000Z`));
 
   if (earliestMonthStart >= currentMonthStart) {
     return [];
@@ -466,7 +491,10 @@ async function getDashboardSnapshot({ organization, query }) {
     dashboardRepository.getEarliestTransactionDate({ organizationId })
   ]);
 
-  const cashFlowStartDate = financeSettings?.opening_cash_effective_date || earliestTransactionDate || null;
+  const normalizedOpeningCashEffectiveDate = normalizeDateOnly(financeSettings?.opening_cash_effective_date);
+  const normalizedEarliestTransactionDate = normalizeDateOnly(earliestTransactionDate);
+
+  const cashFlowStartDate = normalizedOpeningCashEffectiveDate || normalizedEarliestTransactionDate || null;
   const cashFlowTotals = cashFlowStartDate
     ? await dashboardRepository.getCashFlowTotalsSince({
         organizationId,
@@ -507,7 +535,7 @@ async function getDashboardSnapshot({ organization, query }) {
   const burnSeries = buildMonthlySeries(burnWindowStart, 3, burnTotalsByMonth);
   const availableBurnSeries = getAvailableBurnSeries({
     burnSeries,
-    earliestTransactionDate,
+    earliestTransactionDate: normalizedEarliestTransactionDate,
     currentMonthStart
   });
   const burnMonthCount = availableBurnSeries.length;
@@ -516,8 +544,8 @@ async function getDashboardSnapshot({ organization, query }) {
 
   const budgetAlerts = buildBudgetAlerts(budgets, currentMonthSpend);
   const burnHistoryReadyForSpikes = Boolean(
-    earliestTransactionDate
-      && earliestTransactionDate <= toDateString(burnWindowStart)
+    normalizedEarliestTransactionDate
+      && normalizedEarliestTransactionDate <= toDateString(burnWindowStart)
   );
   const spikeAlerts = buildSpikeAlerts({
     currentMonthSpend,
@@ -543,7 +571,7 @@ async function getDashboardSnapshot({ organization, query }) {
     now
   });
 
-  const hasTransactions = Boolean(earliestTransactionDate);
+  const hasTransactions = Boolean(normalizedEarliestTransactionDate);
 
   return {
     organization,

@@ -4,6 +4,29 @@ function isMissingOptionalDashboardTable(error, tableName) {
   return error?.code === '42P01' && String(error?.message || '').includes(tableName);
 }
 
+function normalizeDateOnly(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString().slice(0, 10);
+  }
+
+  const normalized = String(value).trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return normalized;
+  }
+
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+
 function mapFinanceSettingsRow(row) {
   if (!row) {
     return null;
@@ -12,7 +35,7 @@ function mapFinanceSettingsRow(row) {
   return {
     organization_id: row.organization_id,
     opening_cash_balance: row.opening_cash_balance === null ? null : Number(row.opening_cash_balance),
-    opening_cash_effective_date: row.opening_cash_effective_date,
+    opening_cash_effective_date: normalizeDateOnly(row.opening_cash_effective_date),
     created_at: row.created_at,
     updated_at: row.updated_at
   };
@@ -346,7 +369,7 @@ async function getEarliestTransactionDate({ organizationId }, client = pool) {
     [organizationId]
   );
 
-  return rows[0]?.earliest_transaction_date || null;
+  return normalizeDateOnly(rows[0]?.earliest_transaction_date);
 }
 
 module.exports = {

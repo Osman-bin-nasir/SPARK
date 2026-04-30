@@ -206,6 +206,36 @@ test('dashboard snapshot applies the selected this-month breakdown range', async
   });
 });
 
+test('dashboard snapshot accepts earliest transaction dates returned as Date objects', async () => {
+  await withMockedDate('2026-06-20T12:00:00.000Z', async () => {
+    await withRepositoryStub(createRepositoryStub({
+      getEarliestTransactionDate: async () => new Date('2026-04-10T00:00:00.000Z'),
+      getCashFlowTotalsSince: async () => ({
+        income_total: 9000,
+        outflow_total: 0
+      }),
+      listMonthlyOutflowTotals: async ({ endDate }) => (
+        endDate === '2026-06-01'
+          ? [{ month: '2026-04', total: 900 }]
+          : []
+      ),
+      listCurrentMonthCategorySpend: async () => ([
+        { category: 'Payroll', amount: 4000 }
+      ])
+    }), async () => {
+      const snapshot = await dashboardService.getDashboardSnapshot({
+        organization: { id: 'org-date-object' },
+        query: { months: 6 }
+      });
+
+      assert.equal(snapshot.dashboard_state, 'ready');
+      assert.equal(snapshot.metrics.cash_on_hand, 9000);
+      assert.equal(snapshot.metrics.monthly_burn, 450);
+      assert.equal(snapshot.metrics.historical_month_count, 2);
+    });
+  });
+});
+
 test('dashboard snapshot ignores the incomplete current month when no completed burn months exist yet', async () => {
   await withMockedDate('2026-04-20T12:00:00.000Z', async () => {
     await withRepositoryStub(createRepositoryStub({
