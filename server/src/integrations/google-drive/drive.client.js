@@ -6,7 +6,6 @@ const { HttpError } = require('../../utils/http-error');
 const GOOGLE_DRIVE_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 const GOOGLE_SHEETS_MIME_TYPE = 'application/vnd.google-apps.spreadsheet';
 const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-const GOOGLE_SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 
 function getGoogleApiStatus(error) {
   return error?.code || error?.status || error?.response?.status || null;
@@ -47,7 +46,7 @@ function buildAuthUrl(state) {
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
-    scope: [GOOGLE_DRIVE_SCOPE, GOOGLE_SHEETS_SCOPE],
+    scope: [GOOGLE_DRIVE_SCOPE],
     state
   });
 }

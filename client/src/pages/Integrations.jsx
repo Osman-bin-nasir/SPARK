@@ -59,6 +59,7 @@ function IntegrationsPage({ activeOrganizationId, onBack, token, user }) {
   const organization = organizations.find((o) => o.id === organizationId);
   const driveParam = searchParams.get('drive');
   const driveMessage = searchParams.get('message');
+  const isTelegramLinked = Boolean(user?.telegram_id);
 
   useEffect(() => {
     if (!token || !organizationId) {
@@ -174,7 +175,9 @@ function IntegrationsPage({ activeOrganizationId, onBack, token, user }) {
             </p>
             <p style={{ margin: '10px 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               SPARK requests Google Drive file access only for files, folders, and Google Sheets reports created or used
-              through SPARK. It does not request access to browse every file in your Drive. Review the{' '}
+              through SPARK. After approval, SPARK stores the connected Google email, an encrypted refresh token, Drive
+              file or folder IDs, and app-created spreadsheet IDs so uploads and transaction reports stay in sync. It
+              does not request access to browse every file in your Drive. Review the{' '}
               <Link className="legal-link" to="/privacy-policy">Privacy Policy</Link>
               {' '}and{' '}
               <Link className="legal-link" to="/terms-of-service">Terms</Link>
@@ -208,7 +211,7 @@ function IntegrationsPage({ activeOrganizationId, onBack, token, user }) {
         <div className="premium-card" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '24px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
-              <StatusBadge loading={false} connected={true} hoverText="Active System-wide"
+              <StatusBadge loading={false} connected={isTelegramLinked} hoverText={isTelegramLinked ? 'Linked to this account' : 'Not linked'}
                 icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#2AABEE"/><path fill="#fff" d="M5.4 11.8l11.4-4.4c.5-.2.9.1.8.6l-1.9 9.1c-.1.5-.4.7-.8.4l-2.3-1.7-1.1 1.1c-.1.1-.3.2-.5.2l.2-2.4 4.3-3.9c.2-.2-.1-.3-.3-.1l-5.3 3.3-2.3-.7c-.5-.2-.5-.5.1-.7z"/></svg>}
               />
               <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text)' }}>Telegram Bot</h3>
@@ -218,8 +221,14 @@ function IntegrationsPage({ activeOrganizationId, onBack, token, user }) {
             </p>
           </div>
           <div style={{ padding: '16px 24px', flex: 1 }}>
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Join Link</div>
-            <div style={{ color: 'var(--text)', fontSize: '0.9rem' }}>Retrieve invite link from the Team page</div>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
+              {isTelegramLinked ? 'Linked Account' : 'Join Link'}
+            </div>
+            <div style={{ color: 'var(--text)', fontSize: '0.9rem' }}>
+              {isTelegramLinked
+                ? `Telegram linked${user?.telegram_id ? ` (${user.telegram_id})` : ''}`
+                : 'Retrieve invite link from the Team page'}
+            </div>
           </div>
           <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', background: 'var(--panel-soft)' }}>
             <button type="button" className="secondary-btn" onClick={onBack} style={{ width: '100%' }}>

@@ -102,9 +102,25 @@ function LandingPage({ isAuthenticated = false }) {
                 Launch Bot on Telegram
               </a>
               <Link className="rounded-full border border-white/10 px-8 py-4 font-medium text-white/80 transition hover:bg-white/5" to="/privacy-policy">
-                Review privacy
+                Privacy Policy
               </Link>
             </div>
+            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/60">
+              If you connect Google Drive, SPARK uses Google OAuth to create and manage only the SPARK files,
+              folders, and transaction sheets used in your workspace. Review the{' '}
+              <Link className="font-semibold text-[#84adff] transition hover:text-[#d9e7ff]" to="/privacy-policy">
+                Privacy Policy
+              </Link>
+              ,{' '}
+              <Link className="font-semibold text-[#84adff] transition hover:text-[#d9e7ff]" to="/terms-of-service">
+                Terms of Service
+              </Link>
+              , and{' '}
+              <Link className="font-semibold text-[#84adff] transition hover:text-[#d9e7ff]" to="/contact">
+                Contact
+              </Link>
+              .
+            </p>
           </div>
         </div>
       </section>
@@ -210,8 +226,8 @@ function LandingPage({ isAuthenticated = false }) {
           <p>© 2026 SPARK Financial.</p>
           <div className="flex gap-6">
             <Link className="transition hover:text-white" to="/contact">Contact</Link>
-            <Link className="transition hover:text-white" to="/privacy-policy">Privacy</Link>
-            <Link className="transition hover:text-white" to="/terms-of-service">Terms</Link>
+            <Link className="transition hover:text-white" to="/privacy-policy">Privacy Policy</Link>
+            <Link className="transition hover:text-white" to="/terms-of-service">Terms of Service</Link>
           </div>
         </div>
       </footer>
