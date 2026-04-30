@@ -1,5 +1,9 @@
 const { pool } = require('./pool');
 
+function isMissingOptionalDashboardTable(error, tableName) {
+  return error?.code === '42P01' && String(error?.message || '').includes(tableName);
+}
+
 function mapFinanceSettingsRow(row) {
   if (!row) {
     return null;
@@ -31,19 +35,27 @@ function mapBudgetRow(row) {
 }
 
 async function getFinanceSettings(organizationId, client = pool) {
-  const { rows } = await client.query(
-    `SELECT organization_id,
-            opening_cash_balance,
-            opening_cash_effective_date,
-            created_at,
-            updated_at
-     FROM finance_settings
-     WHERE organization_id = $1
-     LIMIT 1`,
-    [organizationId]
-  );
+  try {
+    const { rows } = await client.query(
+      `SELECT organization_id,
+              opening_cash_balance,
+              opening_cash_effective_date,
+              created_at,
+              updated_at
+       FROM finance_settings
+       WHERE organization_id = $1
+       LIMIT 1`,
+      [organizationId]
+    );
 
-  return mapFinanceSettingsRow(rows[0]);
+    return mapFinanceSettingsRow(rows[0]);
+  } catch (error) {
+    if (isMissingOptionalDashboardTable(error, 'finance_settings')) {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 async function upsertFinanceSettings(
@@ -78,21 +90,29 @@ async function upsertFinanceSettings(
 }
 
 async function listCategoryBudgets({ organizationId }, client = pool) {
-  const { rows } = await client.query(
-    `SELECT id,
-            organization_id,
-            category,
-            normalized_category,
-            monthly_limit,
-            created_at,
-            updated_at
-     FROM category_budgets
-     WHERE organization_id = $1
-     ORDER BY LOWER(category) ASC, category ASC`,
-    [organizationId]
-  );
+  try {
+    const { rows } = await client.query(
+      `SELECT id,
+              organization_id,
+              category,
+              normalized_category,
+              monthly_limit,
+              created_at,
+              updated_at
+       FROM category_budgets
+       WHERE organization_id = $1
+       ORDER BY LOWER(category) ASC, category ASC`,
+      [organizationId]
+    );
 
-  return rows.map(mapBudgetRow);
+    return rows.map(mapBudgetRow);
+  } catch (error) {
+    if (isMissingOptionalDashboardTable(error, 'category_budgets')) {
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 async function replaceCategoryBudgets({ organizationId, items }, client = pool) {
