@@ -426,7 +426,7 @@ function App() {
             <IntegrationsPage
               activeOrganizationId={activeOrganizationId}
               onSelectOrganization={handleSelectOrganization}
-              onBack={() => navigate('/dashboard')}
+              onOpenTeam={() => navigate('/team')}
               onLogout={handleLogout}
               token={token}
               user={user}

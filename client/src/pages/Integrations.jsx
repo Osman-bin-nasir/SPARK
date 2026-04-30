@@ -48,7 +48,7 @@ function StatusBadge({ icon, loading, connected, hoverText }) {
   );
 }
 
-function IntegrationsPage({ activeOrganizationId, onBack, token, user }) {
+function IntegrationsPage({ activeOrganizationId, onOpenTeam, token, user }) {
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -231,8 +231,8 @@ function IntegrationsPage({ activeOrganizationId, onBack, token, user }) {
             </div>
           </div>
           <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', background: 'var(--panel-soft)' }}>
-            <button type="button" className="secondary-btn" onClick={onBack} style={{ width: '100%' }}>
-              View on Dashboard
+            <button type="button" className="secondary-btn" onClick={onOpenTeam} style={{ width: '100%' }}>
+              View on Team
             </button>
           </div>
         </div>
