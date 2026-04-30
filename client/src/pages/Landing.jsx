@@ -23,17 +23,6 @@ const stats = [
 
 const TELEGRAM_BOT_URL = 'https://t.me/osman80bot';
 
-function SparkIcon({ className = 'h-5 w-5' }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M13.2 2 5 13.4h6.1L9.7 22 19 9.7h-6.4L13.2 2Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
 function ReceiptIcon() {
   return (
     <svg className="h-6 w-6 text-[#84adff]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -62,6 +51,7 @@ function DashboardIcon() {
 
 function LandingPage({ isAuthenticated = false }) {
   const appPath = isAuthenticated ? '/dashboard' : '/login';
+  const topActionLabel = isAuthenticated ? 'Open workspace' : 'Login';
 
   return (
     <main className="min-h-screen bg-[#0e0e0e] font-sans text-white selection:bg-[#84adff] selection:text-[#00214e]">
@@ -77,10 +67,16 @@ function LandingPage({ isAuthenticated = false }) {
 
         <div className="mx-auto w-full max-w-7xl">
           <div className="relative z-10">
-            <div className="mb-8">
+            <div className="mb-10 flex flex-wrap items-center justify-between gap-4">
               <Link className="inline-flex items-center gap-2 text-[#84adff]" to="/">
                 <img className="h-8 w-8 object-contain" src="/logo.png" alt="logo spark" />
                 <span className="text-2xl font-black tracking-tight">SPARK</span>
+              </Link>
+              <Link
+                className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_40px_rgba(0,0,0,0.28)] backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-[#84adff]/45 hover:bg-[#84adff]/10 hover:text-[#d9e7ff]"
+                to={appPath}
+              >
+                <span>{topActionLabel}</span>
               </Link>
             </div>
             <span className="mb-8 inline-flex rounded-full border border-white/10 bg-[#262626] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#00fd93]">

@@ -233,6 +233,33 @@ async function listCurrentMonthCategorySpend(
   }));
 }
 
+async function listCategorySpendByRange(
+  {
+    organizationId,
+    startDate = null,
+    endDate = null
+  },
+  client = pool
+) {
+  const { rows } = await client.query(
+    `SELECT category,
+            COALESCE(SUM(amount), 0) AS total
+     FROM transactions
+     WHERE organization_id = $1
+       AND transaction_type IN ('expense', 'salary')
+       AND ($2::date IS NULL OR transaction_date >= $2)
+       AND ($3::date IS NULL OR transaction_date < $3)
+     GROUP BY category
+     ORDER BY total DESC, category ASC`,
+    [organizationId, startDate, endDate]
+  );
+
+  return rows.map((row) => ({
+    category: row.category,
+    amount: Number(row.total || 0)
+  }));
+}
+
 async function listTopVendorsBySpend(
   {
     organizationId,
@@ -307,6 +334,7 @@ module.exports = {
   getCurrentMonthRevenue,
   getEarliestTransactionDate,
   getFinanceSettings,
+  listCategorySpendByRange,
   listCategoryBudgets,
   listCurrentMonthCategorySpend,
   listHistoricalCategorySpend,

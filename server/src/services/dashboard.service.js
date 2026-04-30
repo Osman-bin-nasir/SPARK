@@ -3,6 +3,13 @@ const dashboardRepository = require('../db/dashboard.repository');
 const { HttpError } = require('../utils/http-error');
 
 const ALLOWED_MONTH_WINDOWS = new Set([3, 6, 12]);
+const ALLOWED_CATEGORY_BREAKDOWN_WINDOWS = new Set([
+  'all_time',
+  'this_month',
+  'last_3_months',
+  'last_6_months',
+  'last_12_months'
+]);
 const SPIKE_DELTA_THRESHOLD = 500;
 const SPIKE_MULTIPLIER = 1.5;
 const BUDGET_WARNING_RATIO = 0.8;
@@ -39,6 +46,23 @@ function parseDashboardMonths(value) {
   }
 
   return parsed;
+}
+
+function parseCategoryBreakdownWindow(value) {
+  if (value === undefined || value === null || value === '') {
+    return 'all_time';
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+
+  if (!ALLOWED_CATEGORY_BREAKDOWN_WINDOWS.has(normalized)) {
+    throw new HttpError(
+      400,
+      'category_window must be one of all_time, this_month, last_3_months, last_6_months, or last_12_months'
+    );
+  }
+
+  return normalized;
 }
 
 function validateDate(value, fieldName) {
@@ -124,6 +148,41 @@ function formatMonthLabel(monthKey) {
   }).format(new Date(`${monthKey}-01T00:00:00.000Z`));
 }
 
+function resolveCategoryBreakdownRange({
+  categoryWindow,
+  currentMonthStart,
+  nextMonthStart
+}) {
+  switch (categoryWindow) {
+    case 'this_month':
+      return {
+        startDate: toDateString(currentMonthStart),
+        endDate: toDateString(nextMonthStart)
+      };
+    case 'last_3_months':
+      return {
+        startDate: toDateString(addUtcMonths(currentMonthStart, -2)),
+        endDate: toDateString(nextMonthStart)
+      };
+    case 'last_6_months':
+      return {
+        startDate: toDateString(addUtcMonths(currentMonthStart, -5)),
+        endDate: toDateString(nextMonthStart)
+      };
+    case 'last_12_months':
+      return {
+        startDate: toDateString(addUtcMonths(currentMonthStart, -11)),
+        endDate: toDateString(nextMonthStart)
+      };
+    case 'all_time':
+    default:
+      return {
+        startDate: null,
+        endDate: toDateString(nextMonthStart)
+      };
+  }
+}
+
 function createBudgetLabelMap(budgets) {
   return new Map(
     budgets.map((budget) => [budget.normalized_category, budget.category])
@@ -165,48 +224,55 @@ function buildMonthlySeries(startMonth, months, totalsByMonth) {
   });
 }
 
-function getDaysInUtcMonth(date) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+function getAvailableBurnSeries({
+  burnSeries,
+  earliestTransactionDate,
+  currentMonthStart
+}) {
+  if (!earliestTransactionDate) {
+    return [];
+  }
+
+  const earliestMonthStart = toUtcMonthStart(new Date(`${earliestTransactionDate}T00:00:00.000Z`));
+
+  if (earliestMonthStart >= currentMonthStart) {
+    return [];
+  }
+
+  const earliestMonthKey = toMonthKey(earliestMonthStart);
+
+  return burnSeries.filter((item) => item.month >= earliestMonthKey);
 }
 
-function projectCurrentMonthBurn(currentMonthSpendTotal, now) {
-  const spend = Number(currentMonthSpendTotal || 0);
-
-  if (spend <= 0) {
+function averageMonthlySeries(monthlySeries) {
+  if (!monthlySeries.length) {
     return null;
   }
 
-  const daysElapsed = Math.max(now.getUTCDate(), 1);
-  const daysInMonth = getDaysInUtcMonth(now);
-
-  return roundAmount((spend / daysElapsed) * daysInMonth);
+  return roundAmount(
+    monthlySeries.reduce((sum, item) => sum + Number(item.amount || 0), 0) / monthlySeries.length
+  );
 }
 
 function buildBurnMetrics({
-  burnHistoryReady,
+  burnMonthCount,
   cashOnHand,
-  currentMonthSpendTotal,
   historicalMonthlyBurn,
   now
 }) {
-  const projectedMonthlyBurn = projectCurrentMonthBurn(currentMonthSpendTotal, now);
-
   let monthlyBurn = null;
   let monthlyBurnSource = 'pending';
 
-  if (burnHistoryReady) {
+  if (burnMonthCount > 0 && historicalMonthlyBurn !== null) {
     monthlyBurn = historicalMonthlyBurn;
     monthlyBurnSource = 'historical';
-  } else if (projectedMonthlyBurn !== null) {
-    monthlyBurn = projectedMonthlyBurn;
-    monthlyBurnSource = 'projected_current_month';
   }
 
   let runwayMonths = null;
   let estimatedDepletionMonth = null;
 
   if (monthlyBurn !== null && monthlyBurn > 0) {
-    runwayMonths = roundRatio(cashOnHand / monthlyBurn);
+    runwayMonths = roundRatio(Math.max(Number(cashOnHand || 0), 0) / monthlyBurn);
     estimatedDepletionMonth = toMonthKey(addUtcMonths(now, Math.floor(runwayMonths)));
   }
 
@@ -214,7 +280,8 @@ function buildBurnMetrics({
     monthly_burn: monthlyBurn,
     monthly_burn_source: monthlyBurnSource,
     historical_monthly_burn: historicalMonthlyBurn,
-    projected_monthly_burn: projectedMonthlyBurn,
+    historical_month_count: burnMonthCount,
+    projected_monthly_burn: null,
     runway_months: runwayMonths,
     estimated_depletion_month: estimatedDepletionMonth
   };
@@ -332,6 +399,7 @@ function buildSpikeAlerts({
 async function getDashboardSnapshot({ organization, query }) {
   const organizationId = organization.id;
   const months = parseDashboardMonths(query?.months);
+  const categoryWindow = parseCategoryBreakdownWindow(query?.category_window);
   const now = new Date();
   const currentMonthStart = toUtcMonthStart(now);
   const nextMonthStart = addUtcMonths(currentMonthStart, 1);
@@ -339,12 +407,18 @@ async function getDashboardSnapshot({ organization, query }) {
   const burnWindowStart = addUtcMonths(currentMonthStart, -3);
   const currentMonthKey = toMonthKey(currentMonthStart);
   const burnMonths = Array.from({ length: 3 }, (_, index) => toMonthKey(addUtcMonths(burnWindowStart, index)));
+  const categoryBreakdownRange = resolveCategoryBreakdownRange({
+    categoryWindow,
+    currentMonthStart,
+    nextMonthStart
+  });
 
   const [
     financeSettings,
     budgets,
     selectedRangeMonthlyTotals,
     currentMonthSpendRows,
+    categoryBreakdownRows,
     currentMonthRevenue,
     topVendors,
     historicalCategorySpend,
@@ -362,6 +436,11 @@ async function getDashboardSnapshot({ organization, query }) {
       organizationId,
       currentMonthStart: toDateString(currentMonthStart),
       nextMonthStart: toDateString(nextMonthStart)
+    }),
+    dashboardRepository.listCategorySpendByRange({
+      organizationId,
+      startDate: categoryBreakdownRange.startDate,
+      endDate: categoryBreakdownRange.endDate
     }),
     dashboardRepository.getCurrentMonthRevenue({
       organizationId,
@@ -410,6 +489,13 @@ async function getDashboardSnapshot({ organization, query }) {
   const currentMonthSpendTotal = roundAmount(
     currentMonthCategories.reduce((sum, item) => sum + Number(item.amount || 0), 0)
   );
+  const categoryBreakdown = aggregateCategorySpend(categoryBreakdownRows, budgetLabelMap);
+  const categoryBreakdownCategories = Array.from(categoryBreakdown.values())
+    .map((item) => ({
+      category: item.category,
+      amount: roundAmount(item.amount)
+    }))
+    .sort((left, right) => right.amount - left.amount);
 
   const selectedTotalsByMonth = new Map(
     selectedRangeMonthlyTotals.map((item) => [item.month, item.total])
@@ -419,13 +505,17 @@ async function getDashboardSnapshot({ organization, query }) {
   );
 
   const burnSeries = buildMonthlySeries(burnWindowStart, 3, burnTotalsByMonth);
-  const historicalMonthlyBurn = roundAmount(
-    burnSeries.reduce((sum, item) => sum + item.amount, 0) / burnSeries.length
-  );
+  const availableBurnSeries = getAvailableBurnSeries({
+    burnSeries,
+    earliestTransactionDate,
+    currentMonthStart
+  });
+  const burnMonthCount = availableBurnSeries.length;
+  const historicalMonthlyBurn = averageMonthlySeries(availableBurnSeries);
   const trends = buildMonthlySeries(selectedRangeStart, months, selectedTotalsByMonth);
 
   const budgetAlerts = buildBudgetAlerts(budgets, currentMonthSpend);
-  const burnHistoryReady = Boolean(
+  const burnHistoryReadyForSpikes = Boolean(
     earliestTransactionDate
       && earliestTransactionDate <= toDateString(burnWindowStart)
   );
@@ -435,7 +525,7 @@ async function getDashboardSnapshot({ organization, query }) {
     budgetLabelMap,
     currentMonthKey,
     historyMonths: burnMonths,
-    historyReady: burnHistoryReady
+    historyReady: burnHistoryReadyForSpikes
   });
 
   let cashOnHand = roundAmount(financeSettings?.opening_cash_balance || 0);
@@ -447,9 +537,8 @@ async function getDashboardSnapshot({ organization, query }) {
   }
 
   const burnMetrics = buildBurnMetrics({
-    burnHistoryReady,
+    burnMonthCount,
     cashOnHand,
-    currentMonthSpendTotal,
     historicalMonthlyBurn,
     now
   });
@@ -465,13 +554,15 @@ async function getDashboardSnapshot({ organization, query }) {
       monthly_burn: burnMetrics.monthly_burn,
       monthly_burn_source: burnMetrics.monthly_burn_source,
       historical_monthly_burn: burnMetrics.historical_monthly_burn,
+      historical_month_count: burnMetrics.historical_month_count,
       projected_monthly_burn: burnMetrics.projected_monthly_burn,
       estimated_depletion_month: burnMetrics.estimated_depletion_month,
+      current_month_expense_total: currentMonthSpendTotal,
       monthly_revenue: roundAmount(currentMonthRevenue),
       budget_alert_count: budgetAlerts.length
     },
     trends,
-    category_breakdown: currentMonthCategories,
+    category_breakdown: categoryBreakdownCategories,
     top_vendors: topVendors.map((item) => ({
       vendor: item.vendor,
       amount: roundAmount(item.amount)
@@ -482,8 +573,8 @@ async function getDashboardSnapshot({ organization, query }) {
       cash_configured: Boolean(financeSettings),
       budgets_configured: budgets.length > 0,
       has_transactions: hasTransactions,
-      history_ready_for_spikes: burnHistoryReady,
-      history_ready_for_burn: burnHistoryReady
+      history_ready_for_spikes: burnHistoryReadyForSpikes,
+      history_ready_for_burn: burnMonthCount > 0
     }
   };
 }

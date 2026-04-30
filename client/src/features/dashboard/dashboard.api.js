@@ -10,8 +10,11 @@ function buildOrganizationOptions(token, organizationId) {
   };
 }
 
-export function getDashboardSnapshot({ token, organizationId, months = 6 }) {
-  const params = new URLSearchParams({ months: String(months) });
+export function getDashboardSnapshot({ token, organizationId, months = 6, categoryWindow = 'all_time' }) {
+  const params = new URLSearchParams({
+    months: String(months),
+    category_window: categoryWindow
+  });
   return get(`${endpoints.dashboard}?${params.toString()}`, buildOrganizationOptions(token, organizationId));
 }
 
