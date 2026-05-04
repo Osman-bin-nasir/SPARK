@@ -80,3 +80,4 @@ class OcrExtractResponse(BaseModel):
     pages: list[OcrPage] = Field(default_factory=list)
     word_count: int | None = None
     extraction_error: str | None = None
+    extraction_fields: dict[str, Any] | None = None

@@ -38,7 +38,8 @@ def extract(request: OcrExtractRequest):
             'page_count': result.page_count,
             'pages': [page.__dict__ for page in result.pages],
             'word_count': result.word_count,
-            'extraction_error': result.extraction_error
+            'extraction_error': result.extraction_error,
+            'extraction_fields': result.extraction_fields
         }
     except OcrEngineUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

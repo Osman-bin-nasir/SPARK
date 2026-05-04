@@ -40,11 +40,16 @@ function sanitizeExtractionResult(data, fallbackText) {
     env.ocrMaxExtractedTextChars
   );
 
+  const extractionFields = data?.extraction_fields && typeof data.extraction_fields === 'object' && !Array.isArray(data.extraction_fields)
+    ? data.extraction_fields
+    : null;
+
   return {
     text,
     confidence: clampConfidence(data?.confidence),
     method: data?.method || OCR_EXTRACTION_METHODS.UNKNOWN,
-    version: data?.version || null
+    version: data?.version || null,
+    extraction_fields: extractionFields
   };
 }
 
@@ -53,7 +58,8 @@ function buildLocalFallbackResult({ mimeType, fallbackText }) {
     text: normalizeExtractedText(fallbackText, env.ocrMaxExtractedTextChars),
     confidence: null,
     method: inferFallbackMethod(mimeType),
-    version: null
+    version: null,
+    extraction_fields: null
   };
 }
 

@@ -335,6 +335,7 @@ function detectIntent(query) {
   const normalized = normalizeQuery(query).toLowerCase();
   const entity = extractEntityCandidate(normalized);
   const dateRange = detectDateRange(normalized);
+  const metricHint = detectMetricLabel(normalized);
 
   if (COMPARISON_KEYWORDS.test(normalized)) {
     return 'comparison';
@@ -346,6 +347,14 @@ function detectIntent(query) {
 
   if (BREAKDOWN_KEYWORDS.test(normalized)) {
     return 'breakdown';
+  }
+
+  if (metricHint.transaction_type && !SEARCH_KEYWORDS.test(normalized)) {
+    if (/which\s+category|top\s+category|most\s+category/.test(normalized)) {
+      return 'breakdown';
+    }
+
+    return 'summary';
   }
 
   if (SUMMARY_KEYWORDS.test(normalized)) {
@@ -387,11 +396,11 @@ function extractEntityCandidate(query) {
 function detectGroupBy(query) {
   const normalized = normalizeQuery(query).toLowerCase();
 
-  if (/\bby\s+vendor\b|\bvendors?\b/.test(normalized)) {
+  if (/\bby\s+vendor\b|\bvendors?\b|which\s+vendor|top\s+vendor/.test(normalized)) {
     return 'vendor';
   }
 
-  if (/\bby\s+category\b|\bcategories\b/.test(normalized)) {
+  if (/\bby\s+category\b|\bcategories\b|which\s+category|top\s+category|most\s+category/.test(normalized)) {
     return 'category';
   }
 
@@ -418,6 +427,15 @@ function detectMetrics(query) {
     metrics.add('breakdown');
   }
 
+  if (/(burn\s*rate|run\s*rate)/.test(normalized)) {
+    metrics.add('burn_rate');
+  }
+
+  if (/(which\s+category|top\s+category|most\s+category)/.test(normalized)) {
+    metrics.add('top_category_spend');
+    metrics.add('breakdown');
+  }
+
   return [...metrics];
 }
 
@@ -431,25 +449,44 @@ function buildDeterministicPlan(query) {
   const groupBy = detectGroupBy(normalizedQuery);
   const intent = detectIntent(normalizedQuery);
   const metrics = detectMetrics(normalizedQuery);
+  const isBurnRateQuery = metrics.includes('burn_rate');
   const searchQuery = entity || normalizedQuery;
+  const resolvedTransactionType = isBurnRateQuery ? 'expense' : (metricLabel.transaction_type || transactionType);
+  const resolvedMetricLabel = isBurnRateQuery ? 'burn_rate' : metricLabel.metric_label;
+  const resolvedGroupBy = groupBy || (metrics.includes('top_category_spend') ? 'category' : null);
 
   return {
     intent,
     vendor: entity,
     category: null,
-    transaction_type: metricLabel.transaction_type || transactionType,
-    metric_label: metricLabel.metric_label,
+    transaction_type: resolvedTransactionType,
+    metric_label: resolvedMetricLabel,
     start_date: dateRange.start_date,
     end_date: dateRange.end_date,
     time_label: dateRange.label,
     comparison: comparisonRange,
-    group_by: groupBy,
+    group_by: resolvedGroupBy,
     metrics,
     search_query: searchQuery,
-    confidence: entity || dateRange.label || metricLabel.metric_label || transactionType ? 0.7 : 0.4,
+    confidence: entity || dateRange.label || resolvedMetricLabel || resolvedTransactionType ? 0.7 : 0.4,
     source: 'rules',
     normalized_query: normalizedQuery
   };
+}
+
+function shouldPreferDeterministicSummary(plan) {
+  const metrics = Array.isArray(plan?.metrics) ? plan.metrics : [];
+  const hasSpecialMetric = metrics.some((metric) => ['burn_rate', 'top_category_spend', 'average_amount'].includes(metric));
+
+  return Boolean(
+    plan?.transaction_type ||
+    plan?.metric_label ||
+    plan?.start_date ||
+    plan?.end_date ||
+    plan?.vendor ||
+    plan?.category ||
+    hasSpecialMetric
+  );
 }
 
 function parseJsonCandidate(text) {
@@ -563,12 +600,24 @@ function composeSummaryAnswer(plan, summary) {
   const totalAmount = Number(summary.totals.total_amount || 0).toFixed(2);
   const transactionCount = summary.totals.transaction_count || 0;
   const averageAmount = Number(summary.totals.average_amount || 0).toFixed(2);
+  const metrics = Array.isArray(plan.metrics) ? plan.metrics : [];
 
   const parts = [
     `Found ${transactionCount} ${plan.transaction_type || 'transaction'} record(s) ${vendorLabel}${timeLabel}.`,
     `Total amount is $${totalAmount}.`,
     `Average transaction amount is $${averageAmount}.`
   ];
+
+  if (metrics.includes('burn_rate') && plan.start_date && plan.end_date) {
+    const dayCount = differenceInDays(plan.start_date, plan.end_date);
+    const monthlyRunRate = dayCount > 0 ? (Number(totalAmount) / dayCount) * 30 : 0;
+    parts.push(`Estimated burn rate is $${monthlyRunRate.toFixed(2)} per 30-day month.`);
+  }
+
+  if (metrics.includes('top_category_spend') && summary.breakdown?.length > 0) {
+    const topCategory = summary.breakdown[0];
+    parts.push(`Top spend category is ${topCategory.group_value} at $${Number(topCategory.total_amount || 0).toFixed(2)}.`);
+  }
 
   if (summary.breakdown?.length > 0) {
     const topBreakdown = summary.breakdown.slice(0, 3).map((item) => `${item.group_value}: $${Number(item.total_amount || 0).toFixed(2)}`);
@@ -640,7 +689,32 @@ function buildSummaryCitations(summary) {
   }));
 }
 
+function computeDerivedMetrics(summary, plan) {
+  const totals = summary?.totals || {};
+  const totalAmount = Number(totals.total_amount || 0);
+  const start = plan?.start_date ? new Date(plan.start_date) : null;
+  const end = plan?.end_date ? new Date(plan.end_date) : null;
+  const days = start && end ? differenceInDays(start, end) : null;
+
+  const derived = {};
+
+  if (plan?.metrics && plan.metrics.includes('burn_rate') && days) {
+    const monthlyRunRate = days > 0 ? (totalAmount / days) * 30 : 0;
+    derived.burn_rate_monthly = Number(monthlyRunRate.toFixed(2));
+    derived.burn_rate_period = Number((totalAmount / days).toFixed(2));
+  }
+
+  // Detect quarter income: if the plan asks for income and the period covers roughly a quarter
+  if (plan?.transaction_type === 'income' && plan?.time_label && /quarter/.test(plan.time_label)) {
+    derived.quarter_income = Number(totalAmount.toFixed(2));
+  }
+
+  return derived;
+}
+
 async function executeSummaryPlan(organizationId, plan, includePendingReview) {
+  const resolvedGroupBy = plan.group_by || (Array.isArray(plan.metrics) && plan.metrics.includes('top_category_spend') ? 'category' : null);
+
   const summary = await transactionsRepository.summarizeTransactions({
     organizationId,
     vendor: plan.vendor,
@@ -649,11 +723,13 @@ async function executeSummaryPlan(organizationId, plan, includePendingReview) {
     startDate: plan.start_date,
     endDate: plan.end_date,
     includePendingReview,
-    groupBy: plan.group_by,
+    groupBy: resolvedGroupBy,
     limit: env.ragMaxEvidenceItems
   });
 
-  const answer = composeSummaryAnswer(plan, summary);
+  const answer = composeSummaryAnswer({ ...plan, group_by: resolvedGroupBy }, summary);
+
+  const derived_metrics = computeDerivedMetrics(summary, { ...plan, group_by: resolvedGroupBy });
 
   return {
     mode: 'summary',
@@ -661,6 +737,7 @@ async function executeSummaryPlan(organizationId, plan, includePendingReview) {
     confidence: plan.confidence,
     citations: buildSummaryCitations(summary),
     summary,
+    derived_metrics,
     plan
   };
 }
@@ -768,6 +845,23 @@ async function executeComparisonPlan(organizationId, plan, includePendingReview)
 }
 
 async function executeSearchOrRagPlan(organizationId, plan, { topK, minSimilarity, minLexicalScore, includePendingReview, retrievalMode, answerMode }) {
+  if (shouldPreferDeterministicSummary(plan)) {
+    const summaryCandidate = await executeSummaryPlan(organizationId, {
+      ...plan,
+      intent: 'summary'
+    }, includePendingReview);
+
+    const summaryCount = Number(summaryCandidate?.summary?.totals?.transaction_count || 0);
+
+    if (summaryCount > 0) {
+      return {
+        ...summaryCandidate,
+        mode: 'summary_primary',
+        retrieval_fallback_used: false
+      };
+    }
+  }
+
   const searchResult = await semanticSearchService.semanticSearch({
     organizationId,
     query: plan.search_query || plan.normalized_query,
@@ -792,6 +886,7 @@ async function executeSearchOrRagPlan(organizationId, plan, { topK, minSimilarit
   return {
     mode: answerPayload.generation_mode === 'deterministic' ? 'rag_deterministic' : 'rag',
     search: searchResult,
+    retrieval_fallback_used: true,
     ...answerPayload,
     plan
   };
@@ -901,5 +996,6 @@ module.exports = {
   normalizePlan,
   parseJsonCandidate,
   planNaturalLanguageQuery,
+  shouldPreferDeterministicSummary,
   tryPythonPlan
 };

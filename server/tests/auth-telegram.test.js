@@ -1,3 +1,9 @@
+// Ensure test environment has required JWT secrets for signing tokens
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret';
+process.env.REFRESH_JWT_SECRET = process.env.REFRESH_JWT_SECRET || 'test-refresh-secret';
+process.env.TELEGRAM_JWT_SECRET = process.env.TELEGRAM_JWT_SECRET || 'test-telegram-secret';
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
