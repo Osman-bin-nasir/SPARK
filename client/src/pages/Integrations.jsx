@@ -195,15 +195,15 @@ function IntegrationsPage({ activeOrganizationId, onOpenTeam, token, user }) {
             )}
           </div>
           <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', background: 'var(--panel-soft)' }}>
-            {!driveStatus.connected ? (
-              <button type="button" onClick={connectDrive} disabled={loading || !organizationId} style={{ width: '100%' }}>
-                Connect Google Drive
-              </button>
-            ) : (
-              <button type="button" className="secondary-btn" disabled style={{ width: '100%' }}>
-                Service Linked
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={connectDrive}
+              disabled={loading || !organizationId}
+              className={driveStatus.connected ? 'secondary-btn' : ''}
+              style={{ width: '100%' }}
+            >
+              {driveStatus.connected ? 'Reconnect Google Drive' : 'Connect Google Drive'}
+            </button>
           </div>
         </div>
 

@@ -1,7 +1,8 @@
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:16-alpine
+    # SPARK's migrations create the vector extension for semantic search.
+    image: pgvector/pgvector:pg16
     container_name: spark-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-spark_user}

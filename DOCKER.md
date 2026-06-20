@@ -7,7 +7,7 @@ This guide explains how to build and run the SPARK application using Docker and 
 SPARK consists of:
 - **Frontend**: React/Vite app (served statically)
 - **Backend**: Node.js/Express API server (port 4000)
-- **Database**: PostgreSQL (port 5432)
+- **Database**: PostgreSQL 16 with pgvector (port 5432)
 - **Worker**: Optional background job processor
 
 ## Files Included
