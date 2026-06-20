@@ -1,0 +1,30 @@
+# Dockerfile for SPARK background worker service
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
+
+# Copy server package files
+COPY server/package*.json ./
+
+# Install production dependencies only
+RUN npm ci --omit=dev
+
+# Copy server source code
+COPY server/src ./src
+
+# Create a non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
+
+USER nodejs
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
+
+# Start the worker process
+CMD ["node", "src/worker.js"]

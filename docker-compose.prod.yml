@@ -1,0 +1,54 @@
+# Production Docker Compose Configuration
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+version: '3.9'
+
+services:
+  postgres:
+    restart: always
+    environment:
+      POSTGRES_INITDB_ARGS: "-c max_connections=200"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Optional: backup volume for scheduled backups
+      - ./backups:/backups
+
+  app:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+      # Replicas for load balancing (requires Swarm mode)
+      # replicas: 2
+    # Remove volume mounts for production
+    volumes: []
+    environment:
+      NODE_ENV: production
+
+  worker:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    environment:
+      NODE_ENV: production
+    # Disable profile in production if you want worker to auto-start
+    profiles: []
