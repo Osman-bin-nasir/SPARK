@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -36,6 +34,7 @@ services:
 
       # Database
       DATABASE_URL: "postgresql://${DB_USER:-spark_user}:${DB_PASSWORD:-spark_password}@postgres:5432/${DB_NAME:-spark_db}"
+      DATABASE_SSL: "false"
 
       # JWT & Auth
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
@@ -77,8 +76,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./server/src:/app/src
     networks:
       - spark-network
     restart: unless-stopped
@@ -92,13 +89,14 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: "postgresql://${DB_USER:-spark_user}:${DB_PASSWORD:-spark_password}@postgres:5432/${DB_NAME:-spark_db}"
+      DATABASE_SSL: "false"
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_OAUTH_STATE_SECRET: ${GOOGLE_OAUTH_STATE_SECRET:-}
       GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
     depends_on:
-      postgres:
+      app:
         condition: service_healthy
     networks:
       - spark-network

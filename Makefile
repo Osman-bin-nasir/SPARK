@@ -82,10 +82,10 @@ health: ## Check service health
 	@docker exec spark-postgres pg_isready -U spark_user && echo "$(GREEN)✓ Database healthy$(NC)" || echo "$(RED)✗ Database unhealthy$(NC)"
 
 test: ## Run tests in app container
-	docker exec spark-app npm test
+	cd server && npm test
 
 lint: ## Run ESLint
-	docker exec spark-app npm run lint
+	cd client && npm run lint
 
 ## Database Commands
 
@@ -103,17 +103,17 @@ db-reset: ## Reset database (remove all data)
 	@echo "$(RED)Resetting database...$(NC)"
 	docker-compose down -v
 	docker-compose up -d postgres
-	@sleep 5
-	docker exec spark-app npm run migrate
+	docker-compose run --rm app npm run migrate
+	docker-compose up -d app
 	@echo "$(GREEN)✓ Database reset$(NC)"
 
 ## Development Commands
 
 dev: ## Start services for development (with volume mounts)
 	@echo "$(BLUE)Starting development environment...$(NC)"
-	docker-compose up -d
+	docker-compose up --build -d
 	@echo "$(GREEN)✓ Development environment ready$(NC)"
-	@echo "Hot reload enabled for: ./server/src"
+	@echo "Re-run make dev after source changes to rebuild the image"
 
 dev-build: ## Rebuild for development
 	@echo "$(BLUE)Building for development...$(NC)"
@@ -175,7 +175,7 @@ env-check: ## Check if .env file exists
 
 # Recipe to run make commands inside containers
 container-shell: ## Interactive shell in app container
-	docker exec -it spark-app bash
+	docker exec -it spark-app sh
 
 ## Default
 .DEFAULT_GOAL := help

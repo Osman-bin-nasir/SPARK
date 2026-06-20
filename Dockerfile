@@ -59,5 +59,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the server
-CMD ["node", "src/server.js"]
+# Apply pending migrations before starting the server. This keeps a fresh
+# Compose database from failing the application's startup readiness check.
+CMD ["sh", "-c", "npm run migrate && exec node src/server.js"]

@@ -39,8 +39,12 @@ Edit `.env` with your configuration:
 **Critical (must change):**
 ```env
 JWT_SECRET=<generate-secure-key>
-DATABASE_URL=postgresql://spark_user:spark_password@postgres:5432/spark_db
+DB_PASSWORD=<generate-strong-password>
 ```
+
+Compose constructs `DATABASE_URL` from the `DB_*` values. The bundled
+PostgreSQL service uses `DATABASE_SSL=false`; set it to `true` when connecting
+to a hosted database that requires TLS.
 
 **Optional (for full features):**
 ```env
@@ -61,6 +65,8 @@ docker-compose up --build -d
 # Or just start (without rebuilding)
 docker-compose up
 ```
+
+The app container applies pending database migrations before starting.
 
 ### 4. Verify Deployment
 
@@ -128,8 +134,6 @@ docker exec -i spark-postgres psql -U spark_user spark_db < backup.sql
 # Rebuild after code changes
 docker-compose up --build
 
-# Hot reload is configured in docker-compose.yml via volume mounts
-
 # View container logs
 docker-compose logs -f app
 
@@ -193,7 +197,7 @@ services:
 
 ### Health Checks
 
-Both services include health checks:
+The app and PostgreSQL services include health checks:
 
 ```bash
 # Check app health
@@ -257,6 +261,7 @@ See `.env.example` for complete list. Key variables:
 | NODE_ENV | No | production | Node environment |
 | PORT | No | 4000 | Internal app port |
 | DATABASE_URL | Yes | - | PostgreSQL connection string |
+| DATABASE_SSL | No | false in Compose | Enable TLS for the database connection |
 | JWT_SECRET | Yes | - | JWT signing key |
 | GOOGLE_CLIENT_ID | No | - | Google OAuth ID |
 | TELEGRAM_BOT_USERNAME | No | osman80bot | Telegram bot username |
@@ -288,16 +293,14 @@ Services communicate via `spark-network` bridge:
 - [ ] Scan images for vulnerabilities: `docker scan spark:latest`
 - [ ] Run container as non-root user (already configured)
 
-## Volume Mounts
+## Source Changes
 
-In development, volumes allow hot reload:
+The default Compose configuration runs the built image without source bind
+mounts. Rebuild the image after changing application code:
 
-```yaml
-volumes:
-  - ./server/src:/app/src  # Backend hot reload
+```bash
+docker-compose up --build
 ```
-
-Remove these for production builds.
 
 ## Resource Limits
 
