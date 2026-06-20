@@ -13,12 +13,23 @@ function buildJoinLink(joinCode) {
   return `https://t.me/${botUsername}?start=join_${encodeURIComponent(joinCode)}`;
 }
 
+function buildWhatsappJoinLink(joinCode) {
+  const botNumber = String(env.whatsappBotNumber || '').trim().replace(/[^0-9]/g, '');
+
+  if (!botNumber || !joinCode) {
+    return null;
+  }
+
+  return `https://wa.me/${botNumber}?text=join_${encodeURIComponent(joinCode)}`;
+}
+
 function serializeOrganization(organization) {
   return {
     id: organization.id,
     name: organization.name,
     join_code: organization.join_code,
-    join_link: buildJoinLink(organization.join_code)
+    join_link: buildJoinLink(organization.join_code),
+    whatsapp_join_link: buildWhatsappJoinLink(organization.join_code)
   };
 }
 

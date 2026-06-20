@@ -87,11 +87,35 @@ async function linkWhatsapp(req, res, next) {
   }
 }
 
+async function unlinkTelegram(req, res, next) {
+  try {
+    const result = await authService.unlinkTelegramAccount({
+      userId: req.auth.userId
+    });
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function unlinkWhatsapp(req, res, next) {
+  try {
+    const result = await authService.unlinkWhatsappAccount({
+      userId: req.auth.userId
+    });
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createTelegramLogin,
   createWhatsappLogin,
   linkTelegram,
   linkWhatsapp,
+  unlinkTelegram,
+  unlinkWhatsapp,
   login,
   refresh,
   register,

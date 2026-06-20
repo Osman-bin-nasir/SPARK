@@ -246,6 +246,30 @@ async function linkWhatsappToUser({ userId, whatsappId }, client = pool) {
   return mapUser(rows[0]);
 }
 
+async function unlinkTelegramFromUser({ userId }, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE users
+     SET telegram_id = NULL,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, email, telegram_id, whatsapp_id, created_at`,
+    [userId]
+  );
+  return mapUser(rows[0]);
+}
+
+async function unlinkWhatsappFromUser({ userId }, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE users
+     SET whatsapp_id = NULL,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, email, telegram_id, whatsapp_id, created_at`,
+    [userId]
+  );
+  return mapUser(rows[0]);
+}
+
 module.exports = {
   completeTelegramUserRegistration,
   completeWhatsappUserRegistration,
@@ -256,6 +280,8 @@ module.exports = {
   findUserByWhatsappId,
   linkTelegramToUser,
   linkWhatsappToUser,
+  unlinkTelegramFromUser,
+  unlinkWhatsappFromUser,
   mapUser,
   upsertTelegramPlaceholder,
   upsertWhatsappPlaceholder

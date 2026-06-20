@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom';
 import { post } from '../../services/http';
 import { endpoints } from '../../services/endpoints';
 
-function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, telegramToken }) {
+function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsappMode, telegramToken, whatsappToken }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const botMode = telegramMode || whatsappMode;
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -19,6 +21,10 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, telegram
 
       if (telegramToken) {
         payload.telegram_token = telegramToken;
+      }
+      
+      if (whatsappToken) {
+        payload.whatsapp_token = whatsappToken;
       }
 
       const result = await post(endpoints.register, payload);
@@ -32,11 +38,19 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, telegram
 
   return (
     <div className="card">
-      <p className="eyebrow">{telegramMode ? 'Telegram Access' : 'SPARK Finance'}</p>
-      <h1>{telegramMode ? 'Create account to continue' : 'Create account'}</h1>
+      <p className="eyebrow">
+        {telegramMode
+          ? 'Telegram Access'
+          : whatsappMode
+          ? 'WhatsApp Access'
+          : 'SPARK Finance'}
+      </p>
+      <h1>{botMode ? 'Create account to continue' : 'Create account'}</h1>
       <p className="card-subtitle">
         {telegramMode
           ? 'Create your SPARK account and attach it to the Telegram bot in one step.'
+          : whatsappMode
+          ? 'Create your SPARK account and attach it to the WhatsApp bot in one step.'
           : 'Set up a web account for dashboards, month close, and receipt intelligence.'}
       </p>
       {notice && <p className="notice">{notice}</p>}
@@ -58,7 +72,13 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, telegram
         </label>
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={loading}>
-          {loading ? 'Creating...' : telegramMode ? 'Sign up and link Telegram' : 'Sign up'}
+          {loading
+            ? 'Creating...'
+            : telegramMode
+            ? 'Sign up and link Telegram'
+            : whatsappMode
+            ? 'Sign up and link WhatsApp'
+            : 'Sign up'}
         </button>
       </form>
       <p className="auth-footer">

@@ -219,3 +219,45 @@ test('linkWhatsappAccount rejects invites for a different existing organization'
     token: 'whatsapp-token'
   }), /already belongs to another organization/);
 });
+
+test('unlinkTelegramAccount updates user profile', async () => {
+  usersRepository.unlinkTelegramFromUser = async ({ userId }) => ({
+    id: userId,
+    email: 'user@spark.dev',
+    telegram_id: null,
+    whatsapp_id: '919866501063'
+  });
+  organizationsRepository.listMembershipsByUserId = async () => ([
+    {
+      organization_id: 'org-123',
+      organization_name: 'Spark Org',
+      role: 'founder'
+    }
+  ]);
+
+  const result = await authService.unlinkTelegramAccount({ userId: 'user-123' });
+  assert.equal(result.user.telegram_id, null);
+  assert.equal(result.user.whatsapp_id, '919866501063');
+  assert.equal(result.message, 'Telegram account unlinked successfully');
+});
+
+test('unlinkWhatsappAccount updates user profile', async () => {
+  usersRepository.unlinkWhatsappFromUser = async ({ userId }) => ({
+    id: userId,
+    email: 'user@spark.dev',
+    telegram_id: '123456',
+    whatsapp_id: null
+  });
+  organizationsRepository.listMembershipsByUserId = async () => ([
+    {
+      organization_id: 'org-123',
+      organization_name: 'Spark Org',
+      role: 'founder'
+    }
+  ]);
+
+  const result = await authService.unlinkWhatsappAccount({ userId: 'user-123' });
+  assert.equal(result.user.whatsapp_id, null);
+  assert.equal(result.user.telegram_id, '123456');
+  assert.equal(result.message, 'WhatsApp account unlinked successfully');
+});

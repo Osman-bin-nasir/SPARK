@@ -51,6 +51,7 @@ function mapOrganizationMember(row) {
     user_id: row.user_id,
     email: row.email,
     telegram_id: row.telegram_id,
+    whatsapp_id: row.whatsapp_id,
     role: row.role,
     joined_at: row.joined_at
   };
@@ -240,6 +241,7 @@ async function listOrganizationMembers({ organizationId }, client = pool) {
     `SELECT om.user_id,
             u.email,
             u.telegram_id,
+            u.whatsapp_id,
             om.role,
             om.created_at AS joined_at
      FROM organization_members om

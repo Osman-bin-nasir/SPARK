@@ -14,5 +14,7 @@ router.post('/create-telegram-login', authController.createTelegramLogin);
 router.post('/create-whatsapp-login', authController.createWhatsappLogin);
 router.post('/link-telegram', requireAuth, authController.linkTelegram);
 router.post('/link-whatsapp', requireAuth, authController.linkWhatsapp);
+router.post('/unlink-telegram', requireAuth, authController.unlinkTelegram);
+router.post('/unlink-whatsapp', requireAuth, authController.unlinkWhatsapp);
 
 module.exports = router;

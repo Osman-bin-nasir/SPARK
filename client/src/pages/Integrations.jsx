@@ -48,7 +48,7 @@ function StatusBadge({ icon, loading, connected, hoverText }) {
   );
 }
 
-function IntegrationsPage({ activeOrganizationId, onOpenTeam, token, user }) {
+function IntegrationsPage({ activeOrganizationId, onOpenTeam, token, user, onUpdateUser }) {
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -60,6 +60,43 @@ function IntegrationsPage({ activeOrganizationId, onOpenTeam, token, user }) {
   const driveParam = searchParams.get('drive');
   const driveMessage = searchParams.get('message');
   const isTelegramLinked = Boolean(user?.telegram_id);
+  const isWhatsappLinked = Boolean(user?.whatsapp_id);
+
+  async function disconnectTelegram() {
+    if (!window.confirm('Are you sure you want to disconnect Telegram?')) {
+      return;
+    }
+    try {
+      setLoading(true);
+      setError('');
+      const result = await post(endpoints.unlinkTelegram, {}, { token });
+      if (onUpdateUser) {
+        onUpdateUser(result.user);
+      }
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function disconnectWhatsapp() {
+    if (!window.confirm('Are you sure you want to disconnect WhatsApp?')) {
+      return;
+    }
+    try {
+      setLoading(true);
+      setError('');
+      const result = await post(endpoints.unlinkWhatsapp, {}, { token });
+      if (onUpdateUser) {
+        onUpdateUser(result.user);
+      }
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!token || !organizationId) {
@@ -230,10 +267,50 @@ function IntegrationsPage({ activeOrganizationId, onOpenTeam, token, user }) {
                 : 'Retrieve invite link from the Team page'}
             </div>
           </div>
-          <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', background: 'var(--panel-soft)' }}>
-            <button type="button" className="secondary-btn" onClick={onOpenTeam} style={{ width: '100%' }}>
+          <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', background: 'var(--panel-soft)', display: 'flex', gap: '12px' }}>
+            <button type="button" className="secondary-btn" onClick={onOpenTeam} style={{ flex: 1 }}>
               View on Team
             </button>
+            {isTelegramLinked && (
+              <button type="button" className="secondary-btn" onClick={disconnectTelegram} style={{ flex: 1, borderColor: 'rgba(223,51,18,0.2)', color: '#df3312' }}>
+                Disconnect
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* WhatsApp */}
+        <div className="premium-card" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '24px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+              <StatusBadge loading={false} connected={isWhatsappLinked} hoverText={isWhatsappLinked ? 'Linked to this account' : 'Not linked'}
+                icon={<svg width="40" height="40" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#25D366"/><path fill="#fff" d="M12.012 5.5a6.495 6.495 0 0 0-5.632 9.742l-.74 2.705 2.77-.726a6.48 6.48 0 0 0 3.602 1.077h.003a6.497 6.497 0 0 0 6.497-6.497A6.497 6.497 0 0 0 12.012 5.5zm3.766 8.92c-.206.582-1.2.983-1.636 1.025-.398.038-.918.067-2.617-.636-2.172-.897-3.52-3.11-3.629-3.255-.107-.145-.884-1.173-.884-2.238 0-1.066.556-1.59.754-1.802.197-.21.428-.262.571-.262.143 0 .285.002.408.008.131.006.307-.05.48.365.18.435.617 1.503.67 1.613.054.11.09.238.017.382-.073.145-.11.233-.217.358-.109.124-.229.278-.328.373-.11.104-.224.218-.096.438.128.219.568.937 1.218 1.517.84.75 1.545.981 1.764 1.09.219.11.348.093.477-.057.129-.15.556-.648.705-.868.149-.22.298-.184.5-.11.203.074 1.29.608 1.513.72.223.11.37.164.425.26.054.095.054.551-.152 1.133z"/></svg>}
+              />
+              <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text)' }}>WhatsApp Bot</h3>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              Submit expenses, upload receipts, and check organizational metrics using WhatsApp messages.
+            </p>
+          </div>
+          <div style={{ padding: '16px 24px', flex: 1 }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
+              {isWhatsappLinked ? 'Linked Account' : 'Join Link'}
+            </div>
+            <div style={{ color: 'var(--text)', fontSize: '0.9rem' }}>
+              {isWhatsappLinked
+                ? `WhatsApp linked${user?.whatsapp_id ? ` (${user.whatsapp_id})` : ''}`
+                : 'Retrieve invite link or join code from the Team page'}
+            </div>
+          </div>
+          <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', background: 'var(--panel-soft)', display: 'flex', gap: '12px' }}>
+            <button type="button" className="secondary-btn" onClick={onOpenTeam} style={{ flex: 1 }}>
+              View on Team
+            </button>
+            {isWhatsappLinked && (
+              <button type="button" className="secondary-btn" onClick={disconnectWhatsapp} style={{ flex: 1, borderColor: 'rgba(223,51,18,0.2)', color: '#df3312' }}>
+                Disconnect
+              </button>
+            )}
           </div>
         </div>
 

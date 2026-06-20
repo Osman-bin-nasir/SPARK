@@ -335,10 +335,16 @@ export default function TeamPage() {
                             {m.email}
                             {isMe && <span style={{ marginLeft: '8px', fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 400 }}>(you)</span>}
                           </div>
-                          {m.telegram_id && (
+                           {m.telegram_id && (
                             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#2AABEE"/><path fill="#fff" d="M5.4 11.8l11.4-4.4c.5-.2.9.1.8.6l-1.9 9.1c-.1.5-.4.7-.8.4l-2.3-1.7-1.1 1.1c-.1.1-.3.2-.5.2l.2-2.4 4.3-3.9c.2-.2-.1-.3-.3-.1l-5.3 3.3-2.3-.7c-.5-.2-.5-.5.1-.7z"/></svg>
                               Telegram Linked
+                            </div>
+                          )}
+                          {m.whatsapp_id && (
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="12" fill="#25D366"/><path fill="#fff" d="M12.012 5.5a6.495 6.495 0 0 0-5.632 9.742l-.74 2.705 2.77-.726a6.48 6.48 0 0 0 3.602 1.077h.003a6.497 6.497 0 0 0 6.497-6.497A6.497 6.497 0 0 0 12.012 5.5zm3.766 8.92c-.206.582-1.2.983-1.636 1.025-.398.038-.918.067-2.617-.636-2.172-.897-3.52-3.11-3.629-3.255-.107-.145-.884-1.173-.884-2.238 0-1.066.556-1.59.754-1.802.197-.21.428-.262.571-.262.143 0 .285.002.408.008.131.006.307-.05.48.365.18.435.617 1.503.67 1.613.054.11.09.238.017.382-.073.145-.11.233-.217.358-.109.124-.229.278-.328.373-.11.104-.224.218-.096.438.128.219.568.937 1.218 1.517.84.75 1.545.981 1.764 1.09.219.11.348.093.477-.057.129-.15.556-.648.705-.868.149-.22.298-.184.5-.11.203.074 1.29.608 1.513.72.223.11.37.164.425.26.054.095.054.551-.152 1.133z"/></svg>
+                              WhatsApp Linked
                             </div>
                           )}
                         </div>
@@ -422,7 +428,7 @@ export default function TeamPage() {
       {isFounder && orgInfo?.join_link && (
         <div className="premium-card" style={{ marginTop: '24px' }}>
           <div className="premium-card-header">
-            <h3 className="premium-card-title">Telegram Join Link</h3>
+            <h3 className="premium-card-title">Telegram Invite Link</h3>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0 0 16px' }}>
             Share this link with teammates so they can open the bot and join your organization directly.
@@ -457,6 +463,77 @@ export default function TeamPage() {
               Copy
             </button>
           </div>
+        </div>
+      )}
+
+      {/* WhatsApp Join Section */}
+      {isFounder && (orgInfo?.whatsapp_join_link || orgInfo?.join_code) && (
+        <div className="premium-card" style={{ marginTop: '24px' }}>
+          <div className="premium-card-header">
+            <h3 className="premium-card-title">WhatsApp Invite</h3>
+          </div>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0 0 16px' }}>
+            {orgInfo.whatsapp_join_link
+              ? 'Share this link with teammates so they can open WhatsApp and join your organization.'
+              : 'Share this join command. Teammates can message the SPARK WhatsApp bot with this command to join your organization.'}
+          </p>
+          {orgInfo.whatsapp_join_link ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <a
+                href={orgInfo.whatsapp_join_link}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  maxWidth: '100%',
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  background: 'var(--panel-soft)',
+                  border: '1px solid var(--border)',
+                  color: '#25D366',
+                  textDecoration: 'none',
+                  fontFamily: 'monospace',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  overflowWrap: 'anywhere'
+                }}
+              >
+                {orgInfo.whatsapp_join_link}
+              </a>
+              <button
+                onClick={() => navigator.clipboard.writeText(orgInfo.whatsapp_join_link).then(() => setNotice('WhatsApp join link copied!'))}
+                style={{ padding: '10px 18px', fontSize: '0.85rem', background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                Copy Link
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  background: 'var(--panel-soft)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  fontFamily: 'monospace',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                }}
+              >
+                join_{orgInfo.join_code}
+              </span>
+              <button
+                onClick={() => navigator.clipboard.writeText(`join_${orgInfo.join_code}`).then(() => setNotice('WhatsApp join command copied!'))}
+                style={{ padding: '10px 18px', fontSize: '0.85rem', background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                Copy Command
+              </button>
+            </div>
+          )}
         </div>
       )}
 

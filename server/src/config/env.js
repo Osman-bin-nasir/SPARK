@@ -14,6 +14,7 @@ const env = {
   refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d',
   telegramLoginExpiresIn: '10m',
   telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME || 'osman80bot',
+  whatsappBotNumber: process.env.WHATSAPP_BOT_NUMBER || '',
   appBaseUrl,
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',

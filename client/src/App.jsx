@@ -25,6 +25,7 @@ import {
 } from './lib/user-settings';
 
 const TELEGRAM_TOKEN_STORAGE_KEY = 'spark.telegram-link-token';
+const WHATSAPP_TOKEN_STORAGE_KEY = 'spark.whatsapp-link-token';
 const DashboardPage = lazy(() => import('./features/dashboard/dashboard.page'));
 
 function getStoredUser() {
@@ -35,6 +36,11 @@ function getStoredUser() {
 function getPendingTelegramToken() {
   const params = new URLSearchParams(window.location.search);
   return params.get('token') || sessionStorage.getItem(TELEGRAM_TOKEN_STORAGE_KEY) || '';
+}
+
+function getPendingWhatsappToken() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('token') || sessionStorage.getItem(WHATSAPP_TOKEN_STORAGE_KEY) || '';
 }
 
 function getOrganizationPreferenceKey(userId) {
@@ -64,13 +70,17 @@ function resolveActiveOrganizationId(user, preferredOrganizationId = '') {
   return organizations[0]?.id || '';
 }
 
-function getInitialScreen(hasSessionToken, hasTelegramToken, pathname) {
+function getInitialScreen(hasSessionToken, hasTelegramToken, hasWhatsappToken, pathname) {
   if (hasSessionToken) {
     return 'dashboard';
   }
 
   if (pathname === '/telegram-login') {
     return hasTelegramToken ? 'signup' : 'login';
+  }
+
+  if (pathname === '/whatsapp-login') {
+    return hasWhatsappToken ? 'signup' : 'login';
   }
 
   return 'login';
@@ -90,6 +100,7 @@ function App() {
   const normalizedPathname = normalizePathname(location.pathname);
   const initialToken = localStorage.getItem('token') || '';
   const initialTelegramToken = getPendingTelegramToken();
+  const initialWhatsappToken = getPendingWhatsappToken();
   const initialUser = getStoredUser();
   const initialUserSettings = getUserSettings(initialUser);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -100,11 +111,21 @@ function App() {
     organizationId: getStoredOrganizationPreference(initialUser)
   }));
   const [pendingTelegramToken, setPendingTelegramToken] = useState(initialTelegramToken);
+  const [pendingWhatsappToken, setPendingWhatsappToken] = useState(initialWhatsappToken);
   const [screen, setScreen] = useState(() =>
-    getInitialScreen(Boolean(initialToken), Boolean(initialTelegramToken), window.location.pathname)
+    getInitialScreen(
+      Boolean(initialToken),
+      Boolean(initialTelegramToken),
+      Boolean(initialWhatsappToken),
+      window.location.pathname
+    )
   );
   const [status, setStatus] = useState(
-    initialTelegramToken ? 'Finish signup or login to link your Telegram account.' : ''
+    initialTelegramToken
+      ? 'Finish signup or login to link your Telegram account.'
+      : initialWhatsappToken
+      ? 'Finish signup or login to link your WhatsApp account.'
+      : ''
   );
   const isDarkMode = userSettings.theme_mode === 'dark';
 
@@ -173,6 +194,8 @@ function App() {
   };
 
   const telegramMode = Boolean(pendingTelegramToken);
+  const whatsappMode = Boolean(pendingWhatsappToken);
+  const botMode = telegramMode || whatsappMode;
   const preferredOrganizationId = preferredOrganization.userId === user?.id
     ? preferredOrganization.organizationId
     : getStoredOrganizationPreference(user);
@@ -187,9 +210,22 @@ function App() {
     function handleAuthExpired() {
       setToken('');
       setUser(null);
-      setStatus(pendingTelegramToken ? 'Finish signup or login to link your Telegram account.' : '');
-      setScreen(pendingTelegramToken ? 'signup' : 'login');
-      navigate(pendingTelegramToken ? '/telegram-login' : '/login', { replace: true });
+      setStatus(
+        pendingTelegramToken
+          ? 'Finish signup or login to link your Telegram account.'
+          : pendingWhatsappToken
+          ? 'Finish signup or login to link your WhatsApp account.'
+          : ''
+      );
+      setScreen(botMode ? 'signup' : 'login');
+      navigate(
+        pendingTelegramToken
+          ? '/telegram-login'
+          : pendingWhatsappToken
+          ? '/whatsapp-login'
+          : '/login',
+        { replace: true }
+      );
     }
 
     window.addEventListener('spark-auth-updated', handleAuthUpdated);
@@ -199,7 +235,7 @@ function App() {
       window.removeEventListener('spark-auth-updated', handleAuthUpdated);
       window.removeEventListener('spark-auth-expired', handleAuthExpired);
     };
-  }, [navigate, pendingTelegramToken]);
+  }, [navigate, pendingTelegramToken, pendingWhatsappToken, botMode]);
 
   useEffect(() => {
     if (!user?.id || !activeOrganizationId) {
@@ -254,6 +290,50 @@ function App() {
   }, [location.pathname]);
 
   useEffect(() => {
+    if (location.pathname !== '/whatsapp-login') {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    const whatsappToken = url.searchParams.get('token');
+    const storedWhatsappToken = sessionStorage.getItem(WHATSAPP_TOKEN_STORAGE_KEY);
+
+    if (whatsappToken) {
+      sessionStorage.setItem(WHATSAPP_TOKEN_STORAGE_KEY, whatsappToken);
+      url.searchParams.delete('token');
+      const nextUrl = url.searchParams.size > 0 ? `${url.pathname}?${url.searchParams.toString()}` : url.pathname;
+      window.history.replaceState({}, '', nextUrl);
+      queueMicrotask(() => {
+        setPendingWhatsappToken(whatsappToken);
+        setStatus('Finish signup or login to link your WhatsApp account.');
+
+        if (!localStorage.getItem('token')) {
+          setScreen('signup');
+        }
+      });
+
+      return;
+    }
+
+    if (storedWhatsappToken) {
+      queueMicrotask(() => {
+        setPendingWhatsappToken(storedWhatsappToken);
+        setStatus('Finish signup or login to link your WhatsApp account.');
+
+        if (!localStorage.getItem('token')) {
+          setScreen('signup');
+        }
+      });
+
+      return;
+    }
+
+    queueMicrotask(() => {
+      setStatus('WhatsApp link is missing or expired. Request a new link from the bot.');
+    });
+  }, [location.pathname]);
+
+  useEffect(() => {
     if (!token || !pendingTelegramToken) {
       return;
     }
@@ -303,10 +383,61 @@ function App() {
     };
   }, [location.pathname, navigate, pendingTelegramToken, token]);
 
+  useEffect(() => {
+    if (!token || !pendingWhatsappToken) {
+      return;
+    }
+
+    let isActive = true;
+
+    async function linkWhatsappAccount() {
+      try {
+        setStatus('Linking your WhatsApp account...');
+        const result = await post(
+          endpoints.linkWhatsapp,
+          { token: pendingWhatsappToken },
+          { token }
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        setUser(result.user);
+        localStorage.setItem('user', JSON.stringify(result.user));
+        sessionStorage.removeItem(WHATSAPP_TOKEN_STORAGE_KEY);
+        setPendingWhatsappToken('');
+        setStatus('WhatsApp account linked successfully.');
+
+        if (location.pathname === '/whatsapp-login') {
+          navigate('/dashboard', { replace: true });
+        }
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        if ([400, 401, 409].includes(error.statusCode)) {
+          sessionStorage.removeItem(WHATSAPP_TOKEN_STORAGE_KEY);
+          setPendingWhatsappToken('');
+        }
+
+        setStatus(`Signed in, but WhatsApp linking failed: ${error.message}`);
+      }
+    }
+
+    linkWhatsappAccount();
+
+    return () => {
+      isActive = false;
+    };
+  }, [location.pathname, navigate, pendingWhatsappToken, token]);
+
   function handleAuthSuccess(result) {
     const accessToken = result.access_token || result.token;
     const refreshToken = result.refresh_token || '';
     const shouldClearTelegramToken = pendingTelegramToken && result.user?.telegram_id;
+    const shouldClearWhatsappToken = pendingWhatsappToken && result.user?.whatsapp_id;
 
     setToken(accessToken);
     setUser(result.user);
@@ -319,6 +450,14 @@ function App() {
       sessionStorage.removeItem(TELEGRAM_TOKEN_STORAGE_KEY);
       setPendingTelegramToken('');
       setStatus('Telegram account linked successfully.');
+      navigate('/dashboard', { replace: true });
+      return;
+    }
+
+    if (shouldClearWhatsappToken) {
+      sessionStorage.removeItem(WHATSAPP_TOKEN_STORAGE_KEY);
+      setPendingWhatsappToken('');
+      setStatus('WhatsApp account linked successfully.');
       navigate('/dashboard', { replace: true });
       return;
     }
@@ -336,12 +475,25 @@ function App() {
     setUser(null);
     setUserSettings(getUserSettings(null));
     setPreferredOrganization({ userId: '', organizationId: '' });
-    setStatus(pendingTelegramToken ? 'Finish signup or login to link your Telegram account.' : '');
+    setStatus(
+      pendingTelegramToken
+        ? 'Finish signup or login to link your Telegram account.'
+        : pendingWhatsappToken
+        ? 'Finish signup or login to link your WhatsApp account.'
+        : ''
+    );
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
-    setScreen(pendingTelegramToken ? 'signup' : 'login');
-    navigate(pendingTelegramToken ? '/telegram-login' : '/login', { replace: true });
+    setScreen(botMode ? 'signup' : 'login');
+    navigate(
+      pendingTelegramToken
+        ? '/telegram-login'
+        : pendingWhatsappToken
+        ? '/whatsapp-login'
+        : '/login',
+      { replace: true }
+    );
   }
 
   function handleSelectOrganization(nextOrganizationId) {
@@ -358,6 +510,8 @@ function App() {
       onSwitchToLogin={() => setScreen('login')}
       telegramToken={pendingTelegramToken}
       telegramMode={telegramMode}
+      whatsappToken={pendingWhatsappToken}
+      whatsappMode={whatsappMode}
     />
   ) : (
     <LoginPage
@@ -365,6 +519,7 @@ function App() {
       onSuccess={handleAuthSuccess}
       onSwitchToSignup={() => setScreen('signup')}
       telegramMode={telegramMode}
+      whatsappMode={whatsappMode}
     />
   );
 
@@ -420,6 +575,7 @@ function App() {
       <Routes>
         <Route path="/dashboard" element={dashboardContent} />
         <Route path="/telegram-login" element={dashboardContent} />
+        <Route path="/whatsapp-login" element={dashboardContent} />
         <Route
           path="/integrations"
           element={
@@ -430,6 +586,10 @@ function App() {
               onLogout={handleLogout}
               token={token}
               user={user}
+              onUpdateUser={(updatedUser) => {
+                setUser(updatedUser);
+                localStorage.setItem('user', JSON.stringify(updatedUser));
+              }}
             />
           }
         />
@@ -487,6 +647,7 @@ function App() {
   const renderUnauthenticatedRoutes = () => (
     <Routes>
       <Route path="/telegram-login" element={authContent} />
+      <Route path="/whatsapp-login" element={authContent} />
       <Route path="/login" element={authContent} />
       <Route path="*" element={<Navigate replace to="/" />} />
     </Routes>

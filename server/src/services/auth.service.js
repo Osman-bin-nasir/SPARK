@@ -688,11 +688,37 @@ async function linkWhatsappAccount({ userId, token }) {
   }
 }
 
+async function unlinkTelegramAccount({ userId }) {
+  const user = await usersRepository.unlinkTelegramFromUser({ userId });
+  if (!user) {
+    throw new HttpError(404, 'User not found');
+  }
+  const memberships = await organizationsRepository.listMembershipsByUserId(userId);
+  return {
+    message: 'Telegram account unlinked successfully',
+    user: decorateUser(user, memberships)
+  };
+}
+
+async function unlinkWhatsappAccount({ userId }) {
+  const user = await usersRepository.unlinkWhatsappFromUser({ userId });
+  if (!user) {
+    throw new HttpError(404, 'User not found');
+  }
+  const memberships = await organizationsRepository.listMembershipsByUserId(userId);
+  return {
+    message: 'WhatsApp account unlinked successfully',
+    user: decorateUser(user, memberships)
+  };
+}
+
 module.exports = {
   createTelegramLogin,
   createWhatsappLogin,
   linkTelegramAccount,
   linkWhatsappAccount,
+  unlinkTelegramAccount,
+  unlinkWhatsappAccount,
   login,
   loginWithTelegram,
   loginWithWhatsapp,
