@@ -1,0 +1,28 @@
+name: Deploy Backend to AWS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Zip application
+        run: zip -r app.zip Dockerfile server/ .dockerignore -x "*/node_modules/*" "*/.git/*" "server/tests/*"
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v21
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: ${{ secrets.AWS_REGION }}
+          application_name: spark-backend
+          environment_name: spark-backend-env
+          version_label: ${{ github.sha }}
+          deployment_package: app.zip
