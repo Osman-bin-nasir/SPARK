@@ -1,11 +1,11 @@
 const { pool } = require('./pool');
 
-async function createIngestionJob({ id, organizationId, source, fileName }, client = pool) {
+async function createIngestionJob({ id, organizationId, source, fileName, platform = null }, client = pool) {
   const { rows } = await client.query(
-    `INSERT INTO ingestion_jobs (id, organization_id, source, file_name, status)
-     VALUES ($1, $2, $3, $4, 'processing')
-     RETURNING id, organization_id, source, file_name, status, error_message, created_at, completed_at`,
-    [id, organizationId, source, fileName]
+    `INSERT INTO ingestion_jobs (id, organization_id, source, file_name, status, platform)
+     VALUES ($1, $2, $3, $4, 'processing', $5)
+     RETURNING id, organization_id, source, file_name, status, error_message, created_at, completed_at, platform`,
+    [id, organizationId, source, fileName, platform]
   );
 
   return rows[0];

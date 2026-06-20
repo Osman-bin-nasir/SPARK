@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const usersRepository = require('../db/users.repository');
 const organizationsRepository = require('../db/organizations.repository');
 const telegramRepository = require('../db/telegram.repository');
+const whatsappRepository = require('../db/whatsapp.repository');
 const { pool } = require('../db/pool');
 const {
   signAccessToken,
@@ -58,6 +59,20 @@ function normalizeTelegramId(telegramId) {
   return value;
 }
 
+function normalizeWhatsappId(whatsappId) {
+  if (whatsappId === undefined || whatsappId === null) {
+    throw new HttpError(400, 'whatsapp_id is required');
+  }
+
+  const value = String(whatsappId).trim();
+
+  if (!/^\d+$/.test(value)) {
+    throw new HttpError(400, 'whatsapp_id must be a numeric value');
+  }
+
+  return value;
+}
+
 function normalizeOptionalOrganizationId(value) {
   if (value === undefined || value === null) {
     return null;
@@ -69,6 +84,10 @@ function normalizeOptionalOrganizationId(value) {
 
 function buildTelegramLoginLink(token) {
   return `${env.appBaseUrl}/telegram-login?token=${encodeURIComponent(token)}`;
+}
+
+function buildWhatsappLoginLink(token) {
+  return `${env.appBaseUrl}/whatsapp-login?token=${encodeURIComponent(token)}`;
 }
 
 function decorateUser(user, memberships) {
@@ -186,28 +205,117 @@ async function completeRegistrationForTelegramUser({ telegramToken, email, passw
   }
 }
 
+async function completeRegistrationForWhatsappUser({ whatsappToken, email, passwordHash }) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const loginToken = await whatsappRepository.findActiveLoginToken(whatsappToken, client);
+
+    if (!loginToken) {
+      throw new HttpError(400, 'WhatsApp login link is invalid or expired');
+    }
+
+    const whatsappId = normalizeWhatsappId(loginToken.whatsapp_id);
+    const whatsappUser = await usersRepository.findUserByWhatsappId(whatsappId, client);
+
+    if (!whatsappUser) {
+      throw new HttpError(404, 'WhatsApp user not found');
+    }
+
+    if (whatsappUser.email && whatsappUser.email !== email) {
+      throw new HttpError(409, 'This WhatsApp account is already reserved for another email');
+    }
+
+    const existingMemberships = await organizationsRepository.listMembershipsByUserId(whatsappUser.id, client);
+
+    if (existingMemberships.length > 0) {
+      await whatsappRepository.markLoginTokenUsed({ token: whatsappToken }, client);
+      throw new HttpError(409, 'This WhatsApp account is already registered');
+    }
+
+    const pendingJoin = await whatsappRepository.findPendingJoinIntent(whatsappId, client);
+
+    const user = await usersRepository.completeWhatsappUserRegistration(
+      {
+        userId: whatsappUser.id,
+        email,
+        passwordHash
+      },
+      client
+    );
+
+    if (!user) {
+      throw new HttpError(409, 'This WhatsApp account is already connected to an organization');
+    }
+
+    if (pendingJoin?.organization_id) {
+      const membershipResult = await organizationsRepository.addOrganizationMember(
+        {
+          organizationId: pendingJoin.organization_id,
+          userId: user.id,
+          role: 'member'
+        },
+        client
+      );
+
+      if (membershipResult.blocked) {
+        throw new HttpError(409, 'This account already belongs to another organization');
+      }
+    }
+
+    await whatsappRepository.markLoginTokenUsed({ token: whatsappToken }, client);
+    await whatsappRepository.clearJoinIntent(whatsappId, client);
+
+    await client.query('COMMIT');
+    return user;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function register(payload) {
   const body = payload || {};
   const email = normalizeEmail(body.email);
   validatePassword(body.password);
   const telegramToken = typeof body.telegram_token === 'string' ? body.telegram_token.trim() : '';
+  const whatsappToken = typeof body.whatsapp_token === 'string' ? body.whatsapp_token.trim() : '';
+
+  if (telegramToken && whatsappToken) {
+    throw new HttpError(400, 'Cannot register with both Telegram and WhatsApp tokens simultaneously');
+  }
+
   const loginToken = telegramToken
     ? await telegramRepository.findActiveLoginToken(telegramToken)
+    : whatsappToken
+    ? await whatsappRepository.findActiveLoginToken(whatsappToken)
     : null;
-  const telegramId = loginToken
+
+  const telegramId = telegramToken && loginToken
     ? normalizeTelegramId(loginToken.telegram_id)
     : null;
 
-  if (telegramToken && !loginToken) {
-    throw new HttpError(400, 'Telegram login link is invalid or expired');
+  const whatsappId = whatsappToken && loginToken
+    ? normalizeWhatsappId(loginToken.whatsapp_id)
+    : null;
+
+  if ((telegramToken || whatsappToken) && !loginToken) {
+    throw new HttpError(400, `${telegramToken ? 'Telegram' : 'WhatsApp'} login link is invalid or expired`);
   }
 
-  const [existingUser, telegramUser] = await Promise.all([
+  const [existingUser, telegramUser, whatsappUser] = await Promise.all([
     usersRepository.findUserByEmail(email),
-    telegramId ? usersRepository.findUserByTelegramId(telegramId) : Promise.resolve(null)
+    telegramId ? usersRepository.findUserByTelegramId(telegramId) : Promise.resolve(null),
+    whatsappId ? usersRepository.findUserByWhatsappId(whatsappId) : Promise.resolve(null)
   ]);
 
-  if (existingUser && (!telegramUser || existingUser.id !== telegramUser.id)) {
+  const matchingPlatformUser = telegramUser || whatsappUser;
+
+  if (existingUser && (!matchingPlatformUser || existingUser.id !== matchingPlatformUser.id)) {
     throw new HttpError(409, 'email already exists');
   }
 
@@ -227,6 +335,19 @@ async function register(payload) {
       return buildAuthResponse(user);
     }
 
+    if (whatsappToken) {
+      if (!whatsappUser) {
+        throw new HttpError(404, 'WhatsApp user not found');
+      }
+
+      const user = await completeRegistrationForWhatsappUser({
+        whatsappToken,
+        email,
+        passwordHash
+      });
+      return buildAuthResponse(user);
+    }
+
     const user = await createRegisteredUserWithDefaultOrganization({ email, passwordHash });
 
     return buildAuthResponse(user);
@@ -234,6 +355,9 @@ async function register(payload) {
     if (error.code === '23505') {
       if (String(error.constraint || '').includes('telegram')) {
         throw new HttpError(409, 'This Telegram account is already linked to another user');
+      }
+      if (String(error.constraint || '').includes('whatsapp')) {
+        throw new HttpError(409, 'This WhatsApp account is already linked to another user');
       }
 
       throw new HttpError(409, 'email already exists');
@@ -290,6 +414,33 @@ async function loginWithTelegram(payload) {
   return { token };
 }
 
+async function loginWithWhatsapp(payload) {
+  const body = payload || {};
+  const whatsappId = normalizeWhatsappId(body.whatsapp_id);
+  const user = await usersRepository.findUserByWhatsappId(whatsappId);
+
+  if (!user) {
+    throw new HttpError(404, 'User not found');
+  }
+
+  const memberships = await organizationsRepository.listMembershipsByUserId(user.id);
+
+  if (!user.email || memberships.length === 0) {
+    throw new HttpError(409, 'WhatsApp account is not registered yet');
+  }
+
+  const mappedUser = usersRepository.mapUser(user);
+  const organizationId = memberships[0].organization_id;
+  const token = signTelegramAccessToken({
+    userId: mappedUser.id,
+    email: mappedUser.email,
+    whatsappId: mappedUser.whatsapp_id,
+    organizationId
+  });
+
+  return { token };
+}
+
 async function refreshAccessToken(payload) {
   if (!payload || typeof payload.refresh_token !== 'string' || !payload.refresh_token.trim()) {
     throw new HttpError(400, 'refresh_token is required');
@@ -337,6 +488,48 @@ async function createTelegramLogin(payload) {
     return {
       status: 'login_link',
       loginLink: buildTelegramLoginLink(loginToken.token),
+      token: loginToken.token
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function createWhatsappLogin(payload) {
+  const body = payload || {};
+  const whatsappId = normalizeWhatsappId(body.whatsapp_id);
+  const organizationId = normalizeOptionalOrganizationId(body.organization_id || body.organizationId);
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const user = await usersRepository.upsertWhatsappPlaceholder({ whatsappId }, client);
+
+    if (organizationId) {
+      const organization = await organizationsRepository.findOrganizationById(organizationId, client);
+
+      if (organization) {
+        await whatsappRepository.upsertJoinIntent(
+          {
+            whatsappId,
+            organizationId: organization.id,
+            joinCode: organization.join_code
+          },
+          client
+        );
+      }
+    }
+
+    const loginToken = await whatsappRepository.createLoginToken({ whatsappId }, client);
+    await client.query('COMMIT');
+
+    return {
+      status: 'login_link',
+      loginLink: buildWhatsappLoginLink(loginToken.token),
       token: loginToken.token
     };
   } catch (error) {
@@ -421,11 +614,88 @@ async function linkTelegramAccount({ userId, token }) {
   }
 }
 
+async function linkWhatsappAccount({ userId, token }) {
+  if (typeof token !== 'string' || !token.trim()) {
+    throw new HttpError(400, 'token is required');
+  }
+
+  const loginToken = await whatsappRepository.findActiveLoginToken(token);
+
+  if (!loginToken) {
+    throw new HttpError(400, 'WhatsApp login link is invalid or expired');
+  }
+
+  const whatsappId = normalizeWhatsappId(loginToken.whatsapp_id);
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const existingUser = await usersRepository.findUserById(userId, client);
+    const pendingJoin = await whatsappRepository.findPendingJoinIntent(whatsappId, client);
+    const existingMemberships = await organizationsRepository.listMembershipsByUserId(userId, client);
+
+    const user = await usersRepository.linkWhatsappToUser({ userId, whatsappId }, client);
+
+    if (pendingJoin) {
+      if (
+        existingMemberships.length > 0 &&
+        String(existingMemberships[0].organization_id) !== String(pendingJoin.organization_id)
+      ) {
+        throw new HttpError(409, 'This account already belongs to another organization');
+      }
+
+      const membershipResult = await organizationsRepository.addOrganizationMember(
+        {
+          organizationId: pendingJoin.organization_id,
+          userId: user.id,
+          role: 'member'
+        },
+        client
+      );
+
+      if (membershipResult.blocked) {
+        throw new HttpError(409, 'This account already belongs to another organization');
+      }
+    }
+
+    await whatsappRepository.markLoginTokenUsed({ token }, client);
+    await whatsappRepository.clearJoinIntent(whatsappId, client);
+
+    const memberships = await organizationsRepository.ensureDefaultOrganizationForUser({
+      userId: user.id,
+      email: existingUser?.email || user.email
+    });
+
+    const linkedUser = usersRepository.mapUser(await usersRepository.findUserById(user.id, client));
+
+    await client.query('COMMIT');
+
+    return {
+      message: 'WhatsApp account linked successfully',
+      user: decorateUser(linkedUser, memberships)
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+
+    if (error.code === '23505') {
+      throw new HttpError(409, 'This WhatsApp account is already linked to another user');
+    }
+
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   createTelegramLogin,
+  createWhatsappLogin,
   linkTelegramAccount,
+  linkWhatsappAccount,
   login,
   loginWithTelegram,
+  loginWithWhatsapp,
   refreshAccessToken,
   register
 };

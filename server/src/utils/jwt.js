@@ -7,7 +7,7 @@ function assertTokenType(payload, expectedType) {
   }
 }
 
-function buildAccessTokenPayload({ userId, email, telegramId, organizationId }) {
+function buildAccessTokenPayload({ userId, email, telegramId, whatsappId, organizationId }) {
   const payload = {
     sub: userId,
     user_id: userId,
@@ -20,6 +20,10 @@ function buildAccessTokenPayload({ userId, email, telegramId, organizationId }) 
 
   if (telegramId !== undefined && telegramId !== null && String(telegramId).trim()) {
     payload.telegram_id = String(telegramId);
+  }
+
+  if (whatsappId !== undefined && whatsappId !== null && String(whatsappId).trim()) {
+    payload.whatsapp_id = String(whatsappId);
   }
 
   if (organizationId) {
@@ -35,6 +39,7 @@ function signAccessToken(user, options = {}) {
       userId: user.id,
       email: user.email,
       telegramId: user.telegram_id,
+      whatsappId: user.whatsapp_id,
       organizationId: options.organizationId
     }),
     env.jwtSecret,
@@ -70,12 +75,13 @@ function signTelegramLoginToken({ telegramId, organizationId = null }) {
   );
 }
 
-function signTelegramAccessToken({ userId, email, telegramId, organizationId }) {
+function signTelegramAccessToken({ userId, email, telegramId, whatsappId, organizationId }) {
   return jwt.sign(
     buildAccessTokenPayload({
       userId,
       email,
       telegramId,
+      whatsappId,
       organizationId
     }),
     env.jwtSecret,

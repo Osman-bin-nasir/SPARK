@@ -100,7 +100,7 @@ function validatePayload(payload, { source, fieldPrefix = 'payload.', objectLabe
 
 function validateTextPayload(payload) {
   const normalizedPayload = validatePayload(payload, {
-    source: 'text',
+    source: payload.platform || 'text',
     fieldPrefix: '',
     objectLabel: 'request body'
   });
@@ -341,12 +341,14 @@ async function ingestDocument({ organizationId, payload, file }) {
     throw new HttpError(400, 'X-Organization-Id header is required');
   }
 
-  const normalizedPayload = validatePayload(payload, { source: 'telegram' });
+  const platform = payload.platform || 'telegram';
+  const normalizedPayload = validatePayload(payload, { source: platform });
   const ingestionJob = await ingestionRepository.createIngestionJob({
     id: crypto.randomUUID(),
     organizationId,
     source: normalizedPayload.source,
-    fileName: file?.filename || 'unknown'
+    fileName: file?.filename || 'unknown',
+    platform: platform
   });
 
   try {
@@ -460,7 +462,8 @@ async function ingestText({ organizationId, payload }) {
     id: crypto.randomUUID(),
     organizationId,
     source: normalizedPayload.source,
-    fileName: INLINE_TEXT_ORIGINAL_NAME
+    fileName: INLINE_TEXT_ORIGINAL_NAME,
+    platform: payload.platform || null
   });
 
   try {

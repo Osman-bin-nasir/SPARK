@@ -8,6 +8,7 @@ const organizationRoutes = require('./organization.routes');
 const performanceRoutes = require('./performance.routes');
 const ragRoutes = require('./rag.routes');
 const telegramRoutes = require('./telegram.routes');
+const whatsappRoutes = require('./whatsapp.routes');
 const transactionRoutes = require('./transaction.routes');
 
 const router = express.Router();
@@ -21,6 +22,7 @@ router.use('/organizations', organizationRoutes);
 router.use('/performance', performanceRoutes);
 router.use('/rag', ragRoutes);
 router.use('/telegram', telegramRoutes);
+router.use('/whatsapp', whatsappRoutes);
 router.use('/transactions', transactionRoutes);
 
 module.exports = router;
