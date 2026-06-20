@@ -1,0 +1,115 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: spark-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-spark_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-spark_password}
+      POSTGRES_DB: ${DB_NAME:-spark_db}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-spark_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - spark-network
+
+  # SPARK Application (Server + Client)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spark-app
+    ports:
+      - "${APP_PORT:-8000}:4000"
+    environment:
+      # Node environment
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 4000
+
+      # Database
+      DATABASE_URL: "postgresql://${DB_USER:-spark_user}:${DB_PASSWORD:-spark_password}@postgres:5432/${DB_NAME:-spark_db}"
+
+      # JWT & Auth
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      REFRESH_JWT_SECRET: ${REFRESH_JWT_SECRET:-your-refresh-jwt-key}
+      TELEGRAM_JWT_SECRET: ${TELEGRAM_JWT_SECRET:-your-telegram-jwt-key}
+
+      # Token expiration
+      ACCESS_TOKEN_EXPIRES_IN: ${ACCESS_TOKEN_EXPIRES_IN:-15m}
+      REFRESH_TOKEN_EXPIRES_IN: ${REFRESH_TOKEN_EXPIRES_IN:-7d}
+
+      # Telegram Integration
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-osman80bot}
+
+      # Google OAuth
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      GOOGLE_OAUTH_STATE_SECRET: ${GOOGLE_OAUTH_STATE_SECRET:-}
+      GOOGLE_OAUTH_STATE_EXPIRES_IN: ${GOOGLE_OAUTH_STATE_EXPIRES_IN:-10m}
+      GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
+
+      # Application URLs
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8000}
+      GOOGLE_DRIVE_POST_CONNECT_URL: ${GOOGLE_DRIVE_POST_CONNECT_URL:-}
+
+      # Webhooks & Security
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+
+      # Extraction & Processing
+      INGESTION_MAX_BODY_BYTES: ${INGESTION_MAX_BODY_BYTES:-15728640}
+      ORPHAN_CLEANUP_INTERVAL_MS: ${ORPHAN_CLEANUP_INTERVAL_MS:-60000}
+      EXTRACTION_CONFIDENCE_THRESHOLD: ${EXTRACTION_CONFIDENCE_THRESHOLD:-0.8}
+      EXTRACTION_MAX_TEXT_CHARS: ${EXTRACTION_MAX_TEXT_CHARS:-12000}
+
+      # RAG Configuration
+      RAG_MAX_TOP_K: ${RAG_MAX_TOP_K:-20}
+      RAG_MAX_QUERY_CHARS: ${RAG_MAX_QUERY_CHARS:-512}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./server/src:/app/src
+    networks:
+      - spark-network
+    restart: unless-stopped
+
+  # Optional: Separate worker service for background jobs
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: spark-worker
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: "postgresql://${DB_USER:-spark_user}:${DB_PASSWORD:-spark_password}@postgres:5432/${DB_NAME:-spark_db}"
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_STATE_SECRET: ${GOOGLE_OAUTH_STATE_SECRET:-}
+      GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - spark-network
+    restart: unless-stopped
+    profiles:
+      - worker
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  spark-network:
+    driver: bridge
