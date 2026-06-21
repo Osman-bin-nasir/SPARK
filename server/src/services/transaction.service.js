@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { pool } = require('../db/pool');
 const transactionsRepository = require('../db/transactions.repository');
 const googleSheetsService = require('./google-sheets.service');
+const vendorService = require('./vendor.service');
 const googleDriveService = require('./google-drive.service');
 const { env } = require('../config/env');
 const { HttpError } = require('../utils/http-error');
@@ -135,13 +136,29 @@ async function listTransactions({ organizationId, query }) {
   const page = parsePositiveInteger(query.page, 1);
   const pageSize = Math.min(parsePositiveInteger(query.page_size || query.pageSize, 20), 100);
 
+  let vendorId = undefined;
+  if (query.vendor) {
+    const resolved = await vendorService.resolveVendor(query.vendor, organizationId, { mode: 'read' });
+    if (!resolved) {
+      return {
+        items: [],
+        pagination: {
+          page,
+          page_size: pageSize,
+          total: 0
+        }
+      };
+    }
+    vendorId = resolved.vendor_id;
+  }
+
   const result = await transactionsRepository.listTransactions({
     organizationId,
     page,
     pageSize,
     status: query.status,
     transactionType: query.transaction_type,
-    vendor: query.vendor,
+    vendorId,
     startDate: query.start_date,
     endDate: query.end_date
   });
@@ -169,12 +186,29 @@ async function searchTransactions({ organizationId, payload }) {
 
   const topK = parseSearchLimit(payload?.top_k ?? payload?.topK);
   const includePendingReview = payload?.include_pending_review === true || payload?.includePendingReview === true;
+
+  let vendorId = undefined;
+  if (payload?.vendor) {
+    const resolved = await vendorService.resolveVendor(payload.vendor, organizationId, { mode: 'read' });
+    if (!resolved) {
+      return {
+        query: normalizedQuery,
+        mode: 'keyword',
+        top_k: topK,
+        include_pending_review: includePendingReview,
+        total: 0,
+        items: []
+      };
+    }
+    vendorId = resolved.vendor_id;
+  }
+
   const items = await transactionsRepository.searchTransactionsByText({
     organizationId,
     query: normalizedQuery,
     limit: topK,
     includePendingReview,
-    vendor: payload?.vendor,
+    vendorId,
     category: payload?.category,
     transactionType: payload?.transaction_type || payload?.transactionType,
     startDate: payload?.start_date || payload?.startDate,
@@ -253,6 +287,14 @@ async function updateTransaction({ organizationId, transactionId, userId, payloa
 
     if (!existingTransaction) {
       throw new HttpError(404, 'Transaction not found');
+    }
+
+    if (changes.vendor !== undefined) {
+      const { vendor_id, confidence_score } = await vendorService.resolveVendor(changes.vendor, organizationId, { mode: 'write', client });
+      changes.vendor_id = vendor_id;
+      changes.raw_vendor = changes.vendor;
+      changes.confidence_score = confidence_score;
+      delete changes.vendor;
     }
 
     await transactionsRepository.updateTransaction({
@@ -364,17 +406,21 @@ async function createTransaction({ organizationId, userId, payload }) {
   try {
     await client.query('BEGIN');
 
+    const { vendor_id, confidence_score } = await vendorService.resolveVendor(vendor, organizationId, { mode: 'write', client });
+
     const { rows } = await client.query(
       `INSERT INTO transactions (
-         id, organization_id, amount, vendor, transaction_type,
+         id, organization_id, amount, raw_vendor, vendor_id, transaction_type,
          category, transaction_date, confidence_score, status, created_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 1.0, 'auto_verified', NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'auto_verified', NOW())
        RETURNING *`,
-      [id, organizationId, amount.toFixed(2), vendor, transactionType, category, transactionDate]
+      [id, organizationId, amount.toFixed(2), vendor, vendor_id, transactionType, category, transactionDate, confidence_score]
     );
 
     const transaction = rows[0];
+    const { rows: vRows } = await client.query('SELECT canonical_name FROM vendors WHERE id = $1', [vendor_id]);
+    transaction.vendor = vRows[0]?.canonical_name || vendor;
 
     await transactionsRepository.insertAuditLog({
       id: crypto.randomUUID(),
@@ -404,6 +450,32 @@ async function getTransactionsGoogleSheet({ organizationId, query }) {
   });
 }
 
+async function listExpensesByVendor({ organizationId, vendor, vendorId }) {
+  let resolvedVendorId = vendorId;
+
+  if (!resolvedVendorId && vendor) {
+    const resolved = await vendorService.resolveVendor(vendor, organizationId, { mode: 'read' });
+    if (!resolved) {
+      return [];
+    }
+    resolvedVendorId = resolved.vendor_id;
+  }
+
+  if (!resolvedVendorId) {
+    return [];
+  }
+
+  const result = await transactionsRepository.listTransactions({
+    organizationId,
+    page: 1,
+    pageSize: 10000,
+    transactionType: 'expense',
+    vendorId: resolvedVendorId
+  });
+
+  return result.items;
+}
+
 module.exports = {
   getTransactionDocument,
   getTransaction,
@@ -412,5 +484,6 @@ module.exports = {
   searchTransactions,
   updateTransaction,
   deleteTransaction,
-  createTransaction
+  createTransaction,
+  listExpensesByVendor
 };

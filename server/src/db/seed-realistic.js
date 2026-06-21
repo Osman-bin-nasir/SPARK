@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const organizationsRepository = require('./organizations.repository');
 const { pool } = require('./pool');
+const { resolveVendor } = require('../services/vendor.service');
 const {
   DEFAULT_FOUNDER_EMAIL,
   DEFAULT_REFERENCE_DATE,
@@ -201,12 +202,15 @@ async function insertSeedRecord(client, organizationId, usersByKey, record) {
     ]
   );
 
+  const { vendor_id, confidence_score } = await resolveVendor(record.transaction.vendor, organizationId, { mode: 'write', client });
+
   await client.query(
     `INSERT INTO transactions (
        id,
        organization_id,
        amount,
-       vendor,
+       raw_vendor,
+       vendor_id,
        transaction_type,
        category,
        transaction_date,
@@ -216,16 +220,17 @@ async function insertSeedRecord(client, organizationId, usersByKey, record) {
        status,
        created_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       record.transaction.id,
       organizationId,
       record.transaction.amount,
       record.transaction.vendor,
+      vendor_id,
       record.transaction.transaction_type,
       record.transaction.category,
       record.transaction.transaction_date,
-      record.transaction.confidence_score,
+      confidence_score,
       record.transaction.duplicate_of_transaction_id,
       record.transaction.duplicate_score,
       record.transaction.status,

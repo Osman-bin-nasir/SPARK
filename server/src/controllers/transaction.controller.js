@@ -108,6 +108,21 @@ async function deleteTransaction(req, res, next) {
   }
 }
 
+async function getExpenses(req, res, next) {
+  try {
+    const { vendor, vendor_id } = req.query;
+    const result = await transactionService.listExpensesByVendor({
+      organizationId: req.organization.id,
+      vendor: vendor || null,
+      vendorId: vendor_id || null
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getTransactionDocument,
   getTransaction,
@@ -116,5 +131,6 @@ module.exports = {
   searchTransactions,
   updateTransaction,
   deleteTransaction,
-  createTransaction
+  createTransaction,
+  getExpenses
 };

@@ -12,6 +12,8 @@ function mapTransactionRow(row) {
     organization_id: row.organization_id,
     amount: row.amount === null ? null : Number(row.amount),
     vendor: row.vendor,
+    vendor_id: row.vendor_id,
+    raw_vendor: row.raw_vendor,
     transaction_type: row.transaction_type,
     category: row.category,
     transaction_date: row.transaction_date,
@@ -50,25 +52,28 @@ async function listPotentialDuplicateCandidates(
   client = pool
 ) {
   const { rows } = await client.query(
-    `SELECT id,
-            organization_id,
-            amount,
-            vendor,
-            transaction_type,
-            category,
-            transaction_date,
-            confidence_score,
-            duplicate_of_transaction_id,
-            duplicate_score,
-            status,
-            created_at
-     FROM transactions
-     WHERE organization_id = $1
-       AND transaction_type = $2
-       AND amount = $3
-       AND transaction_date BETWEEN ($4::date - INTERVAL '7 days') AND ($4::date + INTERVAL '7 days')
-     ORDER BY ABS(EXTRACT(EPOCH FROM (transaction_date::timestamp - $4::timestamp))) ASC,
-              created_at DESC
+    `SELECT t.id,
+            t.organization_id,
+            t.amount,
+            v.canonical_name AS vendor,
+            t.raw_vendor,
+            t.vendor_id,
+            t.transaction_type,
+            t.category,
+            t.transaction_date,
+            t.confidence_score,
+            t.duplicate_of_transaction_id,
+            t.duplicate_score,
+            t.status,
+            t.created_at
+     FROM transactions t
+     LEFT JOIN vendors v ON t.vendor_id = v.id
+     WHERE t.organization_id = $1
+       AND t.transaction_type = $2
+       AND t.amount = $3
+       AND t.transaction_date BETWEEN ($4::date - INTERVAL '7 days') AND ($4::date + INTERVAL '7 days')
+     ORDER BY ABS(EXTRACT(EPOCH FROM (t.transaction_date::timestamp - $4::timestamp))) ASC,
+              t.created_at DESC
      LIMIT 10`,
     [organizationId, transactionType, amount, transactionDate]
   );
@@ -90,7 +95,8 @@ async function insertTransactionWithDocumentAndJobs(
        id,
        organization_id,
        amount,
-       vendor,
+       raw_vendor,
+       vendor_id,
        transaction_type,
        category,
        transaction_date,
@@ -100,11 +106,12 @@ async function insertTransactionWithDocumentAndJobs(
        status,
        created_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, NOW()))
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13, NOW()))
      RETURNING id,
                organization_id,
                amount,
-               vendor,
+               raw_vendor,
+               vendor_id,
                transaction_type,
                category,
                transaction_date,
@@ -117,7 +124,8 @@ async function insertTransactionWithDocumentAndJobs(
       transaction.id,
       transaction.organization_id,
       transaction.amount,
-      transaction.vendor,
+      transaction.raw_vendor,
+      transaction.vendor_id,
       transaction.transaction_type,
       transaction.category,
       transaction.transaction_date,
@@ -225,7 +233,13 @@ async function insertTransactionWithDocumentAndJobs(
     );
   }
 
-  return mapTransactionRow(transactionResult.rows[0]);
+  const row = transactionResult.rows[0];
+  if (row) {
+    const { rows: vRows } = await client.query('SELECT canonical_name FROM vendors WHERE id = $1', [row.vendor_id]);
+    row.vendor = vRows[0]?.canonical_name || row.raw_vendor;
+  }
+
+  return mapTransactionRow(row);
 }
 
 async function listTransactions(
@@ -235,7 +249,7 @@ async function listTransactions(
     pageSize = 20,
     status,
     transactionType,
-    vendor,
+    vendorId,
     startDate,
     endDate
   },
@@ -262,9 +276,9 @@ async function listTransactions(
     filters.push(`t.transaction_type = $${params.length}`);
   }
 
-  if (vendor) {
-    params.push(`%${vendor.trim().toLowerCase()}%`);
-    filters.push(`LOWER(t.vendor) LIKE $${params.length}`);
+  if (vendorId) {
+    params.push(vendorId);
+    filters.push(`t.vendor_id = $${params.length}`);
   }
 
   if (startDate) {
@@ -285,7 +299,9 @@ async function listTransactions(
     SELECT t.id,
            t.organization_id,
            t.amount,
-           t.vendor,
+           v.canonical_name AS vendor,
+           t.raw_vendor,
+           t.vendor_id,
            t.transaction_type,
            t.category,
            t.transaction_date,
@@ -301,6 +317,7 @@ async function listTransactions(
            a.approved_by,
            a.approved_at
     FROM transactions t
+    LEFT JOIN vendors v ON t.vendor_id = v.id
     LEFT JOIN documents d ON d.transaction_id = t.id
     LEFT JOIN approvals a ON a.transaction_id = t.id
     WHERE ${whereClause}
@@ -352,29 +369,32 @@ async function listTransactionsForGoogleSheet(
   client = pool
 ) {
   const params = [organizationId];
-  const filters = ['organization_id = $1'];
+  const filters = ['t.organization_id = $1'];
 
   if (startDate) {
     params.push(startDate);
-    filters.push(`transaction_date >= $${params.length}`);
+    filters.push(`t.transaction_date >= $${params.length}`);
   }
 
   const { rows } = await client.query(
-    `SELECT id,
-            organization_id,
-            amount,
-            vendor,
-            transaction_type,
-            category,
-            transaction_date,
-            confidence_score,
-            duplicate_of_transaction_id,
-            duplicate_score,
-            status,
-            created_at
-     FROM transactions
+    `SELECT t.id,
+            t.organization_id,
+            t.amount,
+            v.canonical_name AS vendor,
+            t.raw_vendor,
+            t.vendor_id,
+            t.transaction_type,
+            t.category,
+            t.transaction_date,
+            t.confidence_score,
+            t.duplicate_of_transaction_id,
+            t.duplicate_score,
+            t.status,
+            t.created_at
+     FROM transactions t
+     LEFT JOIN vendors v ON t.vendor_id = v.id
      WHERE ${filters.join(' AND ')}
-     ORDER BY transaction_date DESC, created_at DESC`,
+     ORDER BY t.transaction_date DESC, t.created_at DESC`,
     params
   );
 
@@ -391,7 +411,7 @@ async function searchTransactionsByText(
     query,
     limit = 10,
     includePendingReview = false,
-    vendor,
+    vendorId,
     category,
     transactionType,
     startDate,
@@ -407,7 +427,7 @@ async function searchTransactionsByText(
     't.organization_id = $1',
     't.status = ANY($2::text[])',
     `(
-      LOWER(t.vendor) LIKE $3 ESCAPE '\\'
+      t.vendor_id IN (SELECT DISTINCT vendor_id FROM vendor_aliases WHERE organization_id = $1 AND normalized_alias LIKE $3 ESCAPE '\\')
       OR LOWER(t.category) LIKE $3 ESCAPE '\\'
       OR LOWER(t.transaction_type) LIKE $3 ESCAPE '\\'
       OR LOWER(COALESCE(d.original_name, '')) LIKE $3 ESCAPE '\\'
@@ -422,9 +442,9 @@ async function searchTransactionsByText(
     filters.push(`LOWER(t.transaction_type) = LOWER($${params.length})`);
   }
 
-  if (vendor) {
-    params.push(`%${String(vendor).trim().toLowerCase()}%`);
-    filters.push(`LOWER(t.vendor) LIKE $${params.length}`);
+  if (vendorId) {
+    params.push(vendorId);
+    filters.push(`t.vendor_id = $${params.length}`);
   }
 
   if (category) {
@@ -442,48 +462,47 @@ async function searchTransactionsByText(
     filters.push(`t.transaction_date <= $${params.length}::date`);
   }
 
-  params.push(limit);
+  const whereClause = filters.join(' AND ');
+  const listQuery = `
+    SELECT t.id,
+           t.organization_id,
+           t.amount,
+           v.canonical_name AS vendor,
+           t.raw_vendor,
+           t.vendor_id,
+           t.transaction_type,
+           t.category,
+           t.transaction_date,
+           t.confidence_score,
+           t.duplicate_of_transaction_id,
+           t.duplicate_score,
+           t.status,
+           t.created_at,
+           d.id AS document_id,
+           d.storage_kind,
+           d.original_name,
+           d.stored_name,
+           d.file_type,
+           d.extraction_confidence,
+           a.id AS approval_id,
+           a.approved_by,
+           a.approved_at,
+           CASE
+             WHEN t.vendor_id IN (SELECT vendor_id FROM vendor_aliases WHERE normalized_alias = $4) THEN 1.0
+             WHEN LOWER(t.category) = $4 THEN 0.85
+             WHEN LOWER(t.transaction_type) = $4 THEN 0.75
+             ELSE 0.5
+           END AS relevance_score
+    FROM transactions t
+    LEFT JOIN vendors v ON t.vendor_id = v.id
+    LEFT JOIN documents d ON d.transaction_id = t.id
+    LEFT JOIN approvals a ON a.transaction_id = t.id
+    WHERE ${whereClause}
+    ORDER BY relevance_score DESC, t.transaction_date DESC, t.created_at DESC
+    LIMIT $${params.length + 1}
+  `;
 
-  const { rows } = await client.query(
-    `SELECT t.id,
-            t.organization_id,
-            t.amount,
-            t.vendor,
-            t.transaction_type,
-            t.category,
-            t.transaction_date,
-            t.confidence_score,
-            t.duplicate_of_transaction_id,
-            t.duplicate_score,
-            t.status,
-            t.created_at,
-            d.id AS document_id,
-            d.storage_kind,
-            d.original_name,
-            d.stored_name,
-            d.file_type,
-            d.text_content,
-            d.extracted_text,
-            d.extraction_confidence,
-            CASE
-              WHEN LOWER(t.vendor) = $4 THEN 1.0
-              WHEN LOWER(t.vendor) LIKE $3 ESCAPE '\\' THEN 0.95
-              WHEN LOWER(t.category) = $4 THEN 0.85
-              WHEN LOWER(t.category) LIKE $3 ESCAPE '\\' THEN 0.8
-              WHEN LOWER(t.transaction_type) = $4 THEN 0.75
-              WHEN LOWER(COALESCE(d.original_name, '')) LIKE $3 ESCAPE '\\' THEN 0.7
-              WHEN LOWER(COALESCE(d.stored_name, '')) LIKE $3 ESCAPE '\\' THEN 0.68
-              WHEN LOWER(COALESCE(d.extracted_text, '')) LIKE $3 ESCAPE '\\' THEN 0.65
-              WHEN LOWER(COALESCE(d.text_content, '')) LIKE $3 ESCAPE '\\' THEN 0.6
-              ELSE 0.5
-            END AS relevance_score
-     FROM transactions t
-     LEFT JOIN documents d ON d.transaction_id = t.id
-     WHERE ${filters.join(' AND ')}
-     ORDER BY relevance_score DESC, t.transaction_date DESC, t.created_at DESC
-     LIMIT $${params.length}`,
-    params
-  );
+  const { rows } = await client.query(listQuery, [...params, Math.min(Math.max(Number(limit) || 10, 1), 50)]);
 
   return rows.map((row) => ({
     ...mapTransactionRow(row),
@@ -496,8 +515,6 @@ async function searchTransactionsByText(
           original_name: row.original_name,
           stored_name: row.stored_name,
           file_type: row.file_type,
-          text_content: row.text_content,
-          extracted_text: row.extracted_text,
           extraction_confidence: row.extraction_confidence === null ? null : Number(row.extraction_confidence)
         }
       : null
@@ -510,22 +527,21 @@ function buildStatusFilter(includePendingReview) {
 
 function buildSummaryGroupExpression(groupBy) {
   switch (groupBy) {
-    case 'vendor':
-      return "COALESCE(t.vendor, 'Unknown')";
-    case 'month':
-      return "to_char(t.transaction_date::date, 'YYYY-MM')";
-    case 'day':
-      return 't.transaction_date::date::text';
     case 'category':
+      return 't.category';
+    case 'vendor':
+      return "COALESCE(v.canonical_name, t.raw_vendor, 'Unknown')";
+    case 'type':
+      return 't.transaction_type';
     default:
-      return "COALESCE(t.category, 'Uncategorized')";
+      return 't.category';
   }
 }
 
 async function summarizeTransactions(
   {
     organizationId,
-    vendor,
+    vendorId,
     category,
     transactionType,
     startDate,
@@ -548,9 +564,9 @@ async function summarizeTransactions(
     filters.push(`LOWER(t.transaction_type) = LOWER($${params.length})`);
   }
 
-  if (vendor) {
-    params.push(`%${String(vendor).trim().toLowerCase()}%`);
-    filters.push(`LOWER(t.vendor) LIKE $${params.length}`);
+  if (vendorId) {
+    params.push(vendorId);
+    filters.push(`t.vendor_id = $${params.length}`);
   }
 
   if (category) {
@@ -576,6 +592,7 @@ async function summarizeTransactions(
            COALESCE(MIN(t.amount), 0)::numeric(14, 2) AS min_amount,
            COALESCE(MAX(t.amount), 0)::numeric(14, 2) AS max_amount
     FROM transactions t
+    LEFT JOIN vendors v ON t.vendor_id = v.id
     WHERE ${whereClause}
   `;
 
@@ -586,6 +603,7 @@ async function summarizeTransactions(
            COALESCE(SUM(t.amount), 0)::numeric(14, 2) AS total_amount,
            COALESCE(AVG(t.amount), 0)::numeric(14, 2) AS average_amount
     FROM transactions t
+    LEFT JOIN vendors v ON t.vendor_id = v.id
     WHERE ${whereClause}
     GROUP BY ${groupExpression}
     ORDER BY total_amount DESC, transaction_count DESC
@@ -596,7 +614,9 @@ async function summarizeTransactions(
     SELECT t.id,
            t.organization_id,
            t.amount,
-           t.vendor,
+           v.canonical_name AS vendor,
+           t.raw_vendor,
+           t.vendor_id,
            t.transaction_type,
            t.category,
            t.transaction_date,
@@ -612,6 +632,7 @@ async function summarizeTransactions(
            d.file_type,
            d.extraction_confidence
     FROM transactions t
+    LEFT JOIN vendors v ON t.vendor_id = v.id
     LEFT JOIN documents d ON d.transaction_id = t.id
     WHERE ${whereClause}
     ORDER BY t.amount DESC, t.transaction_date DESC, t.created_at DESC
@@ -626,7 +647,7 @@ async function summarizeTransactions(
 
   return {
     filters: {
-      vendor: vendor || null,
+      vendor_id: vendorId || null,
       category: category || null,
       transaction_type: transactionType || null,
       start_date: startDate || null,
@@ -666,10 +687,12 @@ async function summarizeTransactions(
 async function findTransactionById({ organizationId, transactionId }, client = pool) {
   const { rows } = await client.query(
     `SELECT t.id,
-           t.organization_id,
-           t.amount,
-           t.vendor,
-           t.transaction_type,
+            t.organization_id,
+            t.amount,
+            v.canonical_name AS vendor,
+            t.raw_vendor,
+            t.vendor_id,
+            t.transaction_type,
             t.category,
             t.transaction_date,
             t.confidence_score,
@@ -696,6 +719,7 @@ async function findTransactionById({ organizationId, transactionId }, client = p
             a.approved_by,
             a.approved_at
      FROM transactions t
+     LEFT JOIN vendors v ON t.vendor_id = v.id
      LEFT JOIN documents d ON d.transaction_id = t.id
      LEFT JOIN approvals a ON a.transaction_id = t.id
      WHERE t.organization_id = $1
@@ -762,7 +786,8 @@ async function updateTransaction({ organizationId, transactionId, changes }, cli
      RETURNING id,
                organization_id,
                amount,
-               vendor,
+               raw_vendor,
+               vendor_id,
                transaction_type,
                category,
                transaction_date,
@@ -774,7 +799,13 @@ async function updateTransaction({ organizationId, transactionId, changes }, cli
     params
   );
 
-  return mapTransactionRow(rows[0]);
+  const row = rows[0];
+  if (row) {
+    const { rows: vRows } = await client.query('SELECT canonical_name FROM vendors WHERE id = $1', [row.vendor_id]);
+    row.vendor = vRows[0]?.canonical_name || row.raw_vendor;
+  }
+
+  return mapTransactionRow(row);
 }
 
 async function deleteTransaction({ organizationId, transactionId }, client = pool) {
@@ -948,7 +979,7 @@ async function enqueueBackfillEmbeddingJobs(limit = 50, client = pool) {
 async function findTransactionEmbeddingSource(transactionId, client = pool) {
   const { rows } = await client.query(
     `SELECT t.id,
-            t.vendor,
+            v.canonical_name AS vendor,
             t.transaction_type,
             t.category,
             t.amount,
@@ -958,6 +989,7 @@ async function findTransactionEmbeddingSource(transactionId, client = pool) {
             d.extracted_text,
             d.text_content
      FROM transactions t
+     LEFT JOIN vendors v ON t.vendor_id = v.id
      LEFT JOIN documents d ON d.transaction_id = t.id
      WHERE t.id = $1
      LIMIT 1`,

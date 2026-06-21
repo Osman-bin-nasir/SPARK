@@ -4,6 +4,7 @@ const organizationsRepository = require('../db/organizations.repository');
 const ingestionRepository = require('../db/ingestion.repository');
 const transactionsRepository = require('../db/transactions.repository');
 const googleDriveService = require('./google-drive.service');
+const vendorService = require('./vendor.service');
 const {
   deleteFile,
   ensureFolderPath,
@@ -255,16 +256,23 @@ async function createTransactionAndDocument({
   try {
     await client.query('BEGIN');
 
+    const { vendor_id, confidence_score } = await vendorService.resolveVendor(
+      normalizedPayload.vendor,
+      organizationId,
+      { mode: 'write', client }
+    );
+
     const transaction = await transactionsRepository.insertTransactionWithDocumentAndJobs({
       transaction: {
         id: transactionId,
         organization_id: organizationId,
         amount: normalizedPayload.amount,
-        vendor: normalizedPayload.vendor,
+        raw_vendor: normalizedPayload.vendor,
+        vendor_id,
         transaction_type: normalizedPayload.transaction_type,
         category: normalizedPayload.category,
         transaction_date: normalizedPayload.transaction_date,
-        confidence_score: normalizedPayload.confidence_score,
+        confidence_score,
         duplicate_of_transaction_id: duplicateMatch?.transaction_id || null,
         duplicate_score: duplicateMatch?.duplicate_score || null,
         status: duplicateMatch || forcePendingReview ? 'pending_review' : 'auto_verified'
@@ -294,12 +302,13 @@ async function createTransactionAndDocument({
         action: 'transaction.created',
         previous_value: null,
         new_value: {
-          vendor: normalizedPayload.vendor,
+          raw_vendor: normalizedPayload.vendor,
+          vendor_id,
           amount: normalizedPayload.amount,
           transaction_type: normalizedPayload.transaction_type,
           category: normalizedPayload.category,
           transaction_date: normalizedPayload.transaction_date,
-          confidence_score: normalizedPayload.confidence_score,
+          confidence_score,
           duplicate_of_transaction_id: duplicateMatch?.transaction_id || null,
           duplicate_score: duplicateMatch?.duplicate_score || null,
           extraction_confidence: document.extraction_confidence ?? null,

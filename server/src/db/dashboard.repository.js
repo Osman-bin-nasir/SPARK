@@ -313,15 +313,16 @@ async function listTopVendorsBySpend(
   client = pool
 ) {
   const { rows } = await client.query(
-    `SELECT vendor,
-            COALESCE(SUM(amount), 0) AS total
-     FROM transactions
-     WHERE organization_id = $1
-       AND transaction_type IN ('expense', 'salary')
-       AND transaction_date >= $2
-       AND transaction_date < $3
-     GROUP BY vendor
-     ORDER BY total DESC, vendor ASC
+    `SELECT v.canonical_name AS vendor,
+            COALESCE(SUM(t.amount), 0) AS total
+     FROM transactions t
+     JOIN vendors v ON t.vendor_id = v.id
+     WHERE t.organization_id = $1
+       AND t.transaction_type IN ('expense', 'salary')
+       AND t.transaction_date >= $2
+       AND t.transaction_date < $3
+     GROUP BY v.id, v.canonical_name
+     ORDER BY total DESC, v.canonical_name ASC
      LIMIT $4`,
     [organizationId, startDate, endDate, limit]
   );
