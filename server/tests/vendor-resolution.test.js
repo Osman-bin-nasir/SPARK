@@ -1,14 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeVendorName, cleanDisplayName } = require('../src/utils/vendor');
+const { normalizeVendorName, cleanDisplayName, expandVendorSynonyms } = require('../src/utils/vendor');
 const vendorCache = require('../src/utils/vendor-cache');
 const { resolveVendor } = require('../src/services/vendor.service');
 
 // 1. Utilities Tests
 test('normalizeVendorName correctly normalizes vendor strings', () => {
-  assert.equal(normalizeVendorName('AWS Services Pvt Ltd'), 'aws');
+  // 'AWS' is a synonym → expands to 'amazon web services', then 'services' is stripped → 'amazon web'
+  assert.equal(normalizeVendorName('AWS Services Pvt Ltd'), 'amazon web');
+  assert.equal(normalizeVendorName('AWS'), 'amazon web');
+  assert.equal(normalizeVendorName('Amazon Web Services'), 'amazon web');
+  // Non-synonym inputs remain unchanged
   assert.equal(normalizeVendorName('Google, Inc.'), 'google');
   assert.equal(normalizeVendorName('Slack Solutions LLC'), 'slack');
+  // 'AWS India Cloud Services' does NOT match any synonym (whole-string match only)
   assert.equal(normalizeVendorName('AWS India Cloud Services'), 'aws india cloud');
   // Fallback for names consisting entirely of suffixes
   assert.equal(normalizeVendorName('Pvt Ltd Solutions'), 'pvt ltd solutions');
@@ -16,9 +21,28 @@ test('normalizeVendorName correctly normalizes vendor strings', () => {
   assert.equal(normalizeVendorName(null), '');
 });
 
+test('expandVendorSynonyms expands known abbreviations', () => {
+  assert.equal(expandVendorSynonyms('AWS'), 'amazon web services');
+  assert.equal(expandVendorSynonyms('aws'), 'amazon web services');
+  assert.equal(expandVendorSynonyms('GCP'), 'google cloud platform');
+  // Partial matches should NOT expand
+  assert.equal(expandVendorSynonyms('AWS India'), 'AWS India');
+  // Unknown inputs should pass through
+  assert.equal(expandVendorSynonyms('Stripe'), 'Stripe');
+  assert.equal(expandVendorSynonyms(''), '');
+  assert.equal(expandVendorSynonyms(null), null);
+});
+
 test('cleanDisplayName cleans and formats vendor display names', () => {
-  assert.equal(cleanDisplayName('aws services pvt ltd'), 'AWS');
+  // 'aws services pvt ltd' strips to 'aws' → synonym → 'Amazon Web Services'
+  assert.equal(cleanDisplayName('aws services pvt ltd'), 'Amazon Web Services');
+  assert.equal(cleanDisplayName('AWS'), 'Amazon Web Services');
+  assert.equal(cleanDisplayName('Amazon Web Services'), 'Amazon Web Services');
+  // 'gcp cloud solutions' strips to 'gcp cloud' → NOT a synonym (only 'gcp' is)
+  // Falls through to title case with GCP regex replacement
   assert.equal(cleanDisplayName('gcp cloud solutions'), 'GCP Cloud');
+  // Bare 'GCP' strips to 'GCP' → synonym → 'Google Cloud Platform'
+  assert.equal(cleanDisplayName('GCP'), 'Google Cloud Platform');
   assert.equal(cleanDisplayName('open ai technologies'), 'OpenAI Technologies');
   assert.equal(cleanDisplayName('stripe payments'), 'Stripe Payments');
   assert.equal(cleanDisplayName(''), '');
@@ -105,14 +129,15 @@ test('resolveVendor returns exact match from DB and updates cache', async () => 
   assert.equal(result.vendor_id, 'exact-vendor-id');
   assert.equal(result.confidence_score, 1.0);
   
-  // Verify cache was updated
-  assert.equal(vendorCache.get(orgId, 'aws'), 'exact-vendor-id');
+  // Verify cache was updated (synonym expansion: 'AWS Services' → 'amazon web')
+  assert.equal(vendorCache.get(orgId, 'amazon web'), 'exact-vendor-id');
 });
 
 test('resolveVendor returns cache hit directly', async () => {
   vendorCache.clear();
   const orgId = 'org-1';
-  vendorCache.set(orgId, 'aws', 'cached-vendor-id');
+  // Cache key uses new normalized form: 'AWS Services' → 'amazon web'
+  vendorCache.set(orgId, 'amazon web', 'cached-vendor-id');
   
   const client = createMockClient();
   
