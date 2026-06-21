@@ -367,12 +367,13 @@ function App() {
           return;
         }
 
-        if ([400, 401, 409].includes(error.statusCode)) {
-          sessionStorage.removeItem(TELEGRAM_TOKEN_STORAGE_KEY);
-          setPendingTelegramToken('');
-        }
-
+        sessionStorage.removeItem(TELEGRAM_TOKEN_STORAGE_KEY);
+        setPendingTelegramToken('');
         setStatus(`Signed in, but Telegram linking failed: ${error.message}`);
+
+        if (location.pathname === '/telegram-login') {
+          navigate('/dashboard', { replace: true });
+        }
       }
     }
 
@@ -417,12 +418,13 @@ function App() {
           return;
         }
 
-        if ([400, 401, 409].includes(error.statusCode)) {
-          sessionStorage.removeItem(WHATSAPP_TOKEN_STORAGE_KEY);
-          setPendingWhatsappToken('');
-        }
-
+        sessionStorage.removeItem(WHATSAPP_TOKEN_STORAGE_KEY);
+        setPendingWhatsappToken('');
         setStatus(`Signed in, but WhatsApp linking failed: ${error.message}`);
+
+        if (location.pathname === '/whatsapp-login') {
+          navigate('/dashboard', { replace: true });
+        }
       }
     }
 
@@ -459,6 +461,11 @@ function App() {
       setPendingWhatsappToken('');
       setStatus('WhatsApp account linked successfully.');
       navigate('/dashboard', { replace: true });
+      return;
+    }
+
+    if (pendingTelegramToken || pendingWhatsappToken) {
+      // Let the link useEffect finish and handle navigation
       return;
     }
 
