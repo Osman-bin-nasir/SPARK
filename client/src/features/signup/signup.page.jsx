@@ -66,6 +66,7 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsapp
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Minimum 8 characters"
             type="password"
+            autoComplete="new-password"
             required
             minLength={8}
           />

@@ -385,14 +385,17 @@ async function addOrganizationMember(
   };
 }
 
-async function ensureDefaultOrganizationForUser({ userId, email }) {
-  const client = await pool.connect();
+async function ensureDefaultOrganizationForUser({ userId, email }, client = null) {
+  const passedClient = !!client;
+  const dbClient = client || await pool.connect();
 
   try {
-    await client.query('BEGIN');
-    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    if (!passedClient) {
+      await dbClient.query('BEGIN');
+    }
+    await dbClient.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
 
-    let memberships = await listMembershipsByUserId(userId, client);
+    let memberships = await listMembershipsByUserId(userId, dbClient);
 
     if (memberships.length === 0) {
       await createOrganizationForUser(
@@ -400,19 +403,25 @@ async function ensureDefaultOrganizationForUser({ userId, email }) {
           userId,
           organizationName: buildDefaultOrganizationName(email)
         },
-        client
+        dbClient
       );
 
-      memberships = await listMembershipsByUserId(userId, client);
+      memberships = await listMembershipsByUserId(userId, dbClient);
     }
 
-    await client.query('COMMIT');
+    if (!passedClient) {
+      await dbClient.query('COMMIT');
+    }
     return memberships;
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (!passedClient) {
+      await dbClient.query('ROLLBACK');
+    }
     throw error;
   } finally {
-    client.release();
+    if (!passedClient) {
+      dbClient.release();
+    }
   }
 }
 

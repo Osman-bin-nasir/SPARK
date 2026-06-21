@@ -591,7 +591,7 @@ async function linkTelegramAccount({ userId, token }) {
     const memberships = await organizationsRepository.ensureDefaultOrganizationForUser({
       userId: user.id,
       email: existingUser?.email || user.email
-    });
+    }, client);
 
     const linkedUser = usersRepository.mapUser(await usersRepository.findUserById(user.id, client));
 
@@ -665,7 +665,7 @@ async function linkWhatsappAccount({ userId, token }) {
     const memberships = await organizationsRepository.ensureDefaultOrganizationForUser({
       userId: user.id,
       email: existingUser?.email || user.email
-    });
+    }, client);
 
     const linkedUser = usersRepository.mapUser(await usersRepository.findUserById(user.id, client));
 

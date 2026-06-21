@@ -51,7 +51,7 @@ function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode, whatsapp
         </label>
         <label className="field">
           <span className="field-label">Password</span>
-          <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" type="password" required />
+          <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" type="password" autoComplete="current-password" required />
         </label>
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={loading}>
