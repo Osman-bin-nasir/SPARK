@@ -479,8 +479,7 @@ async function updateOrganizationMember({ organizationId, userId, role, receiveI
   const { rows } = await client.query(
     `UPDATE organization_members
      SET role = COALESCE($3, role),
-         receive_insights = COALESCE($4, receive_insights),
-         updated_at = NOW()
+         receive_insights = COALESCE($4, receive_insights)
      WHERE organization_id = $1 AND user_id = $2
      RETURNING organization_id, user_id, role, receive_insights, created_at AS joined_at`,
     [organizationId, userId, role, receiveInsights]
