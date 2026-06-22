@@ -8,6 +8,7 @@ import AppShell from './components/layout/app-shell';
 import TransactionsPage from './pages/Transactions';
 import ApprovalsPage from './pages/Approvals';
 import AnalyticsPage from './pages/Analytics';
+import InsightsPage from './pages/Insights';
 import FinancePage from './pages/Finance';
 import TeamPage from './pages/Team';
 import SettingsPage from './pages/Settings';
@@ -622,6 +623,16 @@ function App() {
           }
         />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route
+          path="/insights"
+          element={
+            <InsightsPage
+              activeOrganizationId={activeOrganizationId}
+              token={token}
+              user={user}
+            />
+          }
+        />
         <Route
           path="/finance"
           element={

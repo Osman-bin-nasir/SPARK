@@ -37,8 +37,8 @@ async function requireOrganizationMembership(req, _res, next) {
       req.organization.role = membership.role;
       req.organization.name = membership.organization_name;
       req.organization.permissions = {
-        can_manage_finance: ['founder', 'admin'].includes(membership.role),
-        is_founder: membership.role === 'founder'
+        can_manage_finance: ['founder', 'co-founder', 'admin'].includes(membership.role),
+        is_founder: ['founder', 'co-founder'].includes(membership.role)
       };
 
       next();
@@ -71,8 +71,8 @@ async function requireOrganizationMembership(req, _res, next) {
       role: membership.role,
       name: membership.organization_name,
       permissions: {
-        can_manage_finance: ['founder', 'admin'].includes(membership.role),
-        is_founder: membership.role === 'founder'
+        can_manage_finance: ['founder', 'co-founder', 'admin'].includes(membership.role),
+        is_founder: ['founder', 'co-founder'].includes(membership.role)
       }
     };
 

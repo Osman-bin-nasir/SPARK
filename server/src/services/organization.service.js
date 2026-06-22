@@ -97,10 +97,49 @@ async function updateMemberRole({ organizationId, targetUserId, role }) {
   return membership;
 }
 
+async function updateOrganizationSettings({ organizationId, insightsFrequency, insightsRecipients }) {
+  if (insightsFrequency && !['weekly', 'monthly', 'none'].includes(insightsFrequency)) {
+    throw new HttpError(400, 'Invalid insights frequency: must be weekly, monthly, or none');
+  }
+
+  if (insightsRecipients && !['all', 'admins', 'selected'].includes(insightsRecipients)) {
+    throw new HttpError(400, 'Invalid insights recipients: must be all, admins, or selected');
+  }
+
+  const organization = await organizationsRepository.updateOrganizationSettings({
+    organizationId,
+    insightsFrequency,
+    insightsRecipients
+  });
+
+  if (!organization) {
+    throw new HttpError(404, 'Organization not found');
+  }
+
+  return organization;
+}
+
+async function updateMember({ organizationId, targetUserId, role, receiveInsights }) {
+  const membership = await organizationsRepository.updateOrganizationMember({
+    organizationId,
+    userId: targetUserId,
+    role,
+    receiveInsights
+  });
+
+  if (!membership) {
+    throw new HttpError(404, 'Membership not found');
+  }
+
+  return membership;
+}
+
 module.exports = {
   getOrganizationTeam,
   regenerateOrganizationJoinCode,
   addMemberByEmail,
   removeMember,
-  updateMemberRole
+  updateMemberRole,
+  updateOrganizationSettings,
+  updateMember
 };

@@ -66,10 +66,42 @@ async function updateMemberRole(req, res, next) {
   }
 }
 
+async function updateSettings(req, res, next) {
+  try {
+    const { insights_frequency, insights_recipients } = req.body;
+    const result = await organizationService.updateOrganizationSettings({
+      organizationId: req.organization.id,
+      insightsFrequency: insights_frequency,
+      insightsRecipients: insights_recipients
+    });
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function updateMember(req, res, next) {
+  try {
+    const { userId } = req.params;
+    const { role, receive_insights } = req.body;
+    const result = await organizationService.updateMember({
+      organizationId: req.organization.id,
+      targetUserId: userId,
+      role,
+      receiveInsights: receive_insights
+    });
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getTeam,
   regenerateJoinCode,
   addMember,
   removeMember,
-  updateMemberRole
+  updateMemberRole,
+  updateSettings,
+  updateMember
 };

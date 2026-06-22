@@ -14,6 +14,7 @@ export default function Sidebar() {
         <NavLink to="/transactions" className={linkClass}>Transactions</NavLink>
         <NavLink to="/approvals" className={linkClass}>Approvals</NavLink>
         <NavLink to="/analytics" className={linkClass}>Analytics</NavLink>
+        <NavLink to="/insights" className={linkClass}>AI Insights</NavLink>
         <NavLink to="/finance" className={linkClass}>Finance</NavLink>
         <NavLink to="/team" className={linkClass}>Team</NavLink>
         <NavLink to="/integrations" className={linkClass}>Integrations</NavLink>

@@ -12,8 +12,8 @@ router.use(requireAuth, requireOrganizationMembership);
 
 router.get('/', dashboardController.getDashboard);
 router.get('/config', dashboardController.getConfig);
-router.put('/config', requireOrganizationRole(['founder', 'admin']), dashboardController.updateConfig);
+router.put('/config', requireOrganizationRole(['founder', 'co-founder', 'admin']), dashboardController.updateConfig);
 router.get('/budgets', dashboardController.listBudgets);
-router.put('/budgets', requireOrganizationRole(['founder', 'admin']), dashboardController.replaceBudgets);
+router.put('/budgets', requireOrganizationRole(['founder', 'co-founder', 'admin']), dashboardController.replaceBudgets);
 
 module.exports = router;

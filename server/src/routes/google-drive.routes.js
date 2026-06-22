@@ -14,14 +14,14 @@ router.post(
   '/connect-url',
   requireAuth,
   requireOrganizationMembership,
-  requireOrganizationRole(['founder', 'admin']),
+  requireOrganizationRole(['founder', 'co-founder', 'admin']),
   googleDriveController.connectUrl
 );
 router.get(
   '/status',
   requireAuth,
   requireOrganizationMembership,
-  requireOrganizationRole(['founder', 'admin']),
+  requireOrganizationRole(['founder', 'co-founder', 'admin']),
   googleDriveController.status
 );
 

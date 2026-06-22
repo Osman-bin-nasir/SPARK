@@ -25,6 +25,7 @@ function mapMembership(row) {
   return {
     organization_id: row.organization_id,
     organization_name: row.organization_name,
+    insights_frequency: row.insights_frequency || 'none',
     role: row.role
   };
 }
@@ -38,6 +39,8 @@ function mapOrganization(row) {
     id: row.id,
     name: row.name,
     join_code: row.join_code,
+    insights_frequency: row.insights_frequency || 'none',
+    insights_recipients: row.insights_recipients || 'all',
     created_at: row.created_at
   };
 }
@@ -53,6 +56,7 @@ function mapOrganizationMember(row) {
     telegram_id: row.telegram_id,
     whatsapp_id: row.whatsapp_id,
     role: row.role,
+    receive_insights: row.receive_insights || false,
     joined_at: row.joined_at
   };
 }
@@ -86,6 +90,7 @@ async function listMembershipsByUserId(userId, client = pool) {
   const { rows } = await client.query(
     `SELECT om.organization_id,
             o.name AS organization_name,
+            o.insights_frequency,
             om.role
      FROM organization_members om
      INNER JOIN organizations o ON o.id = om.organization_id
@@ -101,6 +106,7 @@ async function findMembership({ userId, organizationId }, client = pool) {
   const { rows } = await client.query(
     `SELECT om.organization_id,
             o.name AS organization_name,
+            o.insights_frequency,
             om.role
      FROM organization_members om
      INNER JOIN organizations o ON o.id = om.organization_id
@@ -115,7 +121,7 @@ async function findMembership({ userId, organizationId }, client = pool) {
 
 async function findOrganizationById(organizationId, client = pool) {
   const { rows } = await client.query(
-    `SELECT id, name, join_code, created_at
+    `SELECT id, name, join_code, insights_frequency, insights_recipients, created_at
      FROM organizations
      WHERE id = $1
      LIMIT 1`,
@@ -127,7 +133,7 @@ async function findOrganizationById(organizationId, client = pool) {
 
 async function findOrganizationByJoinCode(joinCode, client = pool) {
   const { rows } = await client.query(
-    `SELECT id, name, join_code, created_at
+    `SELECT id, name, join_code, insights_frequency, insights_recipients, created_at
      FROM organizations
      WHERE join_code = $1
      LIMIT 1`,
@@ -160,7 +166,7 @@ async function createOrganization({ organizationName }, client = pool) {
       const { rows } = await client.query(
         `INSERT INTO organizations (name, join_code)
          VALUES ($1, $2)
-         RETURNING id, name, join_code, created_at`,
+         RETURNING id, name, join_code, insights_frequency, insights_recipients, created_at`,
         [organizationName, joinCode]
       );
 
@@ -455,6 +461,84 @@ async function updateOrganizationMemberRole({ organizationId, userId, role }, cl
   };
 }
 
+async function updateOrganizationSettings({ organizationId, insightsFrequency, insightsRecipients }, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE organizations
+     SET insights_frequency = COALESCE($1, insights_frequency),
+         insights_recipients = COALESCE($2, insights_recipients),
+         updated_at = NOW()
+     WHERE id = $3
+     RETURNING id, name, join_code, insights_frequency, insights_recipients, created_at`,
+    [insightsFrequency, insightsRecipients, organizationId]
+  );
+
+  return mapOrganization(rows[0]);
+}
+
+async function updateOrganizationMember({ organizationId, userId, role, receiveInsights }, client = pool) {
+  const { rows } = await client.query(
+    `UPDATE organization_members
+     SET role = COALESCE($3, role),
+         receive_insights = COALESCE($4, receive_insights),
+         updated_at = NOW()
+     WHERE organization_id = $1 AND user_id = $2
+     RETURNING organization_id, user_id, role, receive_insights, created_at AS joined_at`,
+    [organizationId, userId, role, receiveInsights]
+  );
+
+  if (!rows[0]) {
+    return null;
+  }
+
+  return {
+    organization_id: rows[0].organization_id,
+    user_id: rows[0].user_id,
+    role: rows[0].role,
+    receive_insights: rows[0].receive_insights,
+    joined_at: rows[0].joined_at
+  };
+}
+
+async function listScheduledOrganizations({ period }, client = pool) {
+  const { rows } = await client.query(
+    `SELECT o.id AS organization_id,
+            o.name AS organization_name,
+            o.insights_frequency,
+            COALESCE(
+              JSON_AGG(
+                JSON_BUILD_OBJECT(
+                  'user_id', u.id,
+                  'email', u.email,
+                  'telegram_id', u.telegram_id,
+                  'whatsapp_id', u.whatsapp_id
+                )
+              ) FILTER (
+                WHERE u.id IS NOT NULL 
+                  AND (u.telegram_id IS NOT NULL OR u.whatsapp_id IS NOT NULL)
+                  AND (
+                    o.insights_recipients = 'all'
+                    OR (o.insights_recipients = 'admins' AND om.role IN ('founder', 'co-founder', 'admin'))
+                    OR (o.insights_recipients = 'selected' AND om.receive_insights = TRUE)
+                  )
+              ),
+              '[]'::json
+            ) AS receivers
+     FROM organizations o
+     LEFT JOIN organization_members om ON o.id = om.organization_id
+     LEFT JOIN users u ON om.user_id = u.id
+     WHERE o.insights_frequency = $1
+     GROUP BY o.id, o.name, o.insights_frequency, o.insights_recipients`,
+    [period]
+  );
+
+  return rows.map((row) => ({
+    organization_id: row.organization_id,
+    organization_name: row.organization_name,
+    insights_frequency: row.insights_frequency,
+    receivers: typeof row.receivers === 'string' ? JSON.parse(row.receivers) : row.receivers
+  }));
+}
+
 module.exports = {
   addOrganizationMember,
   buildDefaultOrganizationName,
@@ -471,5 +555,8 @@ module.exports = {
   mapMembership,
   regenerateOrganizationJoinCode,
   removeOrganizationMember,
-  updateOrganizationMemberRole
+  updateOrganizationMemberRole,
+  updateOrganizationSettings,
+  updateOrganizationMember,
+  listScheduledOrganizations
 };
