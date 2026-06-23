@@ -29,7 +29,9 @@ function serializeOrganization(organization) {
     name: organization.name,
     join_code: organization.join_code,
     join_link: buildJoinLink(organization.join_code),
-    whatsapp_join_link: buildWhatsappJoinLink(organization.join_code)
+    whatsapp_join_link: buildWhatsappJoinLink(organization.join_code),
+    insights_frequency: organization.insights_frequency,
+    insights_recipients: organization.insights_recipients
   };
 }
 

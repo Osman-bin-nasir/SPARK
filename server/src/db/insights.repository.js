@@ -24,7 +24,7 @@ async function getCategorySpendByRange({ organizationId, startDate, endDate }, c
 
 async function getVendorSpendByRange({ organizationId, startDate, endDate }, client = pool) {
   const { rows } = await client.query(
-    `SELECT COALESCE(v.canonical_name, t.vendor) AS vendor,
+    `SELECT COALESCE(v.canonical_name, t.raw_vendor) AS vendor,
             COALESCE(SUM(t.amount), 0) AS total,
             COUNT(t.id)::int AS transaction_count
      FROM transactions t
@@ -33,7 +33,7 @@ async function getVendorSpendByRange({ organizationId, startDate, endDate }, cli
        AND t.transaction_type IN ('expense', 'salary')
        AND t.transaction_date >= $2
        AND t.transaction_date <= $3
-     GROUP BY COALESCE(v.canonical_name, t.vendor)
+     GROUP BY COALESCE(v.canonical_name, t.raw_vendor)
      ORDER BY total DESC, vendor ASC`,
     [organizationId, startDate, endDate]
   );
