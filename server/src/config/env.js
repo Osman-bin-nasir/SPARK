@@ -29,12 +29,7 @@ const env = {
   extractionConfidenceThreshold: Number(process.env.EXTRACTION_CONFIDENCE_THRESHOLD || process.env.OCR_CONFIDENCE_THRESHOLD || 0.8),
   extractionMaxTextChars: Number(process.env.EXTRACTION_MAX_TEXT_CHARS || process.env.OCR_MAX_EXTRACTED_TEXT_CHARS || 12000),
   ragMaxTopK: Number(process.env.RAG_MAX_TOP_K || 20),
-  ragMaxQueryChars: Number(process.env.RAG_MAX_QUERY_CHARS || 512),
-  awsBedrockAccessKeyId: process.env.AWS_BEDROCK_ACCESS_KEY_ID || '',
-  awsBedrockSecretAccessKey: process.env.AWS_BEDROCK_SECRET_ACCESS_KEY || '',
-  awsBedrockRegion: process.env.AWS_BEDROCK_REGION || 'us-east-1',
-  awsBedrockModelId: process.env.AWS_BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20240620-v1:0',
-  bedrockApiKey: process.env.BEDROCK_API_KEY || ''
+  ragMaxQueryChars: Number(process.env.RAG_MAX_QUERY_CHARS || 512)
 };
 
 function validateEnv() {
@@ -99,20 +94,9 @@ function assertWebhookEnv() {
   }
 }
 
-function assertBedrockEnv() {
-  const missing = [];
-  if (!env.awsBedrockAccessKeyId) missing.push('AWS_BEDROCK_ACCESS_KEY_ID');
-  if (!env.awsBedrockSecretAccessKey) missing.push('AWS_BEDROCK_SECRET_ACCESS_KEY');
-  
-  if (missing.length > 0) {
-    throw new Error(`Missing required Bedrock environment variables: ${missing.join(', ')}`);
-  }
-}
-
 module.exports = {
   assertGoogleDriveEnv,
   assertWebhookEnv,
-  assertBedrockEnv,
   env,
   validateEnv
 };
