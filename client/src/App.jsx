@@ -36,12 +36,14 @@ function getStoredUser() {
 
 function getPendingTelegramToken() {
   const params = new URLSearchParams(window.location.search);
-  return params.get('token') || sessionStorage.getItem(TELEGRAM_TOKEN_STORAGE_KEY) || '';
+  const isTelegramRoute = window.location.pathname === '/telegram-login';
+  return (isTelegramRoute && params.get('token')) || sessionStorage.getItem(TELEGRAM_TOKEN_STORAGE_KEY) || '';
 }
 
 function getPendingWhatsappToken() {
   const params = new URLSearchParams(window.location.search);
-  return params.get('token') || sessionStorage.getItem(WHATSAPP_TOKEN_STORAGE_KEY) || '';
+  const isWhatsappRoute = window.location.pathname === '/whatsapp-login';
+  return (isWhatsappRoute && params.get('token')) || sessionStorage.getItem(WHATSAPP_TOKEN_STORAGE_KEY) || '';
 }
 
 function getOrganizationPreferenceKey(userId) {
