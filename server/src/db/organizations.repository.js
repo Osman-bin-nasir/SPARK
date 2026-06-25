@@ -249,6 +249,7 @@ async function listOrganizationMembers({ organizationId }, client = pool) {
             u.telegram_id,
             u.whatsapp_id,
             om.role,
+            om.receive_insights,
             om.created_at AS joined_at
      FROM organization_members om
      INNER JOIN users u ON u.id = om.user_id
