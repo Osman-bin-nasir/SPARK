@@ -37,11 +37,11 @@ const VENDOR_SYNONYMS = {
  * Keys are normalized (lowercase, suffix-stripped) forms.
  */
 const CUSTOM_DISPLAY_NAMES = {
-  'amazon web': 'Amazon Web Services',
-  'amazon web services': 'Amazon Web Services',
-  'aws': 'Amazon Web Services',
-  'google cloud platform': 'Google Cloud Platform',
-  'gcp': 'Google Cloud Platform',
+  'amazon web': 'Amazon Web Services (AWS)',
+  'amazon web services': 'Amazon Web Services (AWS)',
+  'aws': 'Amazon Web Services (AWS)',
+  'google cloud platform': 'Google Cloud Platform (GCP)',
+  'gcp': 'Google Cloud Platform (GCP)',
   'open ai': 'OpenAI',
   'openai': 'OpenAI',
   'openai api': 'OpenAI',

@@ -34,15 +34,15 @@ test('expandVendorSynonyms expands known abbreviations', () => {
 });
 
 test('cleanDisplayName cleans and formats vendor display names', () => {
-  // 'aws services pvt ltd' strips to 'aws' → synonym → 'Amazon Web Services'
-  assert.equal(cleanDisplayName('aws services pvt ltd'), 'Amazon Web Services');
-  assert.equal(cleanDisplayName('AWS'), 'Amazon Web Services');
-  assert.equal(cleanDisplayName('Amazon Web Services'), 'Amazon Web Services');
+  // 'aws services pvt ltd' strips to 'aws' → synonym → 'Amazon Web Services (AWS)'
+  assert.equal(cleanDisplayName('aws services pvt ltd'), 'Amazon Web Services (AWS)');
+  assert.equal(cleanDisplayName('AWS'), 'Amazon Web Services (AWS)');
+  assert.equal(cleanDisplayName('Amazon Web Services'), 'Amazon Web Services (AWS)');
   // 'gcp cloud solutions' strips to 'gcp cloud' → NOT a synonym (only 'gcp' is)
   // Falls through to title case with GCP regex replacement
   assert.equal(cleanDisplayName('gcp cloud solutions'), 'GCP Cloud');
-  // Bare 'GCP' strips to 'GCP' → synonym → 'Google Cloud Platform'
-  assert.equal(cleanDisplayName('GCP'), 'Google Cloud Platform');
+  // Bare 'GCP' strips to 'GCP' → synonym → 'Google Cloud Platform (GCP)'
+  assert.equal(cleanDisplayName('GCP'), 'Google Cloud Platform (GCP)');
   assert.equal(cleanDisplayName('open ai technologies'), 'OpenAI Technologies');
   assert.equal(cleanDisplayName('stripe payments'), 'Stripe Payments');
   assert.equal(cleanDisplayName(''), '');
