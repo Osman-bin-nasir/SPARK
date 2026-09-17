@@ -405,7 +405,8 @@ The SPARK platform uses environment variables configured either inside the `serv
 | **`TELEGRAM_JWT_SECRET`**| No | `your-telegram-secret`| Secret string utilized to sign Telegram linking payloads. |
 | **`APP_BASE_URL`** | No | `http://localhost:5173`| Direct domain URL of the client app interface. |
 | **`TELEGRAM_BOT_USERNAME`**| No | `osman80bot` | Username of the associated Telegram bot account. |
-| **`WHATSAPP_BOT_NUMBER`** | No | `+14155552671` | Number of the associated WhatsApp Business profile. |
+| **`WHATSAPP_BOT_NUMBER`** | No | `+14155238886` | Number of the associated WhatsApp/Twilio sandbox profile. |
+| **`WHATSAPP_SANDBOX_JOIN_MESSAGE`** | No | `join or-syllable` | First message a user sends to join the Twilio sandbox before sending the SPARK organization join message. |
 | **`GOOGLE_CLIENT_ID`** | No | `your-client-id.apps...`| Google Cloud credentials for OAuth2 integration. |
 | **`GOOGLE_CLIENT_SECRET`**| No | `your-client-secret` | Google Cloud credentials for OAuth2 integration. |
 | **`GOOGLE_REDIRECT_URI`** | No | `http://localhost:.../callback`| Callback webhook redirect mapped in Google Console. |

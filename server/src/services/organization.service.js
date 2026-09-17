@@ -15,12 +15,13 @@ function buildJoinLink(joinCode) {
 
 function buildWhatsappJoinLink(joinCode) {
   const botNumber = String(env.whatsappBotNumber || '').trim().replace(/[^0-9]/g, '');
+  const sandboxJoinMessage = String(env.whatsappSandboxJoinMessage || '').trim();
 
-  if (!botNumber || !joinCode) {
+  if (!botNumber || !sandboxJoinMessage || !joinCode) {
     return null;
   }
 
-  return `https://wa.me/${botNumber}?text=join_${encodeURIComponent(joinCode)}`;
+  return `https://wa.me/${botNumber}?text=${encodeURIComponent(sandboxJoinMessage)}`;
 }
 
 function serializeOrganization(organization) {
@@ -30,6 +31,7 @@ function serializeOrganization(organization) {
     join_code: organization.join_code,
     join_link: buildJoinLink(organization.join_code),
     whatsapp_join_link: buildWhatsappJoinLink(organization.join_code),
+    whatsapp_join_message: `join_${organization.join_code}`,
     insights_frequency: organization.insights_frequency,
     insights_recipients: organization.insights_recipients
   };

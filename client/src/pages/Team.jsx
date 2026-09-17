@@ -4,6 +4,26 @@ import { endpoints } from '../services/endpoints';
 import { pageCache } from '../services/page-cache';
 
 const ROLES = ['member', 'admin', 'co-founder', 'founder'];
+const WHATSAPP_BOT_NUMBER = '14155238886';
+const WHATSAPP_BOT_DISPLAY_NUMBER = '+1 (415) 523-8886';
+const WHATSAPP_SANDBOX_JOIN_MESSAGE = 'join or-syllable';
+
+function getWhatsappJoinMessage(joinCode) {
+  return joinCode ? `join_${joinCode}` : '';
+}
+
+function getWhatsappSandboxLink(organization) {
+  if (organization?.whatsapp_join_link) {
+    return organization.whatsapp_join_link;
+  }
+
+  return `https://wa.me/${WHATSAPP_BOT_NUMBER}?text=${encodeURIComponent(WHATSAPP_SANDBOX_JOIN_MESSAGE)}`;
+}
+
+function getWhatsappAppJoinLink(organization) {
+  const message = organization?.whatsapp_join_message || getWhatsappJoinMessage(organization?.join_code);
+  return `https://wa.me/${WHATSAPP_BOT_NUMBER}?text=${encodeURIComponent(message)}`;
+}
 
 const ROLE_COLORS = {
   founder:      { bg: 'rgba(139, 92, 246, 0.12)', text: '#8b5cf6', border: 'rgba(139, 92, 246, 0.3)' },
@@ -570,62 +590,64 @@ export default function TeamPage() {
                   </svg>
                   <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>WhatsApp</span>
                 </div>
+                <div style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.65 }}>
+                  <strong style={{ color: 'var(--text)' }}>WhatsApp setup takes two messages to {WHATSAPP_BOT_DISPLAY_NUMBER}:</strong>
+                  <ol style={{ margin: '8px 0 0', paddingLeft: '20px' }}>
+                    <li>
+                      Send <code style={{ color: '#25D366', fontWeight: 700 }}>{WHATSAPP_SANDBOX_JOIN_MESSAGE}</code> to connect to the Twilio sandbox.
+                    </li>
+                    <li>
+                      After Twilio confirms, send <code style={{ color: '#25D366', fontWeight: 700 }}>{orgInfo.whatsapp_join_message || getWhatsappJoinMessage(orgInfo.join_code)}</code> to join this SPARK workspace.
+                    </li>
+                  </ol>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  {orgInfo.whatsapp_join_link ? (
-                    <a
-                      href={orgInfo.whatsapp_join_link}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        maxWidth: '100%',
-                        padding: '10px 18px',
-                        borderRadius: '8px',
-                        background: 'var(--panel-soft)',
-                        border: '1px solid var(--border)',
-                        color: '#25D366',
-                        textDecoration: 'none',
-                        fontFamily: 'monospace',
-                        fontSize: '0.9rem',
-                        fontWeight: 600,
-                        overflowWrap: 'anywhere',
-                      }}
-                    >
-                      {orgInfo.whatsapp_join_link}
-                    </a>
-                  ) : (
-                    <a
-                      href={`https://wa.me/?text=join_${orgInfo.join_code}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        maxWidth: '100%',
-                        padding: '10px 18px',
-                        borderRadius: '8px',
-                        background: 'var(--panel-soft)',
-                        border: '1px solid var(--border)',
-                        color: '#25D366',
-                        textDecoration: 'none',
-                        fontFamily: 'monospace',
-                        fontSize: '0.9rem',
-                        fontWeight: 600,
-                        overflowWrap: 'anywhere',
-                      }}
-                    >
-                      {`https://wa.me/?text=join_${orgInfo.join_code}`}
-                    </a>
-                  )}
+                  <a
+                    href={getWhatsappSandboxLink(orgInfo)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '10px 18px',
+                      borderRadius: '8px',
+                      background: '#25D366',
+                      border: '1px solid #25D366',
+                      color: '#fff',
+                      textDecoration: 'none',
+                      fontSize: '0.9rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    1. Connect to Twilio
+                  </a>
+                  <a
+                    href={getWhatsappAppJoinLink(orgInfo)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '10px 18px',
+                      borderRadius: '8px',
+                      background: 'var(--panel-soft)',
+                      border: '1px solid #25D366',
+                      color: '#25D366',
+                      textDecoration: 'none',
+                      fontSize: '0.9rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    2. Join SPARK workspace
+                  </a>
                   <button
                     onClick={() => {
-                      const link = orgInfo.whatsapp_join_link || `https://wa.me/?text=join_${orgInfo.join_code}`;
-                      navigator.clipboard.writeText(link).then(() => setNotice('WhatsApp join link copied!'));
+                      const message = orgInfo.whatsapp_join_message || getWhatsappJoinMessage(orgInfo.join_code);
+                      navigator.clipboard.writeText(message).then(() => setNotice('SPARK join message copied!'));
                     }}
                     style={{ padding: '10px 18px', fontSize: '0.85rem', background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}
                   >
-                    Copy Link
+                    Copy SPARK Message
                   </button>
                 </div>
               </div>
