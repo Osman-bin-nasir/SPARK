@@ -13,6 +13,20 @@ function buildJoinLink(joinCode) {
   return `https://t.me/${botUsername}?start=join_${encodeURIComponent(joinCode)}`;
 }
 
+function getWhatsappBotNumber() {
+  return String(env.whatsappBotNumber || '').trim().replace(/[^0-9]/g, '');
+}
+
+function buildWhatsappMessageLink(message) {
+  const botNumber = getWhatsappBotNumber();
+
+  if (!botNumber || !message) {
+    return null;
+  }
+
+  return `https://wa.me/${botNumber}?text=${encodeURIComponent(message)}`;
+}
+
 function buildWhatsappJoinLink(joinCode) {
   const botNumber = String(env.whatsappBotNumber || '').trim().replace(/[^0-9]/g, '');
   const sandboxJoinMessage = String(env.whatsappSandboxJoinMessage || '').trim();
@@ -21,7 +35,7 @@ function buildWhatsappJoinLink(joinCode) {
     return null;
   }
 
-  return `https://wa.me/${botNumber}?text=${encodeURIComponent(sandboxJoinMessage)}`;
+  return buildWhatsappMessageLink(sandboxJoinMessage);
 }
 
 function serializeOrganization(organization) {
@@ -30,8 +44,10 @@ function serializeOrganization(organization) {
     name: organization.name,
     join_code: organization.join_code,
     join_link: buildJoinLink(organization.join_code),
+    whatsapp_bot_number: getWhatsappBotNumber(),
     whatsapp_join_link: buildWhatsappJoinLink(organization.join_code),
     whatsapp_join_message: `join_${organization.join_code}`,
+    whatsapp_workspace_join_link: buildWhatsappMessageLink(`join_${organization.join_code}`),
     insights_frequency: organization.insights_frequency,
     insights_recipients: organization.insights_recipients
   };

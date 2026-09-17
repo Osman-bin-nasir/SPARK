@@ -29,7 +29,12 @@ test('team details include a WhatsApp join link addressed to the configured bot'
       result.organization.whatsapp_join_link,
       'https://wa.me/14155238886?text=join%20or-syllable'
     );
+    assert.equal(result.organization.whatsapp_bot_number, '14155238886');
     assert.equal(result.organization.whatsapp_join_message, 'join_5dtkjlkg09');
+    assert.equal(
+      result.organization.whatsapp_workspace_join_link,
+      'https://wa.me/14155238886?text=join_5dtkjlkg09'
+    );
   } finally {
     env.whatsappBotNumber = originalBotNumber;
     env.whatsappSandboxJoinMessage = originalSandboxJoinMessage;

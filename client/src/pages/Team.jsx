@@ -22,7 +22,22 @@ function getWhatsappSandboxLink(organization) {
 
 function getWhatsappAppJoinLink(organization) {
   const message = organization?.whatsapp_join_message || getWhatsappJoinMessage(organization?.join_code);
-  return `https://wa.me/${WHATSAPP_BOT_NUMBER}?text=${encodeURIComponent(message)}`;
+  const botNumber = organization?.whatsapp_bot_number || WHATSAPP_BOT_NUMBER;
+  return organization?.whatsapp_workspace_join_link
+    || `https://wa.me/${botNumber}?text=${encodeURIComponent(message)}`;
+}
+
+function getWhatsappDisplayNumber(organization) {
+  const botNumber = organization?.whatsapp_bot_number;
+  if (!botNumber) {
+    return WHATSAPP_BOT_DISPLAY_NUMBER;
+  }
+
+  if (/^1\d{10}$/.test(botNumber)) {
+    return `+1 (${botNumber.slice(1, 4)}) ${botNumber.slice(4, 7)}-${botNumber.slice(7)}`;
+  }
+
+  return `+${botNumber}`;
 }
 
 const ROLE_COLORS = {
@@ -591,7 +606,7 @@ export default function TeamPage() {
                   <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>WhatsApp</span>
                 </div>
                 <div style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.65 }}>
-                  <strong style={{ color: 'var(--text)' }}>WhatsApp setup takes two messages to {WHATSAPP_BOT_DISPLAY_NUMBER}:</strong>
+                  <strong style={{ color: 'var(--text)' }}>WhatsApp setup takes two messages to {getWhatsappDisplayNumber(orgInfo)}:</strong>
                   <ol style={{ margin: '8px 0 0', paddingLeft: '20px' }}>
                     <li>
                       Send <code style={{ color: '#25D366', fontWeight: 700 }}>{WHATSAPP_SANDBOX_JOIN_MESSAGE}</code> to connect to the Twilio sandbox.
