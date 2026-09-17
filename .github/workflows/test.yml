@@ -25,6 +25,8 @@ jobs:
         run: npm ci
       - name: Run tests
         run: npm test
+        env:
+          JWT_SECRET: ci-test-jwt-secret
 
   client:
     runs-on: ubuntu-latest
