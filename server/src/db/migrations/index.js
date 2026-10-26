@@ -6,6 +6,8 @@ const vendorSynonymsBackfillMigration = require('./005_vendor_synonyms_backfill'
 const insightsFrequencyMigration = require('./006_add_insights_frequency');
 const expandRolesMigration = require('./007_expand_roles_and_insights_recipients');
 const adjustVendorAliasesConstraintMigration = require('./008_adjust_vendor_aliases_constraint');
+const nativeAutomationMigration = require('./009_native_automation');
+const efficientAutomationMigration = require('./010_efficient_automation');
 
 const migrations = [
   initialSchemaMigration,
@@ -15,7 +17,9 @@ const migrations = [
   vendorSynonymsBackfillMigration,
   insightsFrequencyMigration,
   expandRolesMigration,
-  adjustVendorAliasesConstraintMigration
+  adjustVendorAliasesConstraintMigration,
+  nativeAutomationMigration,
+  efficientAutomationMigration
 ];
 
 const latestMigrationName = migrations[migrations.length - 1]?.name || null;

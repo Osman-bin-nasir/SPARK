@@ -41,7 +41,7 @@ async function createAlias({ id, organizationId, vendorId, alias, normalizedAlia
   await client.query(
     `INSERT INTO vendor_aliases (id, organization_id, vendor_id, alias, normalized_alias)
      VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (organization_id, normalized_alias) DO NOTHING`,
+     ON CONFLICT (organization_id, alias) DO NOTHING`,
     [id, organizationId, vendorId, alias, normalizedAlias]
   );
 }

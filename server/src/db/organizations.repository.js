@@ -499,7 +499,7 @@ async function updateOrganizationMember({ organizationId, userId, role, receiveI
   };
 }
 
-async function listScheduledOrganizations({ period }, client = pool) {
+async function listScheduledOrganizations({ period, organizationId = null }, client = pool) {
   const { rows } = await client.query(
     `SELECT o.id AS organization_id,
             o.name AS organization_name,
@@ -526,9 +526,9 @@ async function listScheduledOrganizations({ period }, client = pool) {
      FROM organizations o
      LEFT JOIN organization_members om ON o.id = om.organization_id
      LEFT JOIN users u ON om.user_id = u.id
-     WHERE o.insights_frequency = $1
+     WHERE o.insights_frequency = $1 AND ($2::uuid IS NULL OR o.id = $2)
      GROUP BY o.id, o.name, o.insights_frequency, o.insights_recipients`,
-    [period]
+    [period, organizationId]
   );
 
   return rows.map((row) => ({

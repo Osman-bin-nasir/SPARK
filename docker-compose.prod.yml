@@ -48,5 +48,5 @@ services:
           memory: 256M
     environment:
       NODE_ENV: production
-    # Disable profile in production if you want worker to auto-start
-    profiles: []
+    # The API owns automation by default. Opt in only for dedicated workers.
+    profiles: [worker]
