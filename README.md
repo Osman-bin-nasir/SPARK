@@ -1,6 +1,6 @@
 # SPARK — Financial Operations Platform
 
-Native Telegram/WhatsApp automation runs without n8n. See [migration and cutover instructions](./N8N_MIGRATION.md).
+**SPARK has migrated from n8n workflows to native Node.js backend automation.** Telegram/WhatsApp intake, receipt extraction, transaction processing, bot replies, Google Sheets synchronization, and scheduled reports now run directly in application code. No n8n instance is required. See the [migration and cutover guide](./N8N_MIGRATION.md) for configuration and deployment steps.
 
 SPARK is a startup-focused financial operations platform designed to replace spreadsheet-heavy expense tracking with an intelligent, automated, and collaborative workflow. By combining multi-channel document intake (Telegram, WhatsApp, and API), AI-assisted extraction, strict transaction deduplication, pgvector-based semantic search, founder-facing dashboards, and real-time Google Sheets mirroring, SPARK provides startups with automated expense management and cash runway calculations.
 
@@ -70,6 +70,15 @@ Startups often operate in a spreadsheet-heavy financial environment where tracki
 * **Multi-Window Tabs**: Divides transaction lists dynamically into time-range tabs (**1M**, **3M**, **6M**, and **12M**).
 * **Auto-Formatting**: Standardizes sheets with frozen headers, category filters, column widths, and direct editing permissions for team members.
 
+### 6. Native Backend Automation — Migrated from n8n
+
+* **Direct Messaging Webhooks**: Telegram and Twilio WhatsApp deliver messages directly to the Express backend.
+* **Receipt Extraction**: OCR.space reads receipt images/PDFs; Groq extracts structured transaction fields that the backend validates before ingestion.
+* **Durable Processing**: A PostgreSQL job queue handles deduplication, retries, processing checkpoints, and restart recovery.
+* **Bot Replies & Reports**: Application code sends confirmations and weekly/monthly reports, with separate processing lanes so slow receipt or Sheets requests do not block replies.
+* **Efficient Scheduling**: New work wakes the queue immediately. Due-time timers and an hourly recovery check replace five-second database polling. Sheets updates are grouped per workspace, and completed queue payloads are cleared after seven days while preserving dedupe keys and unfinished jobs.
+* **Single API Process by Default**: The API runs automation and cleanup; a separate worker is optional. Telegram, Twilio, Groq, OCR.space, and Google remain direct API integrations.
+
 ---
 
 ## Technology Stack
@@ -80,6 +89,8 @@ Startups often operate in a spreadsheet-heavy financial environment where tracki
 * **Database**: PostgreSQL (Neon Serverless) with `pgvector` for high-dimensional similarity searches and `pg_trgm` for trigram vendor resolution.
 * **Authentication**: JSON Web Tokens (JWT) with HS256 algorithm and cryptographically secure password hashing (BCrypt).
 * **Integrations**: Google APIs Client Library (`googleapis` v171.4.0) for OAuth2, Drive, and Sheets.
+* **Automation**: Native Node.js services with a durable PostgreSQL queue, webhook-triggered processing, and scheduled timers; no n8n runtime.
+* **Receipt AI & OCR**: Groq (`openai/gpt-oss-120b` by default) and OCR.space, called directly from the backend.
 
 ### Frontend
 * **Core Library**: React (v19)
@@ -92,26 +103,30 @@ Startups often operate in a spreadsheet-heavy financial environment where tracki
 
 ## System Architecture
 
-SPARK runs as a decoupled, multi-container system:
+SPARK separates the React frontend from the Express backend. Automation runs inside the API process by default, using PostgreSQL for durable jobs:
 
 ```mermaid
 graph TD
     Client[React Web App - Vite/Tailwind] <-->|HTTPS / JSON / JWT| API[Express API Server]
     API <-->|SQL / Vector Queries| DB[(Neon PostgreSQL DB + pgvector)]
-    Worker[Background Worker Service] <-->|Polls Queue| DB
-    Worker -->|Cleanup / API Calls| GD[Google Drive API]
-    
-    TelegramBot[Telegram Bot API] -->|Webhooks + Signature| API
-    WhatsAppBot[WhatsApp Business API] -->|Webhooks + Signature| API
-    
+    TelegramBot[Telegram Bot API] -->|Webhook + Secret Token| API
+    WhatsAppBot[Twilio WhatsApp API] -->|Webhook + Twilio Signature| API
+    API -->|Committed Job Wakeup| Automation[Native Node.js Automation]
+    Automation <-->|Durable Jobs + Checkpoints| DB
+    Automation -->|Receipt OCR| OCR[OCR.space API]
+    Automation -->|Structured Extraction| AI[Groq API]
+    Automation -->|Replies + Reports| TelegramBot
+    Automation -->|Replies + Reports| WhatsAppBot
+    Automation -->|Receipt Archive + Cleanup| GD[Google Drive API]
+    Automation -->|Batched Sync| GS[Google Sheets API]
     API <-->|OAuth2 / Uploads| GD
-    API <-->|Spreadsheet Sync| GS[Google Sheets API]
 ```
 
 * **React Web App**: Serves the user dashboard, transaction approvals queue, analytics, configurations, and team settings.
 * **Express API Server**: Serves as the central API gateway. Handles user requests, webhook integrations, signature verification, token logic, and core services.
-* **PostgreSQL Database**: Holds tables for organizations, users, transactions, documents, audit logs, and embedding jobs. Uses `pgvector` for similarity matching.
-* **Background Worker Service**: Runs an asynchronous loop to clean up orphaned Google Drive files when transaction inserts fail.
+* **PostgreSQL Database**: Holds organizations, users, transactions, documents, audit logs, embedding jobs, and the durable `automation_jobs` queue. Uses `pgvector` for similarity matching.
+* **Native Automation Services**: Process receipts/reports, bot replies, and Sheets updates in separate bounded lanes. They also handle retries, scheduled reports, daily queue retention, and orphaned Drive file cleanup. No separate workflow engine is needed.
+* **Optional Dedicated Worker**: Available for deployments that explicitly move automation out of the API. The default API mode is recommended for free hosting; see [deployment settings](./N8N_MIGRATION.md#configuration).
 
 ---
 
@@ -413,7 +428,18 @@ The SPARK platform uses environment variables configured either inside the `serv
 | **`GOOGLE_CLIENT_SECRET`**| No | `your-client-secret` | Google Cloud credentials for OAuth2 integration. |
 | **`GOOGLE_REDIRECT_URI`** | No | `http://localhost:.../callback`| Callback webhook redirect mapped in Google Console. |
 | **`GOOGLE_TOKEN_ENCRYPTION_KEY`**| No | `32-byte-hex-key` | Cryptographic key to encrypt/decrypt Drive tokens in DB. |
-| **`WEBHOOK_SECRET`** | Yes | `your-webhook-secret` | HMAC key to verify Telegram, WhatsApp, and scheduling requests. |
+| **`WEBHOOK_SECRET`** | For signed ingestion | `your-webhook-secret` | HMAC key for the existing `/api/ingestion` endpoints; direct bot webhooks use provider-specific validation. |
+| **`TELEGRAM_BOT_TOKEN`**, **`TELEGRAM_WEBHOOK_SECRET`** | For Telegram | — | Telegram API token and the shared secret for direct Telegram webhooks. |
+| **`TWILIO_ACCOUNT_SID`**, **`TWILIO_AUTH_TOKEN`**, **`TWILIO_WHATSAPP_FROM`** | For WhatsApp | — | Twilio credentials, request validation, and WhatsApp sender. |
+| **`TWILIO_INSIGHTS_CONTENT_SID`** | For scheduled WhatsApp reports | — | Approved template required for scheduled WhatsApp reports; without it those deliveries are skipped. |
+| **`PUBLIC_API_BASE_URL`** | For WhatsApp | `https://your-backend.example.com` | Public backend origin used to verify the exact Twilio webhook URL. |
+| **`GROQ_API_KEY`**, **`OCR_SPACE_API_KEY`** | For extraction | — | Credentials for direct AI extraction and receipt OCR. |
+| **`GROQ_MODEL`** | No | `openai/gpt-oss-120b` | Groq model used for structured transaction extraction. |
+| **`AUTOMATION_RUN_IN_API`** | No | `true` | Runs native automation in the API; avoids a separate worker process. |
+| **`AUTOMATION_RECOVERY_MS`** | No | `3600000` | Hourly fallback recovery; new local work wakes processing immediately. |
+| **`AUTOMATION_SHEETS_DELAY_MS`** | No | `30000` | Groups pending Sheets work per workspace over a fixed 30-second window. |
+| **`AUTOMATION_RETENTION_DAYS`** | No | `7` | Clears old completed queue payloads; preserves transactions, documents, dedupe keys, and unfinished/failed jobs. Set `0` to disable. |
+| **`DATABASE_POOL_MAX`** | No | `8` | Maximum database connections per process. |
 | **`INGESTION_MAX_BODY_BYTES`**| No | `15728640` | Ingestion payload limit (defaults to 15MB). |
 | **`ORPHAN_CLEANUP_INTERVAL_MS`**| No | `86400000` | Daily fallback cleanup; newly tracked orphan files wake cleanup after one minute. |
 | **`EXTRACTION_CONFIDENCE_THRESHOLD`**| No| `0.80` | Score threshold below which transactions route to pending review. |
@@ -426,7 +452,12 @@ The SPARK platform uses environment variables configured either inside the `serv
 ## Configuration & Customization Details
 
 ### Webhook Signatures
-Ingestion webhooks require an HMAC SHA-256 signature in the `x-spark-signature` header:
+Direct bot webhooks use provider-specific verification:
+
+* **Telegram**: `x-telegram-bot-api-secret-token` must match `TELEGRAM_WEBHOOK_SECRET`.
+* **Twilio WhatsApp**: `x-twilio-signature` is validated using the Twilio SDK, the auth token, and the configured public backend URL.
+
+The existing `/api/ingestion` endpoints still require an HMAC SHA-256 signature in the `x-spark-signature` header:
 * For JSON text ingestion: `crypto.createHmac('sha256', env.webhookSecret).update(req.rawBody).digest('hex')`
 * For file uploads: `crypto.createHmac('sha256', env.webhookSecret).update(fields.payload).digest('hex')`
 
@@ -549,6 +580,8 @@ Prefix all API endpoints with `/api`. Headers should include:
 * `POST /document` — Webhook for file ingestion (multimodal receipt upload).
 * `POST /text` — Webhook for text-based expense notes.
 
+Direct bot intake uses `POST /api/webhooks/telegram` and `POST /api/webhooks/whatsapp`. These endpoints authenticate provider requests and save durable jobs before acknowledging delivery; they no longer route through n8n.
+
 ### 5. Ledger Transactions (`/api/transactions`)
 * `GET /` — Filterable and paginated list of transactions (by page, page size, status, type, vendor, start_date, end_date).
 * `POST /` — Manually inserts a transaction (requires founder/admin role).
@@ -581,6 +614,15 @@ Prefix all API endpoints with `/api`. Headers should include:
 ## Core Workflows & Business Logic
 
 ### 1. Ingestion Pipelines
+For Telegram and WhatsApp, native backend automation replaces the former n8n workflow:
+
+1. **Receive & Authenticate**: Accept the provider webhook, verify its secret/signature, and deduplicate using the provider event ID.
+2. **Persist & Wake**: Save the inbound job in PostgreSQL, acknowledge the webhook, and wake processing after the write commits.
+3. **Extract & Validate**: Resolve the sender's workspace, check Drive connectivity for attachments, download the receipt, run OCR.space/Groq, and validate the extracted fields.
+4. **Record & Checkpoint**: Reuse the ingestion service to archive attachments and create transactions. Commit the transaction, processing checkpoint, and queued Sheets work together.
+5. **Reply & Sync**: Send the bot confirmation independently and combine pending Sheets updates per workspace. Retry transient failures with backoff; schedule reports directly in Node.js.
+
+The existing signed ingestion endpoints remain compatible:
 When a file receipt or text note is ingested via `/api/ingestion/document` or `/api/ingestion/text`:
 1. **Signature Verification**: Validates the webhook signature using `WEBHOOK_SECRET`.
 2. **Duplication Check**: Computes a SHA-256 hash of the buffer. If it matches a document in the database, the upload is rejected.
@@ -617,10 +659,10 @@ Natural Language Query ──> Generate Search Filters ──> SQL Match ──>
 
 ### 5. Dynamic Google Sheets Mirroring
 1. **Spreadsheet Resolution**: Looks up the linked spreadsheet in Google Drive. If missing, it creates a new workbook (`SPARK Transactions - [Org Name]`) and stores its ID.
-2. **Sheet Isolation**: Checks for and creates tabs for the four target windows: `1M Spend`, `3M Spend`, `6M Spend`, and `12M Spend`.
-3. **Row Replacement**: Queries transactions for each time window and replaces the sheet rows.
-4. **Visual Formatting**: Standardizes formatting (freezes header rows, sets colors, adds filters, adjust column widths).
-5. **Permissions sharing**: Shares write permissions with all organization member emails.
+2. **Sheet Isolation**: Checks for and creates tabs for the four target windows: `1M`, `3M`, `6M`, and `12M`.
+3. **Batched Row Replacement**: Reads the last 12 months once, partitions the four windows in memory, and replaces their values using two batch API calls. Bot-triggered sync jobs are grouped per workspace.
+4. **Visual Formatting**: Applies frozen headers, colors, filters, and column widths when the layout changes.
+5. **Permissions Sharing**: Checks Google sharing permissions when the workspace member-email fingerprint changes.
 
 ---
 
@@ -674,9 +716,9 @@ The workflow [.github/workflows/deploy.yml](./.github/workflows/deploy.yml) trig
 
 ## Future Improvements
 
-* **LLM-Based Parser Integration**: Replace regex parsing with LLMs (e.g., Gemini Flash) to parse complex layouts and multi-item invoices.
+* **Expanded Invoice Extraction**: Extend the existing OCR.space/Groq pipeline with item-level extraction and validation for complex invoices.
 * **Bank Feed Integration**: Connect directly to Plaid or Yodlee to sync transactions and reconcile files automatically.
-* **Interactive Bot Interface**: Allow users to query financial metrics and request reports directly inside Telegram and WhatsApp.
+* **Expanded Bot Queries**: Build on the existing weekly/monthly report commands with richer conversational financial queries.
 * **Mobile Companion App**: Deploy dedicated iOS and Android clients for receipt capture and transaction approvals on the go.
 
 ---
