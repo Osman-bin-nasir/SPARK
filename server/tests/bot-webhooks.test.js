@@ -76,3 +76,16 @@ test('Twilio rejects signed messages for a different account or destination', as
   assert.equal((await whatsapp(body, signature)).status, 400);
   assert.equal(queued.size, 0);
 });
+
+test('Twilio accepts image messages with MM identifiers and preserves the media for download', async () => {
+  const sid = `MM${'D'.repeat(32)}`;
+  const mediaUrl = `https://api.twilio.com/2010-04-01/Accounts/${env.twilioAccountSid}/Messages/${sid}/Media/ME${'E'.repeat(32)}`;
+  const body = { ...twilioBody(), MessageSid: sid, NumMedia: '1', Body: '',
+    MediaUrl0: mediaUrl, MediaContentType0: 'image/jpeg' };
+  const signature = twilio.getExpectedTwilioSignature(env.twilioAuthToken, `${env.publicApiBaseUrl}/api/webhooks/whatsapp`, body);
+  assert.equal((await whatsapp(body, signature)).status, 200);
+  const saved = queued.get(`whatsapp:${sid}`);
+  assert.equal(saved.payload.file.url, mediaUrl);
+  assert.equal(saved.payload.file.mimeType, 'image/jpeg');
+  assert.equal(saved.payload.unsupportedMedia, false);
+});

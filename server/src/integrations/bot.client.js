@@ -51,7 +51,7 @@ async function download({ platform, file }) {
     const parsed = new URL(file.url);
     const expectedPrefix = `/2010-04-01/Accounts/${env.twilioAccountSid}/Messages/`;
     if (parsed.origin !== 'https://api.twilio.com' || !parsed.pathname.startsWith(expectedPrefix)
-      || !/^SM[0-9a-f]{32}\/Media\/ME[0-9a-f]{32}$/.test(parsed.pathname.slice(expectedPrefix.length))
+      || !/^(?:SM|MM)[0-9a-fA-F]{32}\/Media\/ME[0-9a-fA-F]{32}$/.test(parsed.pathname.slice(expectedPrefix.length))
       || parsed.search || parsed.username || parsed.password) {
       throw Object.assign(new Error('Invalid Twilio media URL'), { permanent: true });
     }

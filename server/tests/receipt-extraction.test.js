@@ -52,7 +52,8 @@ test('Twilio media rejects sender-supplied URLs without leaking credentials', as
   await assert.rejects(bots.download({ platform: 'whatsapp', file: { url: 'https://attacker.example/receipt' } }), /Invalid Twilio/);
   assert.equal(calls, 0);
 });
-test('Twilio media strips auth when following a validated CDN redirect', async () => {
+for (const messagePrefix of ['SM', 'MM']) {
+test(`Twilio ${messagePrefix} media strips auth when following a validated CDN redirect`, async () => {
   env.twilioAccountSid = `AC${'a'.repeat(32)}`;
   env.twilioAuthToken = 'test';
   let calls = 0;
@@ -66,6 +67,7 @@ test('Twilio media strips auth when following a validated CDN redirect', async (
     return new Response('receipt');
   };
   const file = await bots.download({ platform: 'whatsapp', file: {
-    url: `https://api.twilio.com/2010-04-01/Accounts/${env.twilioAccountSid}/Messages/SM${'b'.repeat(32)}/Media/ME${'c'.repeat(32)}` } });
+    url: `https://api.twilio.com/2010-04-01/Accounts/${env.twilioAccountSid}/Messages/${messagePrefix}${'B'.repeat(32)}/Media/ME${'C'.repeat(32)}` } });
   assert.equal(file.buffer.toString(), 'receipt');
 });
+}

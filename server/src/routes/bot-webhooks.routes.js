@@ -41,7 +41,7 @@ router.post('/whatsapp', express.urlencoded({ extended: false, limit: '128kb', p
     const url = `${env.publicApiBaseUrl.replace(/\/$/, '')}${req.originalUrl}`;
     if (!bots.validTwilioRequest(req.get('x-twilio-signature'), url, req.body)) return res.sendStatus(403);
     if (req.body.AccountSid !== env.twilioAccountSid || req.body.To !== env.twilioWhatsappFrom
-      || !/^SM[0-9a-f]{32}$/.test(req.body.MessageSid || '') || !/^whatsapp:\+\d+$/.test(req.body.From || '')) return res.sendStatus(400);
+      || !/^(?:SM|MM)[0-9a-fA-F]{32}$/.test(req.body.MessageSid || '') || !/^whatsapp:\+\d+$/.test(req.body.From || '')) return res.sendStatus(400);
     const count = Number(req.body.NumMedia || 0);
     if (!Number.isInteger(count) || count < 0) return res.sendStatus(400);
     await jobs.enqueue({ key: `whatsapp:${req.body.MessageSid}`, kind: 'inbound', payload: {
