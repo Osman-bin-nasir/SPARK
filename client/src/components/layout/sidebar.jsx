@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 
-export default function Sidebar() {
+export default function Sidebar({ onNavigate }) {
   const linkClass = ({ isActive }) =>
     `sidebar-link ${isActive ? 'is-active' : ''}`;
 
@@ -9,7 +9,9 @@ export default function Sidebar() {
       <div className="sidebar-header">
         <div className="sidebar-brand">SPARK</div>
       </div>
-      <nav className="sidebar-nav">
+      <nav className="sidebar-nav" aria-label="Workspace pages" onClick={event => {
+        if (event.target.closest('a')) onNavigate?.();
+      }}>
         <NavLink to="/dashboard" className={linkClass}>Dashboard</NavLink>
         <NavLink to="/transactions" className={linkClass}>Transactions</NavLink>
         <NavLink to="/approvals" className={linkClass}>Approvals</NavLink>

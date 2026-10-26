@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { get, patch } from '../services/http';
 import { endpoints } from '../services/endpoints';
 
@@ -38,10 +38,15 @@ export default function InsightsPage({ activeOrganizationId, token, user }) {
   const [savingSettings, setSavingSettings] = useState(false);
   const [togglingMemberId, setTogglingMemberId] = useState('');
 
-  const authHeaders = { token, headers: { 'X-Organization-Id': activeOrganizationId } };
+  const authHeaders = useMemo(() => ({ token, headers: { 'X-Organization-Id': activeOrganizationId } }), [token, activeOrganizationId]);
+  const configRequest = useRef(null);
+  const insightsRequest = useRef(null);
 
   // Fetch settings & members
   const fetchConfig = useCallback(async () => {
+    configRequest.current?.abort();
+    const controller = new AbortController();
+    configRequest.current = controller;
     if (!token || !activeOrganizationId) {
       setLoadingConfig(false);
       return;
@@ -49,18 +54,22 @@ export default function InsightsPage({ activeOrganizationId, token, user }) {
     try {
       setLoadingConfig(true);
       setConfigError('');
-      const result = await get(endpoints.organizationsTeam, authHeaders);
+      const result = await get(endpoints.organizationsTeam, { ...authHeaders, signal: controller.signal });
+      if (controller.signal.aborted) return;
       setOrgInfo(result.organization || null);
       setMembers(result.members || []);
     } catch (err) {
-      setConfigError(err.message || 'Failed to load organization settings.');
+      if (!controller.signal.aborted && err.name !== 'AbortError') setConfigError(err.message || 'Failed to load organization settings.');
     } finally {
-      setLoadingConfig(false);
+      if (!controller.signal.aborted) setLoadingConfig(false);
     }
-  }, [token, activeOrganizationId]);
+  }, [token, activeOrganizationId, authHeaders]);
 
   // Fetch insights calculations
   const fetchInsights = useCallback(async () => {
+    insightsRequest.current?.abort();
+    const controller = new AbortController();
+    insightsRequest.current = controller;
     if (!token || !activeOrganizationId) {
       setLoadingInsights(false);
       return;
@@ -68,22 +77,27 @@ export default function InsightsPage({ activeOrganizationId, token, user }) {
     try {
       setLoadingInsights(true);
       setInsightsError('');
-      const result = await get(`${endpoints.insights}?period=${activeTab}`, authHeaders);
+      const result = await get(`${endpoints.insights}?period=${activeTab}`, { ...authHeaders, signal: controller.signal });
+      if (controller.signal.aborted) return;
       setInsightsData(result);
     } catch (err) {
-      setInsightsError(err.message || `Failed to load ${activeTab} insights.`);
-      setInsightsData(null);
+      if (!controller.signal.aborted && err.name !== 'AbortError') {
+        setInsightsError(err.message || `Failed to load ${activeTab} insights.`);
+        setInsightsData(null);
+      }
     } finally {
-      setLoadingInsights(false);
+      if (!controller.signal.aborted) setLoadingInsights(false);
     }
-  }, [token, activeOrganizationId, activeTab]);
+  }, [token, activeOrganizationId, activeTab, authHeaders]);
 
   useEffect(() => {
     fetchConfig();
+    return () => configRequest.current?.abort();
   }, [fetchConfig]);
 
   useEffect(() => {
     fetchInsights();
+    return () => insightsRequest.current?.abort();
   }, [fetchInsights]);
 
   // Update insights frequency or recipients type

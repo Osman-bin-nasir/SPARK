@@ -1,4 +1,5 @@
-import React from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Sidebar from './sidebar';
 import '../../styles/layout.css';
 
@@ -14,17 +15,39 @@ export default function AppShell({
   contentWidth,
   toggleTheme
 }) {
+  const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const dialog = useRef(null);
+  useEffect(() => {
+    if (menuOpen) dialog.current?.showModal();
+    else dialog.current?.close();
+  }, [menuOpen]);
+
+  function searchTransactions(event) {
+    event.preventDefault();
+    const vendor = String(new FormData(event.currentTarget).get('vendor') || '').trim();
+    navigate(`/transactions${vendor ? `?vendor=${encodeURIComponent(vendor)}` : ''}`);
+  }
+
   return (
     <div className={`app-layout ${contentWidth === 'wide' ? 'app-layout--wide' : ''}`}>
-      <Sidebar />
+      <div className="desktop-navigation"><Sidebar /></div>
+      <dialog ref={dialog} className="mobile-navigation" aria-label="Workspace navigation"
+        onCancel={() => setMenuOpen(false)} onClose={() => setMenuOpen(false)}
+        onClick={event => { if (event.target === event.currentTarget) setMenuOpen(false); }}>
+        <button type="button" className="mobile-nav-close" onClick={() => setMenuOpen(false)}>Close navigation</button>
+        <Sidebar onNavigate={() => setMenuOpen(false)} />
+      </dialog>
       <div className="app-main">
         <header className="topbar">
           <div className="topbar-left">
+            <button type="button" className="icon-btn mobile-menu-toggle" aria-label="Open navigation"
+              aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button>
             {showTopbarSearch ? (
-              <div className="topbar-search">
+              <form className="topbar-search" role="search" onSubmit={searchTransactions}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Search..." />
-              </div>
+                <input type="search" name="vendor" aria-label="Search transactions by vendor" placeholder="Search vendors..." />
+              </form>
             ) : (
               <div className="topbar-search-placeholder">
                 Workspace controls are managed from Settings.
@@ -34,6 +57,8 @@ export default function AppShell({
           <div className="topbar-right">
             {organizations && organizations.length > 0 && (
               <select 
+                aria-label="Active workspace"
+                className="workspace-switcher"
                 style={{ height: '40px', padding: '0 12px', borderRadius: '6px', backgroundColor: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
                 value={activeOrganizationId} 
                 onChange={(e) => onSelectOrganization && onSelectOrganization(e.target.value)}

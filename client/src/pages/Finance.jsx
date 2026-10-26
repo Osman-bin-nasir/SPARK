@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { post, get } from '../services/http';
 import { endpoints } from '../services/endpoints';
 import { markDashboardSnapshotStale } from '../features/dashboard/dashboard.cache';
+import { getStoredUser } from '../services/session';
 
 const INCOME_CATEGORIES = ['funding', 'revenue', 'grant', 'loan', 'other_income'];
 const EXPENSE_CATEGORIES = ['software', 'cloud', 'payroll', 'marketing', 'office', 'travel', 'legal', 'hardware', 'other'];
@@ -40,14 +41,17 @@ function formatLabel(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-const EMPTY_FORM = {
+function createEmptyForm() {
+  const today = new Date();
+  return {
   transaction_type: 'income',
   amount: '',
   vendor: '',
   category: 'funding',
-  transaction_date: new Date().toISOString().slice(0, 10),
+  transaction_date: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
   notes: '',
-};
+  };
+}
 
 function getOrganizationPreferenceKey(userId) {
   return userId ? `spark.active-organization.${userId}` : '';
@@ -241,11 +245,11 @@ function buildFinanceStatCards(result) {
 
 export default function FinancePage({ activeOrganizationId, token: tokenProp, user: userProp }) {
   const token = tokenProp || localStorage.getItem('token') || '';
-  const user = userProp || JSON.parse(localStorage.getItem('user') || 'null');
+  const user = userProp || getStoredUser();
   const organizationId = activeOrganizationId || resolveActiveOrganizationId(user);
   const authHeaders = { token, headers: organizationId ? { 'X-Organization-Id': organizationId } : {} };
 
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(createEmptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -343,7 +347,7 @@ export default function FinancePage({ activeOrganizationId, token: tokenProp, us
       }, authHeaders);
       markDashboardSnapshotStale(organizationId);
       setNotice(`✓ Entry recorded: ${form.vendor} — ${formatCurrency(form.amount)}`);
-      setForm({ ...EMPTY_FORM, transaction_type: form.transaction_type });
+      setForm({ ...createEmptyForm(), transaction_type: form.transaction_type });
       fetchRecent();
     } catch (err) {
       setError(err.message || 'Failed to record entry.');

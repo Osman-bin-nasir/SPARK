@@ -1,253 +1,114 @@
-import { API_BASE_URL } from './endpoints';
-import { endpoints } from './endpoints';
+import { API_BASE_URL, endpoints } from './endpoints.js';
+import { assertCurrentSession, captureSession, clearSession, refreshSession } from './session.js';
 
-let refreshPromise = null;
-const ACCESS_TOKEN_REFRESH_BUFFER_MS = 30_000;
+const PUBLIC_AUTH_PATHS = new Set([
+  endpoints.login, endpoints.register, endpoints.signup, '/auth/telegram', '/auth/whatsapp',
+  '/auth/create-telegram-login', '/auth/create-whatsapp-login'
+]);
 
-function getStoredAccessToken() {
-  return localStorage.getItem('token') || '';
+function expiresSoon(token) {
+  try {
+    const segment = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(segment.padEnd(Math.ceil(segment.length / 4) * 4, '=')));
+    return Number.isFinite(payload.exp) && payload.exp * 1000 - Date.now() <= 30000;
+  } catch { return false; }
 }
 
-function getStoredRefreshToken() {
-  return localStorage.getItem('refresh_token') || '';
+function requestError(message, statusCode) {
+  return Object.assign(new Error(message), { statusCode });
 }
 
-function persistAuth(result) {
-  const accessToken = result.access_token || result.token || '';
-  const refreshToken = result.refresh_token || '';
+// Tests use this factory with an isolated backend; production uses one client.
+export function createHttpClient(baseUrl, { timeoutMs = 90000 } = {}) {
+  let refreshPromise;
 
-  if (accessToken) {
-    localStorage.setItem('token', accessToken);
-  }
-
-  if (refreshToken) {
-    localStorage.setItem('refresh_token', refreshToken);
-  }
-
-  if (result.user) {
-    localStorage.setItem('user', JSON.stringify(result.user));
-  }
-
-  window.dispatchEvent(new CustomEvent('spark-auth-updated', {
-    detail: {
-      token: accessToken,
-      refreshToken,
-      user: result.user || null
+  async function transport(path, options, session, token, responseType = 'json') {
+    assertCurrentSession(session);
+    const controller = new AbortController();
+    const signals = [session.signal, options.signal].filter(Boolean);
+    const abort = () => controller.abort();
+    let timedOut = false;
+    for (const signal of signals) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', abort, { once: true });
     }
-  }));
-}
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    try {
+      const headers = { ...options.headers };
+      if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: options.method || 'GET', headers, body: options.body, signal: controller.signal
+      });
+      const data = response.ok && responseType === 'blob'
+        ? await response.blob()
+        : response.status === 204 ? null : await response.json().catch(() => null);
+      assertCurrentSession(session);
+      if (response.ok && data === null && response.status !== 204) {
+        throw requestError('The server returned an unexpected response. Please try again.', response.status);
+      }
+      return { response, data };
+    } catch (error) {
+      assertCurrentSession(session);
+      if (timedOut) throw requestError('The server is taking too long to respond. Please try again.', 408);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      for (const signal of signals) signal.removeEventListener('abort', abort);
+    }
+  }
 
-function clearStoredAuth() {
-  localStorage.removeItem('token');
-  localStorage.removeItem('refresh_token');
-  localStorage.removeItem('user');
-  window.dispatchEvent(new Event('spark-auth-expired'));
-}
+  async function refresh(session) {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) throw requestError('Session expired. Please sign in again.', 401);
+    if (refreshPromise?.identity === session.identity) return refreshPromise.promise;
+    const operation = { identity: session.identity };
+    operation.promise = (async () => {
+      const { response, data } = await transport(endpoints.refresh, {
+        method: 'POST', body: JSON.stringify({ refresh_token: refreshToken })
+      }, session);
+      if (!response.ok) {
+        if ([400, 401, 403].includes(response.status)) clearSession();
+        throw requestError(data?.error || 'Unable to refresh your session. Please try again.', response.status);
+      }
+      if (!data?.access_token && !data?.token) throw requestError('Invalid session response. Please try again.', 502);
+      refreshSession(data, session);
+      return data.access_token || data.token;
+    })().finally(() => { if (refreshPromise === operation) refreshPromise = null; });
+    refreshPromise = operation;
+    return operation.promise;
+  }
 
-function buildHeaders(options = {}) {
-  const headers = {
-    ...options.headers
+  async function request(path, options = {}, responseType = 'json') {
+    if (!baseUrl) throw new Error('VITE_API_BASE_URL is not configured');
+    const session = captureSession();
+    const publicRequest = PUBLIC_AUTH_PATHS.has(path.split('?')[0]);
+    let token = publicRequest ? '' : options.token || localStorage.getItem('token') || '';
+    let refreshed = false;
+    if (token && expiresSoon(token) && localStorage.getItem('refresh_token')) {
+      token = await refresh(session);
+      refreshed = true;
+    }
+    let result = await transport(path, options, session, token, responseType);
+    if (!publicRequest && result.response.status === 401 && token && !refreshed && localStorage.getItem('refresh_token')) {
+      token = await refresh(session);
+      result = await transport(path, options, session, token, responseType);
+    }
+    if (!result.response.ok) {
+      if (!publicRequest && result.response.status === 401) clearSession();
+      throw requestError(typeof result.data?.error === 'string' ? result.data.error : 'Request failed. Please try again.', result.response.status);
+    }
+    return result.data;
+  }
+
+  return {
+    get: (path, options) => request(path, options),
+    getBlob: (path, options) => request(path, options, 'blob'),
+    post: (path, body, options) => request(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
+    put: (path, body, options) => request(path, { ...options, method: 'PUT', body: JSON.stringify(body) }),
+    patch: (path, body, options) => request(path, { ...options, method: 'PATCH', body: JSON.stringify(body) }),
+    del: (path, options) => request(path, { ...options, method: 'DELETE' })
   };
-
-  if (options.contentType !== false) {
-    headers['Content-Type'] = options.contentType || 'application/json';
-  }
-
-  if (options.token) {
-    headers.Authorization = `Bearer ${options.token}`;
-  }
-
-  return headers;
 }
 
-function parseJwtPayload(token) {
-  if (!token) {
-    return null;
-  }
-
-  try {
-    const [, payloadSegment] = String(token).split('.');
-
-    if (!payloadSegment) {
-      return null;
-    }
-
-    const normalized = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-    return JSON.parse(atob(padded));
-  } catch {
-    return null;
-  }
-}
-
-function shouldRefreshAccessToken(token) {
-  const payload = parseJwtPayload(token);
-  const expiresAtSeconds = Number(payload?.exp);
-
-  if (!expiresAtSeconds) {
-    return false;
-  }
-
-  return (expiresAtSeconds * 1000) - Date.now() <= ACCESS_TOKEN_REFRESH_BUFFER_MS;
-}
-
-function shouldAttemptRefresh({ errorMessage, path, responseStatus, token }) {
-  if (responseStatus !== 401 || path === endpoints.refresh) {
-    return false;
-  }
-
-  if (!token || !getStoredRefreshToken()) {
-    return false;
-  }
-
-  if (!errorMessage) {
-    return true;
-  }
-
-  return [
-    'Authentication required',
-    'Invalid token',
-    'Token expired',
-    'invalid refresh token'
-  ].includes(errorMessage);
-}
-
-async function tryRefreshAccessToken() {
-  if (refreshPromise) {
-    return refreshPromise;
-  }
-
-  refreshPromise = refreshAccessToken();
-
-  try {
-    return await refreshPromise;
-  } finally {
-    refreshPromise = null;
-  }
-}
-
-async function refreshAccessToken() {
-  const refreshToken = getStoredRefreshToken();
-
-  if (!refreshToken) {
-    clearStoredAuth();
-    throw new Error('Session expired');
-  }
-
-  const response = await fetch(`${API_BASE_URL}${endpoints.refresh}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      refresh_token: refreshToken
-    })
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    clearStoredAuth();
-    throw new Error(data.error || 'Session expired');
-  }
-
-  persistAuth(data);
-  return getStoredAccessToken();
-}
-
-async function resolveRequestToken(path, explicitToken) {
-  const token = explicitToken || getStoredAccessToken();
-
-  if (!token || path === endpoints.refresh || !getStoredRefreshToken()) {
-    return token;
-  }
-
-  if (!shouldRefreshAccessToken(token)) {
-    return token;
-  }
-
-  return tryRefreshAccessToken();
-}
-
-async function request(path, options = {}, retryState = { attemptedRefresh: false }) {
-  if (!API_BASE_URL) {
-    throw new Error('VITE_API_BASE_URL is not configured');
-  }
-
-  const explicitToken = typeof options.token === 'string' ? options.token.trim() : '';
-  const resolvedToken = await resolveRequestToken(path, explicitToken);
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method || 'GET',
-    headers: buildHeaders({
-      ...options,
-      token: resolvedToken || undefined
-    }),
-    body: options.body
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  const shouldTryRefresh = !retryState.attemptedRefresh && shouldAttemptRefresh({
-    errorMessage: typeof data.error === 'string' ? data.error : '',
-    path,
-    responseStatus: response.status,
-    token: resolvedToken
-  });
-
-  if (shouldTryRefresh) {
-    await tryRefreshAccessToken();
-    return request(path, options, { attemptedRefresh: true });
-  }
-
-  if (!response.ok) {
-    if (response.status === 401 && path !== endpoints.refresh) {
-      clearStoredAuth();
-    }
-
-    const error = new Error(data.error || 'Request failed');
-    error.statusCode = response.status;
-    throw error;
-  }
-
-  return data;
-}
-
-export async function get(path, options = {}) {
-  return request(path, {
-    ...options,
-    method: 'GET',
-    contentType: false
-  });
-}
-
-export async function post(path, body, options = {}) {
-  return request(path, {
-    ...options,
-    method: 'POST',
-    body: JSON.stringify(body)
-  });
-}
-
-export async function put(path, body, options = {}) {
-  return request(path, {
-    ...options,
-    method: 'PUT',
-    body: JSON.stringify(body)
-  });
-}
-
-export async function patch(path, body, options = {}) {
-  return request(path, {
-    ...options,
-    method: 'PATCH',
-    body: JSON.stringify(body)
-  });
-}
-
-export async function del(path, options = {}) {
-  return request(path, {
-    ...options,
-    method: 'DELETE',
-    contentType: false
-  });
-}
+export const { get, getBlob, post, put, patch, del } = createHttpClient(API_BASE_URL);
