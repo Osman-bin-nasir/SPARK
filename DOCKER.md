@@ -263,7 +263,7 @@ See `.env.example` for complete list. Key variables:
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
 | NODE_ENV | No | production | Node environment |
-| PORT | No | 4000 | Internal app port |
+| PORT | No | 4000 locally | Internal app port; on Render, use its automatically supplied value. The Docker health check follows the same port. |
 | DATABASE_URL | Yes | - | PostgreSQL connection string |
 | DATABASE_SSL | No | false in Compose | Enable TLS for the database connection |
 | JWT_SECRET | Yes | - | JWT signing key |
