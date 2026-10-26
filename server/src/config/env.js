@@ -25,6 +25,22 @@ const env = {
   googleTokenEncryptionKey: process.env.GOOGLE_TOKEN_ENCRYPTION_KEY || '',
   googleDrivePostConnectUrl: process.env.GOOGLE_DRIVE_POST_CONNECT_URL || `${appBaseUrl.replace(/\/$/, '')}/integrations`,
   webhookSecret: process.env.WEBHOOK_SECRET || '',
+  automationEnabled: process.env.AUTOMATION_ENABLED !== 'false',
+  automationRunInApi: process.env.AUTOMATION_RUN_IN_API !== 'false',
+  automationPollMs: Number(process.env.AUTOMATION_POLL_MS || 5000),
+  automationTimeZone: process.env.AUTOMATION_TIME_ZONE || 'Asia/Kolkata',
+  automationReportHour: Number(process.env.AUTOMATION_REPORT_HOUR || 9),
+  publicApiBaseUrl: process.env.PUBLIC_API_BASE_URL || '',
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || '',
+  twilioWhatsappFrom: process.env.TWILIO_WHATSAPP_FROM || '',
+  twilioInsightsContentSid: process.env.TWILIO_INSIGHTS_CONTENT_SID || '',
+  groqApiKey: process.env.GROQ_API_KEY || '',
+  groqModel: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+  ocrSpaceApiKey: process.env.OCR_SPACE_API_KEY || '',
+  ocrMaxFileBytes: Number(process.env.OCR_MAX_FILE_BYTES || 1048576),
   ingestionMaxBodyBytes: Number(process.env.INGESTION_MAX_BODY_BYTES || 15728640),
   orphanCleanupIntervalMs: Number(process.env.ORPHAN_CLEANUP_INTERVAL_MS || 60000),
   extractionConfidenceThreshold: Number(process.env.EXTRACTION_CONFIDENCE_THRESHOLD || process.env.OCR_CONFIDENCE_THRESHOLD || 0.8),
@@ -46,6 +62,17 @@ function validateEnv() {
 
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+
+  if (!Number.isInteger(env.automationPollMs) || env.automationPollMs < 1000) {
+    throw new Error('AUTOMATION_POLL_MS must be an integer >= 1000');
+  }
+  if (!Number.isInteger(env.automationReportHour) || env.automationReportHour < 0 || env.automationReportHour > 23) {
+    throw new Error('AUTOMATION_REPORT_HOUR must be an integer from 0 to 23');
+  }
+  new Intl.DateTimeFormat('en', { timeZone: env.automationTimeZone }).format();
+  if (!Number.isInteger(env.ocrMaxFileBytes) || env.ocrMaxFileBytes <= 0) {
+    throw new Error('OCR_MAX_FILE_BYTES must be a positive integer');
   }
 
   if (env.extractionConfidenceThreshold < 0 || env.extractionConfidenceThreshold > 1) {

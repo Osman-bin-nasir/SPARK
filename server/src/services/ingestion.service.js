@@ -249,12 +249,25 @@ async function createTransactionAndDocument({
   documentId,
   duplicateMatch,
   forcePendingReview,
+  automationJobId,
   document
 }) {
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
+
+    if (automationJobId) {
+      // Fence a reclaimed job even if an old runner lost its advisory-lock
+      // connection while a provider request was still in flight.
+      const { rows } = await client.query('SELECT progress FROM automation_jobs WHERE id = $1 FOR UPDATE', [automationJobId]);
+      if (!rows[0]) throw new Error('Automation job does not exist');
+      if (rows[0].progress.ingestion) {
+        await ingestionRepository.markIngestionJobCompleted(ingestionJobId, client);
+        await client.query('COMMIT');
+        return rows[0].progress.ingestion;
+      }
+    }
 
     const { vendor_id, confidence_score } = await vendorService.resolveVendor(
       normalizedPayload.vendor,
@@ -319,9 +332,7 @@ async function createTransactionAndDocument({
     }, client);
 
     await ingestionRepository.markIngestionJobCompleted(ingestionJobId, client);
-    await client.query('COMMIT');
-
-    return {
+    const result = {
       ingestion_job_id: ingestionJobId,
       transaction_id: transaction.id,
       document_id: documentId,
@@ -329,6 +340,14 @@ async function createTransactionAndDocument({
       ingested: true,
       is_duplicate: false
     };
+    if (automationJobId) {
+      await require('../db/automation.repository').checkpoint(automationJobId, { ingestion: result }, client);
+      await require('../db/automation.repository').enqueue({
+        key: `sheets:${automationJobId}`, kind: 'sheets', payload: { organizationId }
+      }, client);
+    }
+    await client.query('COMMIT');
+    return result;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -345,7 +364,19 @@ async function markIngestionJobFailedSafely(ingestionJobId, error) {
   }
 }
 
-async function ingestDocument({ organizationId, payload, file }) {
+async function cleanupUploadedFile(organizationId, drive, fileId) {
+  try {
+    await deleteFile(drive, fileId);
+  } catch (_) {
+    try {
+      await ingestionRepository.createOrphanDriveFile({ id: crypto.randomUUID(), organizationId, driveFileId: fileId });
+    } catch (_) {
+      // Preserve the ingestion result when cleanup bookkeeping is unavailable.
+    }
+  }
+}
+
+async function ingestDocument({ organizationId, payload, file, automationJobId }) {
   if (!organizationId) {
     throw new HttpError(400, 'X-Organization-Id header is required');
   }
@@ -414,7 +445,7 @@ async function ingestDocument({ organizationId, payload, file }) {
     });
 
     try {
-      return await createTransactionAndDocument({
+      const result = await createTransactionAndDocument({
         organizationId,
         normalizedPayload: nextPayload,
         ingestionJobId: ingestionJob.id,
@@ -422,6 +453,7 @@ async function ingestDocument({ organizationId, payload, file }) {
         documentId: prepared.documentId,
         duplicateMatch: prepared.duplicateMatch,
         forcePendingReview: shouldRouteToPendingReview(effectiveConfidence, env.extractionConfidenceThreshold),
+        automationJobId,
         document: {
           storage_kind: 'google_drive',
           drive_file_id: uploadedFile.id,
@@ -438,20 +470,12 @@ async function ingestDocument({ organizationId, payload, file }) {
           extraction_error: extraction.extraction_error
         }
       });
-    } catch (dbError) {
-      try {
-        await deleteFile(drive, uploadedFile.id);
-      } catch (_deleteError) {
-        try {
-          await ingestionRepository.createOrphanDriveFile({
-            id: crypto.randomUUID(),
-            organizationId,
-            driveFileId: uploadedFile.id
-          });
-        } catch (_orphanError) {
-          // Preserve the original ingestion failure if cleanup bookkeeping also fails.
-        }
+      if (result.document_id !== prepared.documentId) {
+        await cleanupUploadedFile(organizationId, drive, uploadedFile.id);
       }
+      return result;
+    } catch (dbError) {
+      await cleanupUploadedFile(organizationId, drive, uploadedFile.id);
 
       throw dbError;
     }
@@ -461,7 +485,7 @@ async function ingestDocument({ organizationId, payload, file }) {
   }
 }
 
-async function ingestText({ organizationId, payload }) {
+async function ingestText({ organizationId, payload, automationJobId }) {
   if (!organizationId) {
     throw new HttpError(400, 'X-Organization-Id header is required');
   }
@@ -516,6 +540,7 @@ async function ingestText({ organizationId, payload }) {
       documentId: prepared.documentId,
       duplicateMatch: prepared.duplicateMatch,
       forcePendingReview: shouldRouteToPendingReview(effectiveConfidence, env.extractionConfidenceThreshold),
+      automationJobId,
       document: {
         storage_kind: 'inline_text',
         drive_file_id: null,

@@ -104,6 +104,7 @@ function startBackgroundWorkers() {
   }
 
   workersStarted = true;
+  require('./automation.service').startAutomation();
   shutdownRequested = false;
   orphanCleanupDelayMs = env.orphanCleanupIntervalMs;
 
@@ -111,6 +112,7 @@ function startBackgroundWorkers() {
 }
 
 async function stopBackgroundWorkers() {
+  await require('./automation.service').stopAutomation();
   shutdownRequested = true;
   workersStarted = false;
 

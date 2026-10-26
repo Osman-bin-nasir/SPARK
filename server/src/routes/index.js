@@ -16,6 +16,7 @@ const insightsRoutes = require('./insights.routes');
 const router = express.Router();
 
 router.use('/auth', authRoutes);
+router.use('/webhooks', require('./bot-webhooks.routes'));
 router.use('/dashboard', dashboardRoutes);
 router.use('/google-drive', googleDriveRoutes);
 router.use('/ingestion', ingestionRoutes);

@@ -10,6 +10,7 @@
     "migrate": "node src/scripts/migrate.js",
     "start": "node src/server.js",
     "start:worker": "node src/worker.js",
+    "automation": "node src/scripts/automation.js",
     "seed:startup-demo": "node src/db/seed-realistic.js",
     "test": "node --test"
   },
@@ -24,9 +25,11 @@
     "googleapis": "^171.4.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "pg": "^8.12.0"
+    "pg": "^8.12.0",
+    "twilio": "^5.13.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.12",
     "nodemon": "^3.1.4"
   }
 }

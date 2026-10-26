@@ -1,3 +1,20 @@
+x-automation-environment: &automation-environment
+  AUTOMATION_ENABLED: ${AUTOMATION_ENABLED:-true}
+  AUTOMATION_TIME_ZONE: ${AUTOMATION_TIME_ZONE:-Asia/Kolkata}
+  AUTOMATION_REPORT_HOUR: ${AUTOMATION_REPORT_HOUR:-9}
+  AUTOMATION_POLL_MS: ${AUTOMATION_POLL_MS:-5000}
+  PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+  TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+  TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+  TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+  TWILIO_INSIGHTS_CONTENT_SID: ${TWILIO_INSIGHTS_CONTENT_SID:-}
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+  OCR_SPACE_API_KEY: ${OCR_SPACE_API_KEY:-}
+  OCR_MAX_FILE_BYTES: ${OCR_MAX_FILE_BYTES:-1048576}
+
 services:
   # PostgreSQL Database
   postgres:
@@ -30,6 +47,8 @@ services:
       - "${APP_PORT:-8000}:4000"
     environment:
       # Node environment
+      <<: *automation-environment
+      AUTOMATION_RUN_IN_API: ${AUTOMATION_RUN_IN_API:-true}
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 4000
 
@@ -88,6 +107,7 @@ services:
       dockerfile: Dockerfile.worker
     container_name: spark-worker
     environment:
+      <<: *automation-environment
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: "postgresql://${DB_USER:-spark_user}:${DB_PASSWORD:-spark_password}@postgres:5432/${DB_NAME:-spark_db}"
       DATABASE_SSL: "false"
@@ -96,6 +116,8 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_OAUTH_STATE_SECRET: ${GOOGLE_OAUTH_STATE_SECRET:-}
       GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8000}
     depends_on:
       app:
         condition: service_healthy

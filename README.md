@@ -1,5 +1,7 @@
 # SPARK — Financial Operations Platform
 
+Native Telegram/WhatsApp automation runs without n8n. See [migration and cutover instructions](./N8N_MIGRATION.md).
+
 SPARK is a startup-focused financial operations platform designed to replace spreadsheet-heavy expense tracking with an intelligent, automated, and collaborative workflow. By combining multi-channel document intake (Telegram, WhatsApp, and API), AI-assisted extraction, strict transaction deduplication, pgvector-based semantic search, founder-facing dashboards, and real-time Google Sheets mirroring, SPARK provides startups with automated expense management and cash runway calculations.
 
 ---
