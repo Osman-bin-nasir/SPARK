@@ -568,9 +568,11 @@ function App() {
     return <LandingPage isAuthenticated={Boolean(token)} />;
   }
 
+  const authShellClass = 'auth-shell';
+
   if (normalizedPathname === '/login' || normalizedPathname === '/signup') {
     if (token) return <Navigate replace to="/dashboard" />;
-    return <main className="app">{authContent}</main>;
+    return <main className={authShellClass}>{authContent}</main>;
   }
 
   const renderAuthenticatedRoutes = () => (
@@ -680,7 +682,7 @@ function App() {
   );
 
   return (
-    <main className={isDashboardSurface ? 'app app-dashboard' : 'app'}>
+    <main className={isDashboardSurface ? 'app app-dashboard' : authShellClass}>
       {token ? renderAuthenticatedRoutes() : renderUnauthenticatedRoutes()}
     </main>
   );
