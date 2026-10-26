@@ -413,7 +413,7 @@ The SPARK platform uses environment variables configured either inside the `serv
 
 | Env Variable Name | Required? | Default/Example | Purpose |
 | :--- | :--- | :--- | :--- |
-| **`PORT`** | No | `4000` | Local HTTP Port for Express Server. |
+| **`PORT`** | No | `4000` locally | Uses the hosting platform's supplied port. On Render, omit this variable from your imported `.env`; Render supplies it automatically. |
 | **`NODE_ENV`** | No | `development` | Server runtime mode (`development`, `production`). |
 | **`DATABASE_URL`** | Yes | `postgresql://...` | Connection URI pointing to a pgvector-enabled PostgreSQL. |
 | **`DATABASE_SSL`** | No | `true` | Must be `true` for hosted Neon/AWS databases that require TLS. |

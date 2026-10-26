@@ -21,7 +21,7 @@ USER nodejs
 EXPOSE 4000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "const req=require('http').get('http://localhost:4000/health',(res)=>{res.resume();res.on('end',()=>process.exit(res.statusCode===200?0:1))});req.on('error',()=>process.exit(1));req.setTimeout(2000,()=>{req.destroy();process.exit(1)})"
+    CMD node -e "const req=require('http').get({host:'127.0.0.1',port:process.env.PORT||4000,path:'/health'},(res)=>{res.resume();res.on('end',()=>process.exit(res.statusCode===200?0:1))});req.on('error',()=>process.exit(1));req.setTimeout(2000,()=>{req.destroy();process.exit(1)})"
 
 ENTRYPOINT ["dumb-init", "--"]
 
