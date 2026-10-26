@@ -94,9 +94,24 @@ async function ensureTransactionSheets({ sheets, spreadsheetId, spreadsheet }) {
         requests
       }
     });
+    return getSpreadsheet(sheets, spreadsheetId);
   }
 
-  return getSpreadsheet(sheets, spreadsheetId);
+  return spreadsheet;
+}
+
+async function replaceTransactionWindows({ sheets, spreadsheetId, windows }) {
+  await sheets.spreadsheets.values.batchClear({
+    spreadsheetId,
+    requestBody: { ranges: windows.map(window => `${window.sheetTitle}!A:Z`) }
+  });
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      valueInputOption: 'RAW',
+      data: windows.map(window => ({ range: `${window.sheetTitle}!A1`, values: window.rows }))
+    }
+  });
 }
 
 async function replaceSheetRows({
@@ -215,5 +230,6 @@ module.exports = {
   ensureTransactionSheets,
   formatTransactionSheets,
   getSpreadsheet,
-  replaceSheetRows
+  replaceSheetRows,
+  replaceTransactionWindows
 };

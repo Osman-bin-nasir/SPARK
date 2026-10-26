@@ -1,7 +1,7 @@
 const app = require('./app');
 const { env, validateEnv } = require('./config/env');
 const { assertDatabaseReady } = require('./db/init');
-const { startAutomation, stopAutomation } = require('./services/automation.service');
+const { startBackgroundWorkers, stopBackgroundWorkers } = require('./services/background-workers.service');
 const { pool } = require('./db/pool');
 let server;
 let shuttingDown = false;
@@ -10,7 +10,7 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   const closed = new Promise(resolve => server ? server.close(resolve) : resolve());
-  await stopAutomation();
+  await stopBackgroundWorkers();
   await closed;
   await pool.end();
 }
@@ -24,7 +24,7 @@ async function start() {
     await assertDatabaseReady();
     server = app.listen(env.port, () => {
       console.log(`Server running on port ${env.port}`);
-      if (env.automationRunInApi) startAutomation();
+      if (env.automationRunInApi) startBackgroundWorkers();
     });
   } catch (error) {
     console.error('Failed to start server:', error.message);

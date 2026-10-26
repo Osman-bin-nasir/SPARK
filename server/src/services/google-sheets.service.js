@@ -5,6 +5,8 @@ const driveClient = require('../integrations/google-drive/drive.client');
 const sheetsClient = require('../integrations/google-sheets/sheets.client');
 const { HttpError } = require('../utils/http-error');
 const googleDriveService = require('./google-drive.service');
+const { createHash } = require('node:crypto');
+const inFlightSyncs = new Map();
 
 function getGoogleApiStatus(error) {
   return error?.code || error?.status || error?.response?.status || null;
@@ -34,7 +36,7 @@ function buildSheetRows(transactions) {
   return [
     sheetsClient.TRANSACTION_SHEET_HEADERS,
     ...transactions.map((transaction) => ([
-      transaction.transaction_date || '',
+      transactionDay(transaction.transaction_date),
       transaction.vendor || '',
       transaction.transaction_type || '',
       transaction.category || '',
@@ -50,6 +52,13 @@ function buildSheetRows(transactions) {
       transaction.created_at ? new Date(transaction.created_at).toISOString() : ''
     ]))
   ];
+}
+
+function transactionDay(value) {
+  if (value instanceof Date) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+  return String(value || '').slice(0, 10);
 }
 
 function normalizeSheetsError(error) {
@@ -102,25 +111,22 @@ async function resolveTransactionsSpreadsheet({
 async function shareSpreadsheetWithOrganization({
   drive,
   spreadsheetId,
-  organizationId
+  emails
 }) {
-  const members = await organizationsRepository.listOrganizationMembers({ organizationId });
-  const emails = members
-    .map((member) => member.email)
-    .filter(Boolean);
-
   try {
     await driveClient.ensureFileEditors({
       drive,
       fileId: spreadsheetId,
       emails
     });
+    return true;
   } catch (error) {
     console.warn('Failed to share Google Sheets file with all organization members:', error.message);
+    return false;
   }
 }
 
-async function getOrganizationTransactionsSheet({
+async function syncOrganizationTransactionsSheet({
   organizationId,
   selectedRangeKey = '1m'
 }) {
@@ -151,35 +157,39 @@ async function getOrganizationTransactionsSheet({
     });
 
     const today = new Date();
-    const transactionsByWindow = await Promise.all(
-      supportedWindows.map((window) => transactionsRepository.listTransactionsForGoogleSheet({
-        organizationId,
-        startDate: subtractMonths(today, window.months)
-      }))
-    );
+    const transactions = await transactionsRepository.listTransactionsForGoogleSheet({
+      organizationId,
+      startDate: subtractMonths(today, Math.max(...supportedWindows.map(window => window.months)))
+    });
+    const transactionsByWindow = supportedWindows.map(window => {
+      const startDate = subtractMonths(today, window.months);
+      return transactions.filter(transaction => transactionDay(transaction.transaction_date) >= startDate);
+    });
 
-    await Promise.all(
-      supportedWindows.map((window, index) => sheetsClient.replaceSheetRows({
-        sheets,
-        spreadsheetId: spreadsheet.spreadsheet_id,
-        sheetTitle: window.label,
-        rows: buildSheetRows(transactionsByWindow[index])
-      }))
-    );
-
-    spreadsheet = await sheetsClient.getSpreadsheet(sheets, spreadsheet.spreadsheet_id);
-
-    await sheetsClient.formatTransactionSheets({
+    await sheetsClient.replaceTransactionWindows({
       sheets,
       spreadsheetId: spreadsheet.spreadsheet_id,
-      spreadsheet
+      windows: supportedWindows.map((window, index) => ({
+        sheetTitle: window.label, rows: buildSheetRows(transactionsByWindow[index])
+      }))
     });
 
-    await shareSpreadsheetWithOrganization({
-      drive,
-      spreadsheetId: spreadsheet.spreadsheet_id,
-      organizationId
-    });
+    const previousMetadata = integration.transactions_sheet_metadata || {};
+    const layoutKey = JSON.stringify([spreadsheet.spreadsheet_id, spreadsheet.sheets, 1]);
+    const metadata = { ...previousMetadata };
+    if (metadata.layout !== layoutKey) {
+      await sheetsClient.formatTransactionSheets({ sheets, spreadsheetId: spreadsheet.spreadsheet_id, spreadsheet });
+      metadata.layout = layoutKey;
+    }
+    const members = await organizationsRepository.listOrganizationMembers({ organizationId });
+    const emails = [...new Set(members.map(member => String(member.email || '').trim().toLowerCase()).filter(Boolean))].sort();
+    const sharingKey = createHash('sha256').update(JSON.stringify([spreadsheet.spreadsheet_id, emails])).digest('hex');
+    if (metadata.sharing !== sharingKey && await shareSpreadsheetWithOrganization({ drive, spreadsheetId: spreadsheet.spreadsheet_id, emails })) {
+      metadata.sharing = sharingKey;
+    }
+    if (JSON.stringify(metadata) !== JSON.stringify(previousMetadata)) {
+      await googleIntegrationsRepository.setTransactionsSheetMetadata({ organizationId, metadata });
+    }
 
     const tabs = supportedWindows.map((window, index) => {
       const sheet = spreadsheet.sheets.find((item) => item.title === window.label);
@@ -204,6 +214,23 @@ async function getOrganizationTransactionsSheet({
   } catch (error) {
     throw normalizeSheetsError(error);
   }
+}
+
+async function getOrganizationTransactionsSheet({ organizationId, selectedRangeKey = '1m', afterCurrentSync = false }) {
+  if (!sheetsClient.TRANSACTION_SHEET_WINDOWS.some(window => window.key === selectedRangeKey)) {
+    throw new HttpError(400, 'range must be one of 1m, 3m, 6m, or 12m');
+  }
+  // A queued dirty sync must read again after an older UI refresh: that refresh
+  // may have read its snapshot before the new receipt committed.
+  if (afterCurrentSync && inFlightSyncs.has(organizationId)) await inFlightSyncs.get(organizationId);
+  // Concurrent opens share one refresh on a single free-tier API.
+  if (!inFlightSyncs.has(organizationId)) {
+    const sync = syncOrganizationTransactionsSheet({ organizationId })
+      .finally(() => inFlightSyncs.delete(organizationId));
+    inFlightSyncs.set(organizationId, sync);
+  }
+  const result = await inFlightSyncs.get(organizationId);
+  return { ...result, selected_tab: result.tabs.find(tab => tab.range === selectedRangeKey) };
 }
 
 module.exports = {

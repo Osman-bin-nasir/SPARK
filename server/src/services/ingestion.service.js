@@ -253,6 +253,7 @@ async function createTransactionAndDocument({
   document
 }) {
   const client = await pool.connect();
+  let sheetsJob;
 
   try {
     await client.query('BEGIN');
@@ -342,11 +343,12 @@ async function createTransactionAndDocument({
     };
     if (automationJobId) {
       await require('../db/automation.repository').checkpoint(automationJobId, { ingestion: result }, client);
-      await require('../db/automation.repository').enqueue({
+      sheetsJob = await require('../db/automation.repository').enqueue({
         key: `sheets:${automationJobId}`, kind: 'sheets', payload: { organizationId }
       }, client);
     }
     await client.query('COMMIT');
+    if (sheetsJob) require('./automation-events').emit('work', 'sheets', sheetsJob.available_at);
     return result;
   } catch (error) {
     await client.query('ROLLBACK');

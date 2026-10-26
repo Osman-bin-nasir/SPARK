@@ -41,6 +41,7 @@ async function createOrphanDriveFile({ id, organizationId, driveFileId }, client
     [id, organizationId, driveFileId]
   );
 
+  if (client === pool) require('../services/automation-events').emit('orphans');
   return rows[0];
 }
 
@@ -49,18 +50,15 @@ async function claimOrphanDriveFiles(limit = 10, client = pool) {
     `WITH candidates AS (
        SELECT id
        FROM orphan_drive_files
-       WHERE cleanup_status = 'pending'
+       WHERE cleanup_status IN ('pending', 'failed') AND cleanup_attempts < 5
+         AND next_cleanup_at <= NOW()
        ORDER BY created_at ASC
        LIMIT $1
        FOR UPDATE SKIP LOCKED
      )
-     SELECT odf.id,
-            odf.organization_id,
-            odf.drive_file_id,
-            odf.cleanup_status,
-            odf.created_at
-     FROM orphan_drive_files odf
-     INNER JOIN candidates c ON c.id = odf.id`,
+     UPDATE orphan_drive_files odf SET cleanup_attempts = cleanup_attempts + 1,
+       next_cleanup_at = NOW() + INTERVAL '1 day'
+     FROM candidates c WHERE c.id = odf.id RETURNING odf.*`,
     [limit]
   );
 

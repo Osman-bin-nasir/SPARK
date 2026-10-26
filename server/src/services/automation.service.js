@@ -11,12 +11,20 @@ const telegram = require('./telegram.service');
 const whatsapp = require('./whatsapp.service');
 const sheets = require('./google-sheets.service');
 const googleDrive = require('./google-drive.service');
+const events = require('./automation-events');
+const { createAutomationRunner } = require('./automation-runner');
 
 const HELP = 'Send one receipt image/PDF or an expense note with amount, vendor and date. Commands: /login, /join CODE, /insights weekly, /insights monthly. Open a workspace invitation to join it.';
-let timer;
-let running;
+let reportTimer;
+let reportRunning;
+let reportsRequested = false;
+let runner;
+let listener;
+let listenerTimer;
+let listenerConnecting;
+let listenerCleanup;
 let stopping = true;
-let lastScheduledAt = 0;
+const reportCache = new Map();
 
 function platformService(platform) {
   return platform === 'telegram' ? telegram : whatsapp;
@@ -67,9 +75,9 @@ function reportSlots(now = new Date()) {
   return { weekly: weekly.toISOString(), monthly: monthly.toISOString() };
 }
 
-async function scheduleReports(now = new Date()) {
+async function scheduleReports(now = new Date(), organizationId) {
   for (const [period, anchor] of Object.entries(reportSlots(now))) {
-    const scheduled = await organizations.listScheduledOrganizations({ period });
+    const scheduled = await organizations.listScheduledOrganizations({ period, organizationId });
     for (const organization of scheduled) {
       for (const receiver of organization.receivers) {
         for (const platform of ['telegram', 'whatsapp']) {
@@ -147,70 +155,148 @@ async function processInbound(job) {
 async function processJob(job) {
   if (job.kind === 'inbound') return processInbound(job);
   if (job.kind === 'reply') return bots.send(job.payload);
-  if (job.kind === 'sheets') return sheets.getOrganizationTransactionsSheet({ organizationId: job.payload.organizationId });
+  if (job.kind === 'sheets') return sheets.getOrganizationTransactionsSheet({ organizationId: job.payload.organizationId, afterCurrentSync: true });
   if (job.kind === 'insights') {
     const p = job.payload;
     // Preferences, memberships and linked destinations can change after enqueueing.
-    const current = await organizations.listScheduledOrganizations({ period: p.period });
+    const current = await organizations.listScheduledOrganizations({ period: p.period, organizationId: p.organizationId });
     const org = current.find(o => o.organization_id === p.organizationId);
     if (!org?.receivers.some(r => r.user_id === p.userId && String(r[`${p.platform}_id`]) === p.recipient)) return;
-    const text = job.progress.report || formatInsights(await reportFor(p.organizationId, p.period, new Date(p.anchor)), org.organization_name);
+    const cacheKey = `${p.organizationId}:${p.period}:${p.anchor}`;
+    const cached = reportCache.get(cacheKey);
+    let text = job.progress.report || (cached?.expires > Date.now() ? cached.text : null);
+    if (!text) {
+      text = formatInsights(await reportFor(p.organizationId, p.period, new Date(p.anchor)), org.organization_name);
+      if (reportCache.size >= 50) reportCache.delete(reportCache.keys().next().value);
+      reportCache.set(cacheKey, { text, expires: Date.now() + 600000 });
+    }
     await jobs.checkpoint(job.id, { report: text });
     return bots.send({ ...p, text, scheduled: true });
   }
   throw Object.assign(new Error('Unknown automation job'), { permanent: true });
 }
 
-async function tick() {
-  const client = await pool.connect();
-  let locked = false;
-  try {
-    const { rows } = await client.query('SELECT pg_try_advisory_lock(73921, 1) AS locked');
-    locked = rows[0].locked;
-    if (!locked) return;
-    if (Date.now() - lastScheduledAt >= 60000) {
-      try { await scheduleReports(); lastScheduledAt = Date.now(); }
-      catch (_) { console.error('Automation scheduling failed; will retry.'); }
-    }
-    for (let i = 0; i < 5 && !stopping; i++) {
-      const job = await jobs.claim(client);
-      if (!job) break;
-      try { await processJob(job); await jobs.complete(job.id, client); }
-      catch (error) {
-        const permanent = Boolean(error.permanent || (error.statusCode >= 400 && error.statusCode < 500));
-        const exhausted = await jobs.fail(job, { permanent, retryAfter: error.retryAfter }, client);
-        console.error(`Automation job ${job.id} ${exhausted ? 'failed' : 'will retry'}.`);
-        if (exhausted && job.kind === 'inbound') {
-          // A failure notice must not become the successful reply checkpoint:
-          // operators can fix credentials and retry this same inbound job later.
-          await jobs.enqueue({ key: `failure-reply:${job.id}:${job.attempts}`, kind: 'reply', payload: {
-            platform: job.payload.platform, recipient: job.payload.recipient,
-            text: error.publicMessage || 'We could not process this submission. Please check your SPARK integrations and send the receipt again.'
-          } });
-        }
-      }
-    }
-  } finally {
-    try { if (locked) await client.query('SELECT pg_advisory_unlock(73921, 1)'); }
-    finally { client.release(); }
+async function jobFailed(job, error, client) {
+  const permanent = Boolean(error.permanent || (error.statusCode >= 400 && error.statusCode < 500 && ![408, 429].includes(error.statusCode)));
+  const exhausted = await jobs.fail(job, { permanent, retryAfter: error.retryAfter }, client);
+  console.error(`Automation job ${job.id} ${exhausted ? 'failed' : 'will retry'}.`);
+  if (exhausted && job.kind === 'inbound') {
+    await jobs.enqueue({ key: `failure-reply:${job.id}:${job.attempts}`, kind: 'reply', payload: {
+      platform: job.payload.platform, recipient: job.payload.recipient,
+      text: error.publicMessage || 'We could not process this submission. Please check your SPARK integrations and send the receipt again.'
+    } });
   }
 }
 
-function startAutomation() {
-  if (!env.automationEnabled || !stopping || (!bots.configured('telegram') && !bots.configured('whatsapp'))) return;
+function nextReportAt(now = new Date()) {
+  const slots = reportSlots(now);
+  // Find the next calendar boundary in the configured timezone, including DST.
+  // This is in-memory work; it never polls PostgreSQL to check the clock.
+  return new Date(Math.min(...['weekly', 'monthly'].map(period => {
+    let low = Math.floor(now.getTime() / 1000);
+    let high = low + 32 * 86400;
+    while (high - low > 1) {
+      const middle = Math.floor((low + high) / 2);
+      if (reportSlots(new Date(middle * 1000))[period] === slots[period]) low = middle;
+      else high = middle;
+    }
+    return high * 1000;
+  })));
+}
+
+function runReports() {
+  if (stopping) return;
+  reportsRequested = true;
+  if (reportRunning) return;
+  clearTimeout(reportTimer);
+  reportsRequested = false;
+  reportRunning = (async () => {
+    let delay;
+    try {
+      await scheduleReports();
+      delay = nextReportAt().getTime() - Date.now();
+    } catch (_) {
+      console.error('Automation scheduling failed; will retry.');
+      delay = 60000;
+    }
+    if (!stopping) {
+      reportTimer = setTimeout(runReports, reportsRequested ? 0 : Math.max(1000, delay));
+      reportTimer.unref?.();
+    }
+  })().finally(() => { reportRunning = null; });
+}
+
+function reportsChanged() {
+  if (stopping) return;
+  if (reportRunning) { reportsRequested = true; return; }
+  clearTimeout(reportTimer);
+  reportTimer = setTimeout(runReports, 1000);
+  reportTimer.unref?.();
+}
+
+function listenForWork() {
+  listenerTimer = null;
+  listenerConnecting = (async () => {
+    let client;
+    try {
+      client = await pool.connect();
+      if (stopping) { client.release(); return; }
+      const onError = () => {
+        if (listener !== client) return;
+        listener = null;
+        listenerCleanup?.();
+        client.release(true);
+        if (!stopping) listenerTimer = setTimeout(listenForWork, 60000);
+      };
+      listener = client;
+      client.on('error', onError);
+      const onNotification = message => {
+        if (message.channel === 'spark_automation') runner?.wake(message.payload);
+      };
+      client.on('notification', onNotification);
+      listenerCleanup = () => {
+        client.removeListener('error', onError);
+        client.removeListener('notification', onNotification);
+      };
+      await client.query('LISTEN spark_automation');
+      runner.wake(); // Cover commits before LISTEN became active.
+    } catch (_) {
+      if (client && listener === client) { listener = null; listenerCleanup?.(); client.release(true); }
+      if (!stopping && !listenerTimer) listenerTimer = setTimeout(listenForWork, 60000);
+    }
+  })();
+}
+
+function startAutomation({ listen = false } = {}) {
+  if (!env.automationEnabled || !stopping) return;
   stopping = false;
-  async function loop() {
-    running = tick().catch(() => console.error('Automation runner failed; will retry.'));
-    await running;
-    if (!stopping) timer = setTimeout(loop, env.automationPollMs);
-  }
-  loop();
+  runner = createAutomationRunner({ pool, jobs, processJob, onFailure: jobFailed, recoveryMs: env.automationRecoveryMs });
+  events.on('work', runner.wake);
+  events.on('reports-changed', reportsChanged);
+  runner.start();
+  if (listen) listenForWork();
+  if (bots.configured('telegram') || bots.configured('whatsapp')) runReports();
 }
 
 async function stopAutomation() {
   stopping = true;
-  clearTimeout(timer);
-  await running;
+  clearTimeout(reportTimer);
+  clearTimeout(listenerTimer);
+  await listenerConnecting;
+  if (listener) {
+    const client = listener;
+    listener = null;
+    listenerCleanup?.();
+    try { await client.query('UNLISTEN spark_automation'); client.release(); }
+    catch (_) { client.release(true); }
+  }
+  if (runner) {
+    events.off('work', runner.wake);
+    events.off('reports-changed', reportsChanged);
+    await runner.stop();
+  }
+  await reportRunning;
+  reportCache.clear();
 }
 
-module.exports = { startAutomation, stopAutomation, processJob, processInbound, scheduleReports, reportSlots, formatInsights };
+module.exports = { startAutomation, stopAutomation, processJob, processInbound, scheduleReports, reportSlots, nextReportAt, formatInsights };

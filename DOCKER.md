@@ -144,6 +144,10 @@ docker exec -it spark-app sh
 ## Worker Service (Optional)
 
 The worker service runs background jobs. It's defined with a `worker` profile and won't start by default.
+The API runs automation and cleanup by default. To move them into a dedicated
+worker, set `AUTOMATION_RUN_IN_API=false` for both services before enabling that
+profile. Dedicated workers use a persistent PostgreSQL notification connection;
+use the default API mode for free hosting so the database can become idle.
 
 ```bash
 # Start with worker

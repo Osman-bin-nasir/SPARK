@@ -415,7 +415,7 @@ The SPARK platform uses environment variables configured either inside the `serv
 | **`GOOGLE_TOKEN_ENCRYPTION_KEY`**| No | `32-byte-hex-key` | Cryptographic key to encrypt/decrypt Drive tokens in DB. |
 | **`WEBHOOK_SECRET`** | Yes | `your-webhook-secret` | HMAC key to verify Telegram, WhatsApp, and scheduling requests. |
 | **`INGESTION_MAX_BODY_BYTES`**| No | `15728640` | Ingestion payload limit (defaults to 15MB). |
-| **`ORPHAN_CLEANUP_INTERVAL_MS`**| No | `60000` | Delay between orphan Drive file worker runs (default: 60s). |
+| **`ORPHAN_CLEANUP_INTERVAL_MS`**| No | `86400000` | Daily fallback cleanup; newly tracked orphan files wake cleanup after one minute. |
 | **`EXTRACTION_CONFIDENCE_THRESHOLD`**| No| `0.80` | Score threshold below which transactions route to pending review. |
 | **`EXTRACTION_MAX_TEXT_CHARS`**| No| `12000` | Maximum characters processed from document text. |
 | **`RAG_MAX_TOP_K`** | No | `20` | Maximum number of transactions retrieved for RAG context. |
@@ -507,6 +507,8 @@ docker compose up --build
   docker exec spark-app npm run seed:startup-demo
   ```
 * To include the background worker service:
+  Set `AUTOMATION_RUN_IN_API=false` for both app and worker first. API mode is
+  recommended for free hosting; it already handles automation and cleanup.
   ```bash
   docker compose --profile worker up --build
   ```

@@ -15,6 +15,7 @@ function mapIntegration(row) {
     refresh_token_tag: row.refresh_token_tag,
     drive_root_folder_id: row.drive_root_folder_id,
     transactions_sheet_id: row.transactions_sheet_id,
+    transactions_sheet_metadata: row.transactions_sheet_metadata || {},
     created_at: row.created_at,
     updated_at: row.updated_at
   };
@@ -31,6 +32,7 @@ async function findByOrganizationId(organizationId, client = pool) {
             refresh_token_tag,
             drive_root_folder_id,
             transactions_sheet_id,
+            transactions_sheet_metadata,
             created_at,
             updated_at
      FROM google_integrations
@@ -126,9 +128,15 @@ async function setTransactionsSheetId({ organizationId, transactionsSheetId }, c
   return mapIntegration(rows[0]);
 }
 
+async function setTransactionsSheetMetadata({ organizationId, metadata }, client = pool) {
+  await client.query(`UPDATE google_integrations SET transactions_sheet_metadata = $2::jsonb
+    WHERE organization_id = $1`, [organizationId, JSON.stringify(metadata)]);
+}
+
 module.exports = {
   findByOrganizationId,
   mapIntegration,
   setTransactionsSheetId,
+  setTransactionsSheetMetadata,
   upsertIntegration
 };

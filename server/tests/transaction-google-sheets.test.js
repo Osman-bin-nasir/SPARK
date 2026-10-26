@@ -20,6 +20,8 @@ const originalEnsureTransactionSheets = sheetsClient.ensureTransactionSheets;
 const originalFormatTransactionSheets = sheetsClient.formatTransactionSheets;
 const originalGetSpreadsheet = sheetsClient.getSpreadsheet;
 const originalReplaceSheetRows = sheetsClient.replaceSheetRows;
+const originalReplaceTransactionWindows = sheetsClient.replaceTransactionWindows;
+const originalSetMetadata = googleIntegrationsRepository.setTransactionsSheetMetadata;
 const originalFindOrganizationById = organizationsRepository.findOrganizationById;
 const originalListOrganizationMembers = organizationsRepository.listOrganizationMembers;
 const originalGetOrganizationDriveClient = googleDriveService.getOrganizationDriveClient;
@@ -36,6 +38,8 @@ test.afterEach(() => {
   sheetsClient.formatTransactionSheets = originalFormatTransactionSheets;
   sheetsClient.getSpreadsheet = originalGetSpreadsheet;
   sheetsClient.replaceSheetRows = originalReplaceSheetRows;
+  sheetsClient.replaceTransactionWindows = originalReplaceTransactionWindows;
+  googleIntegrationsRepository.setTransactionsSheetMetadata = originalSetMetadata;
   organizationsRepository.findOrganizationById = originalFindOrganizationById;
   organizationsRepository.listOrganizationMembers = originalListOrganizationMembers;
   googleDriveService.getOrganizationDriveClient = originalGetOrganizationDriveClient;
@@ -52,6 +56,7 @@ test('getTransactionsGoogleSheet rejects unsupported ranges', async () => {
 });
 
 test('getTransactionsGoogleSheet syncs an organisation-specific spreadsheet', async () => {
+  googleIntegrationsRepository.setTransactionsSheetMetadata = async () => {};
   googleDriveService.getOrganizationDriveClient = async (organizationId) => {
     assert.equal(organizationId, 'org-1');
 
@@ -111,7 +116,7 @@ test('getTransactionsGoogleSheet syncs an organisation-specific spreadsheet', as
         vendor: 'Vercel',
         transaction_type: 'expense',
         category: 'software',
-        transaction_date: '2026-04-01',
+        transaction_date: new Date().toISOString().slice(0, 10),
         confidence_score: 0.97,
         duplicate_of_transaction_id: null,
         duplicate_score: null,
@@ -141,8 +146,8 @@ test('getTransactionsGoogleSheet syncs an organisation-specific spreadsheet', as
     };
   };
   const replaceCalls = [];
-  sheetsClient.replaceSheetRows = async ({ sheetTitle, rows }) => {
-    replaceCalls.push({ sheetTitle, rows });
+  sheetsClient.replaceTransactionWindows = async ({ windows }) => {
+    replaceCalls.push(...windows);
   };
   sheetsClient.formatTransactionSheets = async ({ spreadsheetId, spreadsheet }) => {
     assert.equal(spreadsheetId, 'sheet-123');
@@ -162,7 +167,7 @@ test('getTransactionsGoogleSheet syncs an organisation-specific spreadsheet', as
   assert.equal(result.selected_tab.url, 'https://docs.google.com/spreadsheets/d/sheet-123/edit#gid=13');
   assert.equal(result.tabs.length, 4);
   assert.equal(result.tabs[0].row_count, 1);
-  assert.equal(dateQueries.length, 4);
+  assert.equal(dateQueries.length, 1);
   assert.ok(dateQueries.every((query) => query.organizationId === 'org-1'));
   assert.deepEqual(
     replaceCalls.map((call) => call.sheetTitle),

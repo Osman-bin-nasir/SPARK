@@ -132,6 +132,15 @@ test('scheduling uses stable dedupe keys and omits WhatsApp without an approved 
   assert.equal(queued[0].key, queued[1].key);
   assert.equal(queued[0].payload.platform, 'telegram');
 });
+
+test('next report timer targets calendar boundaries including DST and coincident periods', () => {
+  env.automationTimeZone = 'Asia/Kolkata';
+  env.automationReportHour = 9;
+  assert.equal(automation.nextReportAt(new Date('2026-05-31T10:00:00Z')).toISOString(), '2026-06-01T03:30:00.000Z');
+  assert.equal(automation.nextReportAt(new Date('2026-06-01T03:30:00Z')).toISOString(), '2026-06-08T03:30:00.000Z');
+  env.automationTimeZone = 'America/New_York';
+  assert.equal(automation.nextReportAt(new Date('2026-03-07T15:00:00Z')).toISOString(), '2026-03-09T13:00:00.000Z');
+});
 test('scheduled reports revalidate recipient preferences before sending cached content', async () => {
   orgs.listScheduledOrganizations = async () => [];
   bots.send = async () => { throw new Error('must not disclose finance data'); };

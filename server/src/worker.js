@@ -1,4 +1,5 @@
-const { validateEnv } = require('./config/env');
+const { env, validateEnv } = require('./config/env');
+const { pool } = require('./db/pool');
 const { assertDatabaseReady } = require('./db/init');
 const { startBackgroundWorkers, stopBackgroundWorkers } = require('./services/background-workers.service');
 
@@ -14,6 +15,7 @@ async function shutdown(signal) {
 
   try {
     await stopBackgroundWorkers();
+    await pool.end();
     process.exit(0);
   } catch (error) {
     console.error('Worker shutdown failed:', error.message);
@@ -24,8 +26,9 @@ async function shutdown(signal) {
 async function start() {
   try {
     validateEnv();
+    if (env.automationRunInApi) throw new Error('Automation runs in the API. Do not start a second worker; set AUTOMATION_RUN_IN_API=false on both processes to use a dedicated worker.');
     await assertDatabaseReady();
-    startBackgroundWorkers();
+    startBackgroundWorkers({ listen: true });
     console.info('Background worker started.');
   } catch (error) {
     console.error('Failed to start worker:', error.message);

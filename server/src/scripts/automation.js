@@ -5,6 +5,18 @@ const { request } = require('../integrations/automation-http');
 
 async function main() {
   const command = process.argv[2] || 'status';
+  if (command === 'retention') {
+    const days = Number(process.argv[3] || 7);
+    if (!Number.isInteger(days) || days < 7) throw new Error('Retention must be at least 7 days');
+    const jobs = require('../db/automation.repository');
+    const preview = await jobs.retentionPreview(days);
+    console.log(`Completed jobs older than ${days} days: ${preview.jobs}; payload bytes: ${preview.bytes}.`);
+    if (process.argv.includes('--apply')) {
+      const count = await jobs.redactCompleted(days);
+      console.log(`Cleared payloads for ${count} completed jobs (maximum 500 per invocation). Dedupe keys and all failed/pending jobs are preserved.`);
+    } else console.log('Preview only. --apply irreversibly clears old completed payloads; it does not delete transactions or documents.');
+    return;
+  }
   if (command === 'status') {
     const { rows } = await pool.query(`SELECT kind, status, COUNT(*)::int AS count
       FROM automation_jobs GROUP BY kind, status ORDER BY kind, status`);
@@ -14,9 +26,11 @@ async function main() {
   if (command === 'retry') {
     const id = process.argv[3];
     if (!/^[0-9a-f-]{36}$/i.test(id || '')) throw new Error('Usage: npm run automation -- retry JOB_UUID');
-    const { rowCount } = await pool.query(`UPDATE automation_jobs SET status = 'pending',
-      attempts = 0, available_at = NOW(), last_error = NULL WHERE id = $1 AND status = 'failed'`, [id]);
-    console.log(`Requeued ${rowCount} failed job(s). Existing transaction checkpoints are preserved.`);
+    const { rowCount } = await pool.query(`WITH retried AS (UPDATE automation_jobs SET status = 'pending',
+      attempts = 0, available_at = NOW(), last_error = NULL
+      WHERE id = $1 AND status = 'failed' AND redacted_at IS NULL RETURNING kind)
+      SELECT pg_notify('spark_automation', kind) FROM retried`, [id]);
+    console.log(`Requeued ${rowCount} failed job(s). Existing transaction checkpoints are preserved. API mode discovers external retries at the hourly recovery check or after an API restart.`);
     return;
   }
   if (command === 'check') {
@@ -68,7 +82,7 @@ async function main() {
     console.log('WhatsApp scheduled reports require TWILIO_INSIGHTS_CONTENT_SID: an approved template with report text in variable {{1}}.');
     return;
   }
-  throw new Error('Commands: status, check, setup [--apply-telegram], retry JOB_UUID');
+  throw new Error('Commands: status, check, setup [--apply-telegram], retry JOB_UUID, retention DAYS [--apply]');
 }
 
 main().catch(error => {

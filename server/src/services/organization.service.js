@@ -136,6 +136,7 @@ async function updateOrganizationSettings({ organizationId, insightsFrequency, i
     throw new HttpError(404, 'Organization not found');
   }
 
+  require('./automation-events').emit('reports-changed');
   return organization;
 }
 
@@ -151,6 +152,7 @@ async function updateMember({ organizationId, targetUserId, role, receiveInsight
     throw new HttpError(404, 'Membership not found');
   }
 
+  require('./automation-events').emit('reports-changed');
   return membership;
 }
 

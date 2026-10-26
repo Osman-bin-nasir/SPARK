@@ -29,8 +29,57 @@ Google OAuth settings remain required.
 `AUTOMATION_ENABLED=false` disables native intake and processing.
 `AUTOMATION_RUN_IN_API=true` (default) runs automation in the existing API container.
 For a dedicated worker, set this to `false` on the API and run `npm run start:worker`.
-A PostgreSQL session advisory lock prevents concurrent automation runners across
-processes. Existing orphan Drive cleanup continues in the worker.
+Set it to `false` on that worker too. The worker refuses to start if the API is
+configured as owner. Docker production no longer starts a second worker by default.
+The optional dedicated worker uses PostgreSQL LISTEN/NOTIFY for immediate cross-process
+wakeups; this holds an idle connection, so **use API mode for free Neon/Render hosting**.
+Both modes require a direct PostgreSQL URL (not a transaction-pooler URL) because
+session advisory locks protect each processing lane across replicas.
+Orphan Drive cleanup also runs in API mode, so a second process is unnecessary.
+
+## Free-tier resource use
+
+The API wakes its queue after committed writes. Empty lanes stop querying. Retries
+and delayed Sheets jobs arm timers for their actual due times. An hourly recovery
+pass (`AUTOMATION_RECOVERY_MS=3600000`, minimum ten minutes) catches out-of-process
+changes and missed wakeups. An entirely empty queue uses roughly 360 SQL statements
+per day for recovery, instead of roughly 69,000 from the old five-second loop.
+`AUTOMATION_POLL_MS` is obsolete and ignored. `/health` performs no database work.
+SPARK does not ping its own host or set up an uptime monitor.
+
+Weekly/monthly report scheduling runs at startup, when preferences change, and at
+the next timezone-aware due boundary. Reports are cached for up to ten minutes
+(at most 50 workspace/period entries) across recipients; each recipient is still
+revalidated against the current workspace and preferences before delivery.
+
+There are three bounded, serial lanes: receipts/reports, replies, and Sheets.
+One slow provider call no longer blocks bot replies or all queue work. PostgreSQL
+absorbs bursts durably instead of starting unbounded concurrent OCR/API calls.
+`DATABASE_POOL_MAX=8` limits connections per process; idle connections expire after
+30 seconds. This improves burst handling, but free provider quotas still limit
+sustained traffic. Rate-limit backoff and the five-attempt cap remain in effect.
+A 429/503 pauses its entire processing lane for at least a minute (or the longer
+provider Retry-After); arriving jobs cannot bypass that cooldown and hammer the
+same exhausted provider quota.
+Daily retention clears completed queue payloads older than seven days by default
+(`AUTOMATION_RETENTION_DAYS=7`; `0` disables it). Cleanup uses batches of 500 and
+waits ten seconds between full batches. It preserves transactions, documents,
+dedupe keys, and pending/processing/failed jobs. The CLI preview below shows eligible
+content before manual cleanup; no production cleanup is performed by development tests.
+
+Sheets work is coalesced per workspace with a fixed 30-second deadline
+(`AUTOMATION_SHEETS_DELAY_MS`). New transactions during an active sync create a
+follow-up job. A failed sync can retain its own retry alongside that follow-up.
+Existing queued jobs remain intact during migration. Each refresh reads the last
+12 months once, partitions the four tabs in memory, and uses two batch value calls.
+Formatting runs only when the spreadsheet layout changes; sharing permissions are
+checked against Google only when the workspace email fingerprint changes.
+Concurrent Sheets opens in one API process share the in-flight refresh.
+
+Orphan cleanup runs at startup and daily by default, wakes one minute after a new
+orphan is tracked, and drains active batches ten seconds apart. Each file has a
+durable retry deadline and a five-attempt limit. No periodic embedding/Ollama worker
+is started by this automation; receipt AI/OCR requests remain remote.
 
 Groq's free plan is an account setting, not an API parameter. Keep your account on
 the free plan to avoid paid usage. Jobs respect rate-limit `Retry-After` responses
@@ -108,14 +157,23 @@ still work. Telegram scheduled reports need no template.
 # Run from server/
 npm run automation -- status
 npm run automation -- retry FAILED_JOB_UUID
+# Preview old completed payloads, without changing anything:
+npm run automation -- retention 7
+# Explicit, irreversible cleanup, at most 500 completed jobs per invocation:
+npm run automation -- retention 7 --apply
 npm test
 ```
 
 The `automation_jobs` table contains status, attempts, availability and progress.
 Provider errors use generic descriptions; credentials and provider response bodies
 are excluded from logs. Queue payloads contain receipt text and account-link tokens:
-restrict database access and apply your retention policy. Keep dedupe keys when
-purging old payloads. Retrying failed jobs preserves committed transaction checkpoints.
+restrict database access. Automatic retention runs daily; the CLI supports a preview
+and explicit `--apply` for manual batches. Both keep job IDs/dedupe keys and never clear
+pending, processing, failed, or recent completed jobs. It does not remove transactions
+or receipt documents. Dedupe tombstones remain small but still grow with event count.
+Retrying failed jobs preserves committed transaction checkpoints. In API mode, an
+external CLI retry is found by the next hourly recovery pass or an API restart;
+dedicated-worker mode receives it immediately via NOTIFY.
 
 API references: [Groq limits](https://console.groq.com/docs/rate-limits),
 [structured outputs](https://console.groq.com/docs/structured-outputs),

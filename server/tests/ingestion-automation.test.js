@@ -7,6 +7,7 @@ const organizations = require('../src/db/organizations.repository');
 const vendors = require('../src/services/vendor.service');
 const jobs = require('../src/db/automation.repository');
 const { pool } = require('../src/db/pool');
+const automationEvents = require('../src/services/automation-events');
 const originals = new Map([ingestionRepo, transactions, organizations, vendors, jobs].map(o => [o, { ...o }]));
 const originalConnect = pool.connect;
 let events, client, progress;
@@ -37,6 +38,7 @@ test.beforeEach(() => {
     assert.equal(value.kind, 'sheets');
     assert.equal(value.key, 'sheets:automation-1');
     events.push('sheets');
+    return { id: 'sheets-1', available_at: new Date(Date.now() + 30000) };
   };
 });
 test.afterEach(() => {
@@ -50,11 +52,14 @@ function args() {
   } };
 }
 test('native text ingestion checkpoints and enqueues Sheets on the transaction connection before committing', async () => {
+  const wake = () => events.push('wake');
+  automationEvents.once('work', wake);
   const result = await ingestion.ingestText(args());
   assert.equal(result.ingested, true);
   assert.ok(events.indexOf('transaction') < events.indexOf('checkpoint'));
   assert.ok(events.indexOf('checkpoint') < events.indexOf('sheets'));
   assert.ok(events.indexOf('sheets') < events.indexOf('COMMIT'));
+  assert.ok(events.indexOf('COMMIT') < events.indexOf('wake'));
 });
 test('checkpoint failure rolls back transaction and does not enqueue Sheets', async () => {
   jobs.checkpoint = async () => { throw new Error('checkpoint unavailable'); };
