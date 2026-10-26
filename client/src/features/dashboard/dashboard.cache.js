@@ -1,3 +1,5 @@
+import { pageCache } from '../../services/page-cache.js';
+
 const DASHBOARD_INVALIDATION_PREFIX = 'spark.dashboard.invalidate.';
 
 export function getDashboardInvalidationStamp(organizationId) {
@@ -17,6 +19,7 @@ export function markDashboardSnapshotStale(organizationId) {
   }
 
   const stamp = Date.now();
+  for (const namespace of ['dashboard', 'dashboard-setup', 'transactions', 'approvals', 'analytics']) pageCache.bustNs(namespace);
   const key = `${DASHBOARD_INVALIDATION_PREFIX}${organizationId}`;
 
   window.localStorage.setItem(key, String(stamp));

@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { get, patch } from '../services/http';
-import { API_BASE_URL, endpoints } from '../services/endpoints';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { get, getBlob, patch } from '../services/http';
+import { endpoints } from '../services/endpoints';
 import { pageCache } from '../services/page-cache';
+import { getStoredUser } from '../services/session';
+import { markDashboardSnapshotStale } from '../features/dashboard/dashboard.cache';
 
 const GOOGLE_SHEET_WINDOWS = [
   { value: '1m', label: '1M' },
@@ -60,19 +63,33 @@ function getReviewStatusMeta(transaction) {
 
 export default function TransactionsPage({ activeOrganizationId, token: tokenProp, user: userProp, userSettings }) {
   const token = tokenProp || localStorage.getItem('token') || '';
-  const user = userProp || JSON.parse(localStorage.getItem('user') || 'null');
+  const user = userProp || getStoredUser();
   const organizationId = activeOrganizationId || resolveActiveOrganizationId(user);
   const pageSize = Number(userSettings?.transactions_page_size) || 50;
   const preferredSheetRange = userSettings?.default_google_sheet_range || '1m';
-  const authHeaders = {
+  const authHeaders = useMemo(() => ({
     token,
     headers: organizationId ? { 'X-Organization-Id': organizationId } : {}
-  };
+  }), [token, organizationId]);
+  const canEdit = ['founder', 'co-founder', 'admin'].includes(user?.organizations?.find(org => org.id === organizationId)?.role);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = useMemo(() => ({ status: searchParams.get('status') || '', vendor: searchParams.get('vendor') || '' }), [searchParams]);
+  const page = Math.max(1, Number.parseInt(searchParams.get('page'), 10) || 1);
+  const listRequest = useRef(null);
+  const detailRequest = useRef(null);
+  const [total, setTotal] = useState(0);
+  const [pageError, setPageError] = useState('');
+  const [savingId, setSavingId] = useState('');
+
+  function setFilters(nextFilters) {
+    setSearchParams({ ...nextFilters, page: '1' });
+  }
+  function setPage(nextPage) {
+    setSearchParams({ ...filters, page: String(nextPage) });
+  }
 
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState({ status: '', vendor: '' });
-  const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState(null);
   const [expandedData, setExpandedData] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
@@ -100,26 +117,27 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
     setSheetRange(preferredSheetRange);
   }, [preferredSheetRange]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [pageSize]);
-
-  const fetchTransactions = async () => {
+  const fetchTransactions = useCallback(async (force = false) => {
+    listRequest.current?.abort();
+    const controller = new AbortController();
+    listRequest.current = controller;
+    detailRequest.current?.abort();
+    setExpandedId(null);
+    setExpandedData(null);
+    setPreviewUrl('');
     if (!token || !organizationId) {
       setTransactions([]);
       return;
     }
 
-    const cacheQuery = JSON.stringify({ organizationId, page, filters });
+    const cacheQuery = JSON.stringify({ organizationId, page, pageSize, filters });
     const cached = pageCache.get('transactions', cacheQuery);
 
-    if (cached) {
-      setTransactions(cached.data.items || []);
-      setLoading(false);
-      if (!pageCache.isStale('transactions', cacheQuery)) return;
-    }
-
-    if (!cached) setLoading(true);
+    setTransactions(cached?.data.items || []);
+    setTotal(cached?.data.pagination?.total || 0);
+    setPageError('');
+    setLoading(!cached);
+    if (cached && !force && !pageCache.isStale('transactions', cacheQuery)) return;
     try {
       const params = new URLSearchParams({
         page,
@@ -127,22 +145,28 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
         ...(filters.status && { status: filters.status }),
         ...(filters.vendor && { vendor: filters.vendor })
       });
-      const res = await get(`${endpoints.transactions}?${params}`, authHeaders);
+      const res = await get(`${endpoints.transactions}?${params}`, { ...authHeaders, signal: controller.signal });
+      if (controller.signal.aborted) return;
       
       pageCache.set('transactions', cacheQuery, res);
       setTransactions(res.items || []);
+      setTotal(res.pagination?.total || 0);
     } catch (e) {
-      if (!cached) console.error(e);
+      if (!controller.signal.aborted && e.name !== 'AbortError') setPageError(e.message);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  };
+  }, [token, organizationId, page, pageSize, filters, authHeaders]);
 
   useEffect(() => {
     fetchTransactions();
-  }, [filters, organizationId, page, pageSize]);
+    return () => { listRequest.current?.abort(); detailRequest.current?.abort(); };
+  }, [fetchTransactions]);
 
   const handleExpand = async (id) => {
+    detailRequest.current?.abort();
+    const controller = new AbortController();
+    detailRequest.current = controller;
     if (expandedId === id) {
       setExpandedId(null);
       setExpandedData(null);
@@ -162,36 +186,27 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
 
     setExpandedId(id);
     setExpandedData(null);
+    setLoadingPreview(false);
     setPreviewError('');
     try {
-      const res = await get(`${endpoints.transactions}/${id}`, authHeaders);
+      const res = await get(`${endpoints.transactions}/${id}`, { ...authHeaders, signal: controller.signal });
+      if (controller.signal.aborted) return;
       setExpandedData(res);
 
       if (res.document) {
         setLoadingPreview(true);
         try {
-          const response = await fetch(`${API_BASE_URL}${endpoints.transactions}/${id}/document`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              ...(organizationId ? { 'X-Organization-Id': organizationId } : {})
-            }
-          });
-
-          if (!response.ok) {
-            const data = await response.json().catch(() => ({}));
-            throw new Error(data.error || 'Failed to load document preview.');
-          }
-
-          const blob = await response.blob();
+          const blob = await getBlob(`${endpoints.transactions}/${id}/document`, { ...authHeaders, signal: controller.signal });
+          if (controller.signal.aborted) return;
           setPreviewUrl(URL.createObjectURL(blob));
         } catch (error) {
-          setPreviewError(error.message || 'Failed to load document preview.');
+          if (!controller.signal.aborted) setPreviewError(error.message || 'Failed to load document preview.');
         } finally {
-          setLoadingPreview(false);
+          if (!controller.signal.aborted) setLoadingPreview(false);
         }
       }
     } catch (e) {
-      console.error(e);
+      if (!controller.signal.aborted) setPreviewError(e.message);
     }
   };
 
@@ -201,20 +216,30 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
   };
 
   const handleSave = async (id) => {
+    if (savingId || !canEdit) return;
+    if (!editForm.vendor?.trim() || !editForm.category?.trim() || !Number.isFinite(Number(editForm.amount)) || Number(editForm.amount) <= 0) {
+      setPageError('Enter a vendor, category, and positive amount before saving.');
+      return;
+    }
+    setSavingId(id);
+    setPageError('');
     try {
       await patch(`${endpoints.transactions}/${id}`, editForm, authHeaders);
       setEditingId(null);
       // Bust namespace cache because edits change the list
       pageCache.bustNs('transactions');
       pageCache.bustNs('approvals');
+      markDashboardSnapshotStale(organizationId);
       fetchTransactions();
     } catch (e) {
-      console.error(e);
+      setPageError(e.message);
+    } finally {
+      setSavingId('');
     }
   };
 
   const handleOpenGoogleSheets = async () => {
-    if (!token || !organizationId) {
+    if (sheetSyncing || !token || !organizationId) {
       setSheetError('Select an organization before opening Google Sheets.');
       return;
     }
@@ -225,7 +250,6 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
     try {
       const result = await get(`${endpoints.transactionsGoogleSheets}?range=${sheetRange}`, authHeaders);
       setSheetInfo(result);
-      window.open(result.selected_tab?.url || result.spreadsheet_url, '_blank', 'noopener,noreferrer');
     } catch (error) {
       setSheetError(error.message || 'Failed to open Google Sheets.');
     } finally {
@@ -245,7 +269,7 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
           .premium-btn { background: var(--card); border: 1px solid var(--border); color: var(--text-primary); padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: all 150ms ease; }
           .premium-btn:hover { background: var(--border); }
           .premium-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-          .premium-table-wrapper { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+          .premium-table-wrapper { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; }
           .premium-table { width: 100%; border-collapse: collapse; text-align: left; }
           .premium-table th { padding: 16px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); border-bottom: 1px solid var(--border); font-weight: 600; }
           .premium-table td { padding: 16px; font-size: 0.9rem; border-bottom: 1px solid var(--border); color: var(--text-primary); transition: background 150ms ease; }
@@ -274,7 +298,12 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
         <div>
           <h2 className="premium-table-title">Transactions</h2>
         </div>
-        <div className="premium-controls">
+        <form className="premium-controls" onSubmit={event => {
+          event.preventDefault();
+          const vendor = String(new FormData(event.currentTarget).get('vendor') || '').trim();
+          if (vendor === filters.vendor) fetchTransactions(true);
+          else setFilters({ ...filters, vendor });
+        }}>
           <select className="premium-select" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
             <option value="">All Statuses</option>
             <option value="approved">Approved</option>
@@ -285,10 +314,12 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
             className="premium-input"
             type="text" 
             placeholder="Search vendor..." 
-            value={filters.vendor} 
-            onChange={e => setFilters({ ...filters, vendor: e.target.value })}
+            aria-label="Search vendor"
+            name="vendor"
+            key={filters.vendor}
+            defaultValue={filters.vendor}
           />
-          <button className="premium-btn" onClick={() => fetchTransactions()}>Search</button>
+          <button className="premium-btn" type="submit">Search</button>
           <select className="premium-select" value={sheetRange} onChange={e => setSheetRange(e.target.value)}>
             {GOOGLE_SHEET_WINDOWS.map((window) => (
               <option key={window.value} value={window.value}>
@@ -297,9 +328,9 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
             ))}
           </select>
           <button className="premium-btn" type="button" onClick={handleOpenGoogleSheets} disabled={sheetSyncing || !organizationId}>
-            {sheetSyncing ? 'Syncing Sheet...' : 'Sync & Open Google Sheets'}
+            {sheetSyncing ? 'Syncing Sheet...' : 'Sync Google Sheets'}
           </button>
-        </div>
+        </form>
       </div>
 
       <div className="premium-sheets-note">
@@ -311,7 +342,8 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
           <p className="premium-sheets-status error">{sheetError}</p>
         ) : sheetInfo?.selected_tab ? (
           <p className="premium-sheets-status">
-            Last synced {sheetInfo.selected_tab.label} with {sheetInfo.selected_tab.row_count} transactions on {new Date(sheetInfo.synced_at).toLocaleString()}.
+            Last synced {sheetInfo.selected_tab.label} with {sheetInfo.selected_tab.row_count} transactions on {new Date(sheetInfo.synced_at).toLocaleString()}.{' '}
+            <a href={sheetInfo.selected_tab.url} target="_blank" rel="noopener noreferrer">Open Google Sheets</a>
           </p>
         ) : (
           <p className="premium-sheets-status">Pick a time window, then sync and open the matching Google Sheets tab.</p>
@@ -319,6 +351,7 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
       </div>
 
       <div className="premium-table-wrapper">
+        {pageError && <p role="alert" style={{ padding: '16px' }}>{pageError} <button type="button" onClick={() => fetchTransactions(true)}>Retry</button></p>}
         <table className="premium-table">
           <thead>
             <tr>
@@ -332,6 +365,7 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
           </thead>
           <tbody>
             {loading && <tr><td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>Loading transactions...</td></tr>}
+            {!loading && !transactions.length && !pageError && <tr><td colSpan="6" style={{ padding: '24px' }}>No transactions match these filters.</td></tr>}
             {!loading && transactions.map((tx) => {
               const statusMeta = getReviewStatusMeta(tx);
 
@@ -368,10 +402,10 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
                     <td>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button className="premium-ghost-btn" onClick={() => handleExpand(tx.id)}>{expandedId === tx.id ? 'Hide OCR' : 'View OCR'}</button>
-                        {editingId === tx.id
-                          ? <button className="premium-ghost-btn" style={{ color: 'var(--accent-green)' }} onClick={() => handleSave(tx.id)}>Save</button>
+                        {canEdit && (editingId === tx.id
+                          ? <button className="premium-ghost-btn" disabled={Boolean(savingId)} style={{ color: 'var(--accent-green)' }} onClick={() => handleSave(tx.id)}>{savingId === tx.id ? 'Saving...' : 'Save'}</button>
                           : <button className="premium-ghost-btn" onClick={() => handleEdit(tx)}>Edit</button>
-                        }
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -424,19 +458,19 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
                                 ) : previewUrl ? (
                                   <a
                                     href={previewUrl}
-                                    target="_blank"
+                                    download={expandedData.document?.original_name || 'document'}
                                     rel="noreferrer"
                                     className="premium-ghost-btn"
                                     style={{ padding: 0 }}
                                   >
-                                    Open document
+                                    Download document
                                   </a>
                                 ) : (
                                   <span style={{ color: 'var(--text-secondary)' }}>No document preview available</span>
                                 )}
                               </div>
                             </div>
-                          ) : <span style={{ color: 'var(--text-secondary)' }}>Loading secure payload...</span>}
+                          ) : <span role={previewError ? 'alert' : 'status'} style={{ color: previewError ? 'var(--accent-red)' : 'var(--text-secondary)' }}>{previewError || 'Loading receipt details...'}</span>}
                         </div>
                       </td>
                     </tr>
@@ -447,10 +481,10 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
           </tbody>
         </table>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderTop: '1px solid var(--border)' }}>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Showing page {page} · {pageSize} rows</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Page {page} · {transactions.length} shown · {total} total</span>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="premium-btn" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</button>
-            <button className="premium-btn" disabled={transactions.length < pageSize} onClick={() => setPage(page + 1)}>Next</button>
+            <button className="premium-btn" disabled={loading || page === 1} onClick={() => setPage(page - 1)}>Previous</button>
+            <button className="premium-btn" disabled={loading || page * pageSize >= total} onClick={() => setPage(page + 1)}>Next</button>
           </div>
         </div>
       </div>

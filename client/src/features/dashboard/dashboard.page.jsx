@@ -23,13 +23,12 @@ import {
   updateDashboardConfig
 } from './dashboard.api';
 import { getDashboardInvalidationStamp, markDashboardSnapshotStale } from './dashboard.cache';
+import { pageCache } from '../../services/page-cache';
 import '../../styles/dashboard.css';
 
 // ── Module-level SWR-style cache ──────────────────────────────────────────────
 // Survives component unmount/remount (i.e. page navigation) so we can serve
 // cached data instantly and revalidate silently in the background.
-const _snapshotCache = new Map(); // key: `${orgId}:${months}:${categoryWindow}` → { data, ts }
-const _setupCache    = new Map(); // key: orgId → { config, budgets, ts }
 const CACHE_TTL_MS   = 60_000;   // 60 s — serve stale data up to this age
 
 const RANGE_OPTIONS = [3, 6, 12];
@@ -283,7 +282,7 @@ function DashboardPage({
 
     let isActive = true;
     const cacheKey = `${activeOrganizationId}:${months}:${categoryBreakdownWindow}`;
-    const cached = _snapshotCache.get(cacheKey);
+    const cached = pageCache.get('dashboard', cacheKey);
     const invalidationStamp = getDashboardInvalidationStamp(activeOrganizationId);
 
     // Serve from cache immediately — no spinner on revisit
@@ -308,7 +307,7 @@ function DashboardPage({
         });
 
         if (isActive) {
-          _snapshotCache.set(cacheKey, { data: result, ts: Date.now() });
+          pageCache.set('dashboard', cacheKey, result);
           setSnapshot(result);
         }
       } catch (requestError) {
@@ -339,7 +338,8 @@ function DashboardPage({
     }
 
     let isActive = true;
-    const cached = _setupCache.get(organizationId);
+    const entry = pageCache.get('dashboard-setup', organizationId);
+    const cached = entry ? { ...entry.data, ts: entry.ts } : null;
 
     // Serve setup data from cache instantly
     if (cached) {
@@ -367,7 +367,7 @@ function DashboardPage({
 
         if (!isActive) return;
 
-        _setupCache.set(organizationId, { config: configResult, budgets: budgetResult, ts: Date.now() });
+        pageCache.set('dashboard-setup', organizationId, { config: configResult, budgets: budgetResult });
         setConfig(configResult);
         setCashForm({
           opening_cash_balance:
@@ -441,8 +441,8 @@ function DashboardPage({
   async function refreshSnapshot() {
     // Bust cache so next navigation fetches fresh data
     const cacheKey = `${activeOrganizationId}:${months}:${categoryBreakdownWindow}`;
-    _snapshotCache.delete(cacheKey);
-    _setupCache.delete(organizationId);
+    pageCache.bust('dashboard', cacheKey);
+    pageCache.bust('dashboard-setup', organizationId);
     markDashboardSnapshotStale(activeOrganizationId);
 
     const result = await getDashboardSnapshot({
@@ -452,7 +452,7 @@ function DashboardPage({
       categoryWindow: categoryBreakdownWindow
     });
 
-    _snapshotCache.set(cacheKey, { data: result, ts: Date.now() });
+    pageCache.set('dashboard', cacheKey, result);
     setSnapshot(result);
   }
 
@@ -901,8 +901,8 @@ function DashboardPage({
                 </ResponsiveContainer>
               </div>
               <div className="premium-trend-footer">
-                <span>Trend Prediction</span>
-                <strong>+4.2% Growth</strong>
+                <span>Recorded monthly outflow</span>
+                <strong>Historical data</strong>
               </div>
             </>
           )}

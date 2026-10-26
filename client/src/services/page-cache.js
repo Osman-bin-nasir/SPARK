@@ -41,7 +41,9 @@ export const pageCache = {
 
   /** Store data with current timestamp. */
   set(ns, key, data) {
+    _store.delete(cacheKey(ns, key));
     _store.set(cacheKey(ns, key), { data, ts: Date.now() });
+    if (_store.size > 200) _store.delete(_store.keys().next().value);
   },
 
   /** Check if cache is stale (needs revalidation). */
@@ -61,5 +63,9 @@ export const pageCache = {
     for (const k of _store.keys()) {
       if (k.startsWith(`${ns}:`)) _store.delete(k);
     }
+  },
+
+  clear() {
+    _store.clear();
   },
 };

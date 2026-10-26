@@ -3,21 +3,14 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import './App.css';
 import LoginPage from './features/login/login.page';
 import SignupPage from './features/signup/signup.page';
-import IntegrationsPage from './pages/Integrations';
 import AppShell from './components/layout/app-shell';
-import TransactionsPage from './pages/Transactions';
-import ApprovalsPage from './pages/Approvals';
-import AnalyticsPage from './pages/Analytics';
-import InsightsPage from './pages/Insights';
-import FinancePage from './pages/Finance';
-import TeamPage from './pages/Team';
-import SettingsPage from './pages/Settings';
 import PrivacyPolicyPage from './pages/PrivacyPolicy';
 import TermsOfServicePage from './pages/TermsOfService';
 import ContactPage from './pages/Contact';
 import LandingPage from './pages/Landing';
 import { post } from './services/http';
 import { endpoints } from './services/endpoints';
+import { clearSession, getStoredUser, startSession, syncSessionFromStorage } from './services/session';
 import {
   getUserSettings,
   getUserSettingsEventName,
@@ -28,11 +21,14 @@ import {
 const TELEGRAM_TOKEN_STORAGE_KEY = 'spark.telegram-link-token';
 const WHATSAPP_TOKEN_STORAGE_KEY = 'spark.whatsapp-link-token';
 const DashboardPage = lazy(() => import('./features/dashboard/dashboard.page'));
-
-function getStoredUser() {
-  const raw = localStorage.getItem('user');
-  return raw ? JSON.parse(raw) : null;
-}
+const IntegrationsPage = lazy(() => import('./pages/Integrations'));
+const TransactionsPage = lazy(() => import('./pages/Transactions'));
+const ApprovalsPage = lazy(() => import('./pages/Approvals'));
+const AnalyticsPage = lazy(() => import('./pages/Analytics'));
+const InsightsPage = lazy(() => import('./pages/Insights'));
+const FinancePage = lazy(() => import('./pages/Finance'));
+const TeamPage = lazy(() => import('./pages/Team'));
+const SettingsPage = lazy(() => import('./pages/Settings'));
 
 function getPendingTelegramToken() {
   const params = new URLSearchParams(window.location.search);
@@ -86,7 +82,7 @@ function getInitialScreen(hasSessionToken, hasTelegramToken, hasWhatsappToken, p
     return hasWhatsappToken ? 'signup' : 'login';
   }
 
-  return 'login';
+  return pathname === '/signup' ? 'signup' : 'login';
 }
 
 function normalizePathname(pathname) {
@@ -101,12 +97,12 @@ function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const normalizedPathname = normalizePathname(location.pathname);
-  const initialToken = localStorage.getItem('token') || '';
+  const initialToken = getStoredUser() ? localStorage.getItem('token') || '' : '';
   const initialTelegramToken = getPendingTelegramToken();
   const initialWhatsappToken = getPendingWhatsappToken();
   const initialUser = getStoredUser();
   const initialUserSettings = getUserSettings(initialUser);
-  const [token, setToken] = useState(localStorage.getItem('token') || '');
+  const [token, setToken] = useState(initialToken);
   const [user, setUser] = useState(initialUser);
   const [userSettings, setUserSettings] = useState(initialUserSettings);
   const [preferredOrganization, setPreferredOrganization] = useState(() => ({
@@ -210,6 +206,14 @@ function App() {
       setUser(event.detail?.user || getStoredUser());
     }
 
+    function handleSessionStorage(event) {
+      if (event.key && !['token', 'refresh_token', 'user', 'spark.session-id'].includes(event.key)) return;
+      const session = syncSessionFromStorage();
+      setToken(session.token);
+      setUser(session.user);
+      if (!session.token) navigate('/login', { replace: true });
+    }
+
     function handleAuthExpired() {
       setToken('');
       setUser(null);
@@ -233,10 +237,12 @@ function App() {
 
     window.addEventListener('spark-auth-updated', handleAuthUpdated);
     window.addEventListener('spark-auth-expired', handleAuthExpired);
+    window.addEventListener('storage', handleSessionStorage);
 
     return () => {
       window.removeEventListener('spark-auth-updated', handleAuthUpdated);
       window.removeEventListener('spark-auth-expired', handleAuthExpired);
+      window.removeEventListener('storage', handleSessionStorage);
     };
   }, [navigate, pendingTelegramToken, pendingWhatsappToken, botMode]);
 
@@ -446,9 +452,7 @@ function App() {
 
     setToken(accessToken);
     setUser(result.user);
-    localStorage.setItem('token', accessToken);
-    localStorage.setItem('refresh_token', refreshToken);
-    localStorage.setItem('user', JSON.stringify(result.user));
+    startSession({ ...result, access_token: accessToken, refresh_token: refreshToken });
     setScreen('dashboard');
 
     if (shouldClearTelegramToken) {
@@ -492,9 +496,7 @@ function App() {
         ? 'Finish signup or login to link your WhatsApp account.'
         : ''
     );
-    localStorage.removeItem('token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
+    clearSession();
     setScreen(botMode ? 'signup' : 'login');
     navigate(
       pendingTelegramToken
@@ -513,11 +515,11 @@ function App() {
     });
   }
 
-  const authContent = screen === 'signup' ? (
+  const authContent = (normalizedPathname === '/signup' || (botMode && screen === 'signup')) ? (
     <SignupPage
       notice={status}
       onSuccess={handleAuthSuccess}
-      onSwitchToLogin={() => setScreen('login')}
+      onSwitchToLogin={() => botMode ? setScreen('login') : navigate('/login')}
       telegramToken={pendingTelegramToken}
       telegramMode={telegramMode}
       whatsappToken={pendingWhatsappToken}
@@ -527,7 +529,7 @@ function App() {
     <LoginPage
       notice={status}
       onSuccess={handleAuthSuccess}
-      onSwitchToSignup={() => setScreen('signup')}
+      onSwitchToSignup={() => botMode ? setScreen('signup') : navigate('/signup')}
       telegramMode={telegramMode}
       whatsappMode={whatsappMode}
     />
@@ -566,12 +568,14 @@ function App() {
     return <LandingPage isAuthenticated={Boolean(token)} />;
   }
 
-  if (normalizedPathname === '/login') {
+  if (normalizedPathname === '/login' || normalizedPathname === '/signup') {
+    if (token) return <Navigate replace to="/dashboard" />;
     return <main className="app">{authContent}</main>;
   }
 
   const renderAuthenticatedRoutes = () => (
-    <AppShell 
+    <AppShell
+      key={`${user?.id}:${activeOrganizationId}`}
       user={user}
       activeOrganizationId={activeOrganizationId}
       organizations={user?.organizations || []}
@@ -582,6 +586,7 @@ function App() {
       contentWidth={userSettings.content_width}
       toggleTheme={toggleTheme}
     >
+      <Suspense fallback={<div className="card" role="status">Loading workspace...</div>}>
       <Routes>
         <Route path="/dashboard" element={dashboardContent} />
         <Route path="/telegram-login" element={dashboardContent} />
@@ -624,7 +629,7 @@ function App() {
             />
           }
         />
-        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/analytics" element={<AnalyticsPage activeOrganizationId={activeOrganizationId} token={token} />} />
         <Route
           path="/insights"
           element={
@@ -645,7 +650,7 @@ function App() {
             />
           }
         />
-        <Route path="/team" element={<TeamPage />} />
+        <Route path="/team" element={<TeamPage activeOrganizationId={activeOrganizationId} token={token} user={user} />} />
         <Route
           path="/settings"
           element={
@@ -661,6 +666,7 @@ function App() {
         />
         <Route path="*" element={<Navigate replace to="/dashboard" />} />
       </Routes>
+      </Suspense>
     </AppShell>
   );
 

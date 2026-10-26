@@ -93,10 +93,8 @@ function Avatar({ email }) {
   );
 }
 
-export default function TeamPage() {
-  const token = localStorage.getItem('token') || '';
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
-  const organizationId = user?.organizations?.[0]?.id || '';
+export default function TeamPage({ activeOrganizationId, token, user }) {
+  const organizationId = activeOrganizationId || '';
   const myRole = user?.organizations?.find(o => o.id === organizationId)?.role || 'member';
   const isFounder = ['founder', 'co-founder'].includes(myRole);
 

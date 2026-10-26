@@ -13,6 +13,7 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsapp
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (loading) return;
     setError('');
     setLoading(true);
 

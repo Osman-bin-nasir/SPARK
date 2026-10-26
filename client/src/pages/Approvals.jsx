@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
-import { del, get, patch } from '../services/http';
-import { API_BASE_URL, endpoints } from '../services/endpoints';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { del, get, getBlob, patch } from '../services/http';
+import { endpoints } from '../services/endpoints';
 import { pageCache } from '../services/page-cache';
+import { getStoredUser } from '../services/session';
+import { markDashboardSnapshotStale } from '../features/dashboard/dashboard.cache';
 
 function getOrganizationPreferenceKey(userId) {
   return userId ? `spark.active-organization.${userId}` : '';
@@ -92,13 +94,17 @@ function buildTransactionPayload(form, transaction) {
 
 export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, user: userProp }) {
   const token = tokenProp || localStorage.getItem('token') || '';
-  const user = userProp || JSON.parse(localStorage.getItem('user') || 'null');
+  const user = userProp || getStoredUser();
   const organizationId = activeOrganizationId || resolveActiveOrganizationId(user);
-  const authHeaders = {
+  const authHeaders = useMemo(() => ({
     token,
     headers: organizationId ? { 'X-Organization-Id': organizationId } : {}
-  };
-  const approvalsCacheKey = organizationId || 'default';
+  }), [token, organizationId]);
+  const [queuePage, setQueuePage] = useState(1);
+  const [totalPending, setTotalPending] = useState(0);
+  const approvalsCacheKey = `${organizationId}:${queuePage}`;
+  const listRequest = useRef(null);
+  const canReview = ['founder', 'co-founder', 'admin'].includes(user?.organizations?.find(org => org.id === organizationId)?.role);
 
   const [pending, setPending] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -125,7 +131,10 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
     }
   }, [currentIndex, pending.length]);
 
-  const fetchApprovals = async () => {
+  const fetchApprovals = useCallback(async () => {
+    listRequest.current?.abort();
+    const controller = new AbortController();
+    listRequest.current = controller;
     if (!token || !organizationId) {
       setPending([]);
       setLoading(false);
@@ -136,6 +145,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
 
     if (cached) {
       setPending(cached.data.items || []);
+      setTotalPending(cached.data.pagination?.total || 0);
       setLoading(false);
 
       if (!pageCache.isStale('approvals', approvalsCacheKey)) {
@@ -150,17 +160,20 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
     setPageError('');
 
     try {
-      const res = await get(`${endpoints.transactions}?status=pending_review`, authHeaders);
+      const res = await get(`${endpoints.transactions}?status=pending_review&page=${queuePage}&page_size=20`, { ...authHeaders, signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (!res.items?.length && queuePage > 1) { setQueuePage(value => value - 1); return; }
       pageCache.set('approvals', approvalsCacheKey, res);
       setPending(res.items || []);
+      setTotalPending(res.pagination?.total || 0);
     } catch (error) {
-      if (!cached) {
+      if (!controller.signal.aborted && error.name !== 'AbortError') {
         setPageError(error.message || 'Failed to load pending approvals.');
       }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  };
+  }, [token, organizationId, queuePage, authHeaders, approvalsCacheKey]);
 
   useEffect(() => {
     setCurrentIndex(0);
@@ -168,7 +181,8 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
     setForm(buildFormState(null));
     setFeedback({ tone: 'muted', text: '' });
     fetchApprovals();
-  }, [organizationId, token]);
+    return () => listRequest.current?.abort();
+  }, [fetchApprovals]);
 
   const tx = pending[currentIndex] || null;
 
@@ -183,6 +197,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
 
     async function loadTransactionDetail() {
       setDetail(null);
@@ -195,7 +210,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
       }
 
       try {
-        const transaction = await get(`${endpoints.transactions}/${tx.id}`, authHeaders);
+        const transaction = await get(`${endpoints.transactions}/${tx.id}`, { ...authHeaders, signal: controller.signal });
 
         if (cancelled) {
           return;
@@ -210,19 +225,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
         setLoadingPreview(true);
 
         try {
-          const response = await fetch(`${API_BASE_URL}${endpoints.transactions}/${tx.id}/document`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              ...(organizationId ? { 'X-Organization-Id': organizationId } : {})
-            }
-          });
-
-          if (!response.ok) {
-            const data = await response.json().catch(() => ({}));
-            throw new Error(data.error || 'Failed to load document preview.');
-          }
-
-          const blob = await response.blob();
+          const blob = await getBlob(`${endpoints.transactions}/${tx.id}/document`, { ...authHeaders, signal: controller.signal });
           const objectUrl = URL.createObjectURL(blob);
 
           if (cancelled) {
@@ -251,12 +254,14 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [tx?.id, organizationId, token]);
+  }, [tx?.id, organizationId, token, authHeaders]);
 
   const activeTransaction = detail || tx;
   const document = activeTransaction?.document || null;
-  const confidence = Number(activeTransaction?.document?.extraction_confidence || activeTransaction?.confidence_score || 0.85);
+  const confidenceValue = Number(activeTransaction?.document?.extraction_confidence ?? activeTransaction?.confidence_score ?? 0);
+  const confidence = Number.isFinite(confidenceValue) ? Math.max(0, Math.min(1, confidenceValue)) : 0;
   const strokeDash = 282 - (282 * confidence);
   const confidenceColor = confidence > 0.9 ? 'var(--accent-green)' : confidence > 0.7 ? '#eab308' : 'var(--accent-red)';
   const extractedText = document?.extracted_text || document?.text_content || '';
@@ -266,7 +271,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
   };
 
   const handleSaveChanges = async () => {
-    if (!tx) {
+    if (!tx || submittingAction || !canReview) {
       return;
     }
 
@@ -293,6 +298,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
       setDetail(updatedTransaction);
       pageCache.bustNs('approvals');
       pageCache.bustNs('transactions');
+      markDashboardSnapshotStale(organizationId);
       setFeedback({ tone: 'success', text: 'Changes saved. This receipt is still pending review.' });
     } catch (error) {
       setFeedback({ tone: 'error', text: error.message || 'Failed to save changes.' });
@@ -302,7 +308,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
   };
 
   const handleApprove = async () => {
-    if (!tx) {
+    if (!tx || submittingAction || !canReview) {
       return;
     }
 
@@ -329,6 +335,8 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
       setDetail(null);
       pageCache.bustNs('approvals');
       pageCache.bustNs('transactions');
+      markDashboardSnapshotStale(organizationId);
+      await fetchApprovals();
       setCurrentIndex((current) => Math.min(current, Math.max(0, nextPending.length - 1)));
     } catch (error) {
       setFeedback({ tone: 'error', text: error.message || 'Failed to approve receipt.' });
@@ -350,7 +358,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
   };
 
   const handleRemoveDuplicate = async () => {
-    if (!tx) {
+    if (!tx || submittingAction || !canReview) {
       return;
     }
 
@@ -366,6 +374,8 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
       setDetail(null);
       pageCache.bustNs('approvals');
       pageCache.bustNs('transactions');
+      markDashboardSnapshotStale(organizationId);
+      await fetchApprovals();
       setCurrentIndex((current) => Math.min(current, Math.max(0, nextPending.length - 1)));
     } catch (error) {
       setFeedback({ tone: 'error', text: error.message || 'Failed to remove duplicate transaction.' });
@@ -399,6 +409,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
       <div className="premium-page-container" style={{ padding: '40px' }}>
         <h2 style={{ margin: 0 }}>Approval queue unavailable</h2>
         <p style={{ color: 'var(--accent-red)' }}>{pageError}</p>
+        <button type="button" onClick={fetchApprovals}>Retry approvals</button>
       </div>
     );
   }
@@ -434,6 +445,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
           .approvals-title { font-size: 1.5rem; font-weight: 600; margin: 0; }
           .approvals-subtitle { margin: 6px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
           .approvals-layout { display: grid; grid-template-columns: 1fr 1.2fr; gap: 32px; flex: 1; min-height: 0; }
+          @media (max-width: 768px) { .approvals-layout { grid-template-columns: minmax(0, 1fr); } }
           .approvals-left { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; position: relative; min-height: 560px; }
           .document-preview { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.02); padding: 20px; }
           .dark .document-preview { background: rgba(255,255,255,0.02); }
@@ -523,16 +535,17 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
 
       <div className="approvals-header">
         <div>
-          <h2 className="approvals-title">Pending Approvals <span>({pending.length})</span></h2>
+          <h2 className="approvals-title">Pending Approvals <span>({totalPending})</span></h2>
           <p className="approvals-subtitle">Review the extracted fields, save corrections if needed, then approve the transaction.</p>
         </div>
         <div className="pagination-controls">
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginRight: '8px' }}>{currentIndex + 1} of {pending.length}</span>
-          <button className="page-btn" disabled={currentIndex === 0} onClick={() => setCurrentIndex(currentIndex - 1)}>&lt;</button>
-          <button className="page-btn" disabled={currentIndex === pending.length - 1} onClick={() => setCurrentIndex(currentIndex + 1)}>&gt;</button>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginRight: '8px' }}>{(queuePage - 1) * 20 + currentIndex + 1} of {totalPending}</span>
+          <button className="page-btn" aria-label="Previous receipt" disabled={Boolean(submittingAction) || loading || (currentIndex === 0 && queuePage === 1)} onClick={() => currentIndex > 0 ? setCurrentIndex(currentIndex - 1) : setQueuePage(value => value - 1)}>&lt;</button>
+          <button className="page-btn" aria-label="Next receipt" disabled={Boolean(submittingAction) || loading || (queuePage - 1) * 20 + currentIndex + 1 >= totalPending} onClick={() => currentIndex < pending.length - 1 ? setCurrentIndex(currentIndex + 1) : setQueuePage(value => value + 1)}>&gt;</button>
         </div>
       </div>
 
+      {pageError && <p role="alert">{pageError}</p>}
       <div className="approvals-layout">
         <div className="approvals-left">
           <div className="document-preview">
@@ -552,7 +565,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
               <iframe src={previewUrl} title={document?.original_name || 'Uploaded receipt'} />
             ) : previewUrl ? (
               <div className="document-preview-empty">
-                <a href={previewUrl} target="_blank" rel="noreferrer">Open document</a>
+                <a href={previewUrl} download={document?.original_name || 'document'}>Download document</a>
               </div>
             ) : (
               <div className="document-preview-empty">
@@ -637,17 +650,17 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
 
             {activeTransaction.duplicate_score > 0.8 ? (
               <div className="duplicate-actions">
-                <button className="btn-danger" disabled={submittingAction !== ''} onClick={confirmRemoveDuplicate}>
+                <button className="btn-danger" disabled={submittingAction !== '' || !canReview} onClick={confirmRemoveDuplicate}>
                   Remove Duplicate
                 </button>
               </div>
             ) : null}
 
             <div className="approvals-actions">
-              <button className="btn-secondary" disabled={submittingAction !== ''} onClick={handleSaveChanges}>
+              <button className="btn-secondary" disabled={submittingAction !== '' || !canReview} onClick={handleSaveChanges}>
                 {submittingAction === 'save' ? 'Saving...' : 'Save Changes'}
               </button>
-              <button className="btn-approve" disabled={submittingAction !== ''} onClick={handleApprove}>
+              <button className="btn-approve" disabled={submittingAction !== '' || !canReview} onClick={handleApprove}>
                 {submittingAction === 'approve' ? 'Approving...' : 'Approve'}
               </button>
             </div>
