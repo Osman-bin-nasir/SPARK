@@ -9,8 +9,9 @@ const auth = require('../src/services/auth.service');
 const extraction = require('../src/services/receipt-extraction.service');
 const ingestion = require('../src/services/ingestion.service');
 const bots = require('../src/integrations/bot.client');
+const googleDrive = require('../src/services/google-drive.service');
 const { env } = require('../src/config/env');
-const originals = new Map([jobs, orgs, telegram, whatsapp, auth, extraction, ingestion, bots].map(o => [o, { ...o }]));
+const originals = new Map([jobs, orgs, telegram, whatsapp, auth, extraction, ingestion, bots, googleDrive].map(o => [o, { ...o }]));
 const originalEnv = { ...env };
 let queued, checkpoints;
 test.beforeEach(() => {
@@ -45,6 +46,43 @@ test('a retry after committed ingestion neither extracts nor creates another tra
   job.progress = { organizationId: 'org-1', ingestion: { transaction_id: 'tx-existing' } };
   await automation.processInbound(job);
   assert.match(queued[0].payload.text, /tx-existing/);
+});
+test('receipt submission checks Drive before downloading or spending OCR and AI calls', async () => {
+  googleDrive.getOrganizationDriveClient = async () => {
+    throw Object.assign(new Error('Drive not connected'), { statusCode: 409, publicMessage: 'Connect Google Drive in SPARK Integrations.' });
+  };
+  bots.download = extraction.extract = ingestion.ingestDocument = async () => { assert.fail('must not process a receipt without storage'); };
+  await assert.rejects(automation.processInbound(inbound({ file: { id: 'receipt', mimeType: 'image/jpeg' } })),
+    error => error.statusCode === 409 && error.publicMessage.includes('Connect Google Drive'));
+});
+test('receipt with connected Drive reaches document ingestion with extracted fields', async () => {
+  const downloaded = { filename: 'receipt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('receipt') };
+  googleDrive.getOrganizationDriveClient = async organizationId => {
+    assert.equal(organizationId, 'org-1');
+    return { drive: {}, integration: {} };
+  };
+  bots.download = async () => downloaded;
+  extraction.extract = async ({ file }) => {
+    assert.equal(file, downloaded);
+    return { amount: 42, vendor: 'Cafe' };
+  };
+  ingestion.ingestDocument = async args => {
+    assert.equal(args.file, downloaded);
+    assert.equal(args.payload.amount, 42);
+    assert.equal(args.payload.submitted_by_user_id, 'user-1');
+    return { transaction_id: 'receipt-tx' };
+  };
+  await automation.processInbound(inbound({ file: { id: 'receipt', mimeType: 'image/jpeg' } }));
+  assert.match(queued[0].payload.text, /receipt-tx/);
+});
+test('committed receipt retries do not require Drive or repeat provider calls', async () => {
+  googleDrive.getOrganizationDriveClient = bots.download = extraction.extract = ingestion.ingestDocument = async () => {
+    assert.fail('committed receipt must resume at its reply');
+  };
+  const job = inbound({ file: { id: 'receipt', mimeType: 'image/jpeg' } });
+  job.progress = { organizationId: 'org-1', ingestion: { transaction_id: 'committed-receipt' } };
+  await automation.processInbound(job);
+  assert.match(queued[0].payload.text, /committed-receipt/);
 });
 test('unlinked senders cannot invoke paid/external extraction or create transactions', async () => {
   telegram.getTelegramMemberships = async () => ({ linked: false, organizations: [] });

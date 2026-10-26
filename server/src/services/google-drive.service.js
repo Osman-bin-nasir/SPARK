@@ -151,7 +151,9 @@ async function getOrganizationDriveClient(organizationId) {
   const integration = await googleIntegrationsRepository.findByOrganizationId(organizationId);
 
   if (!integration) {
-    throw new HttpError(409, 'Google Drive is not connected for this organization');
+    const error = new HttpError(409, 'Google Drive is not connected for this organization');
+    error.publicMessage = 'Google Drive is not connected to this workspace. Open SPARK → Integrations, connect Google Drive, then resend this receipt.';
+    throw error;
   }
 
   const refreshToken = decryptText({

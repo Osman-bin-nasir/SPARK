@@ -10,6 +10,7 @@ const auth = require('./auth.service');
 const telegram = require('./telegram.service');
 const whatsapp = require('./whatsapp.service');
 const sheets = require('./google-sheets.service');
+const googleDrive = require('./google-drive.service');
 
 const HELP = 'Send one receipt image/PDF or an expense note with amount, vendor and date. Commands: /login, /join CODE, /insights weekly, /insights monthly. Open a workspace invitation to join it.';
 let timer;
@@ -127,6 +128,9 @@ async function processInbound(job) {
   if (file?.size > env.ocrMaxFileBytes) return queueReply(job, 'Receipt exceeds the free OCR file limit. Please send a file smaller than 1 MB.');
   let result = job.progress.ingestion;
   if (!result) {
+    // Attachments must be archived before a transaction is committed. Check the
+    // workspace connection before spending download/OCR/AI calls on a receipt.
+    if (file) await googleDrive.getOrganizationDriveClient(organization.id);
     const downloaded = file ? await bots.download({ platform, file }) : null;
     const fields = job.progress.extraction || await extraction.extract({ text, file: downloaded,
       referenceDate: new Date(receivedAt).toLocaleDateString('en-CA', { timeZone: env.automationTimeZone }) });
