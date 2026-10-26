@@ -23,7 +23,10 @@ async function send({ platform, recipient, text, scheduled = false }) {
   if (scheduled) {
     if (!env.twilioInsightsContentSid) throw Object.assign(new Error('WhatsApp report template is not configured'), { permanent: true });
     params.set('ContentSid', env.twilioInsightsContentSid);
-    params.set('ContentVariables', JSON.stringify({ 1: text.slice(0, 1400) }));
+    // WhatsApp template variables reject line breaks, tabs and long space runs.
+    // Normalize before truncation so multiline reports remain valid substitutions.
+    const templateText = text.replace(/[\r\n]+/g, ' | ').replace(/\s+/g, ' ').trim();
+    params.set('ContentVariables', JSON.stringify({ 1: templateText.slice(0, 1400) }));
   } else {
     params.set('Body', text.slice(0, 1500));
   }

@@ -1,4 +1,5 @@
 const { pool } = require('./pool');
+const MAX_ATTEMPTS = 5;
 
 async function enqueue({ key, kind, payload }, client = pool) {
   const { rows } = await client.query(
@@ -12,6 +13,13 @@ async function enqueue({ key, kind, payload }, client = pool) {
 async function claim(client = pool) {
   // The runner holds a session advisory lock across processing. An interrupted runner
   // releases that lock when its connection closes; its unfinished job is safe to reclaim.
+  // A process crash cannot reach fail(), so retire exhausted interrupted jobs here
+  // before they can be reclaimed again or block newer work at the queue head.
+  await client.query(`
+    UPDATE automation_jobs SET status = 'failed', locked_at = NULL,
+      last_error = 'Interrupted repeatedly during processing'
+    WHERE status = 'processing' AND attempts >= $1
+  `, [MAX_ATTEMPTS]);
   const { rows } = await client.query(`
     UPDATE automation_jobs SET status = 'processing', attempts = attempts + 1, locked_at = NOW()
     WHERE id = (
@@ -33,7 +41,7 @@ async function complete(id, client = pool) {
 }
 
 async function fail(job, { permanent = false, retryAfter = 0 } = {}, client = pool) {
-  const exhausted = permanent || job.attempts >= 5;
+  const exhausted = permanent || job.attempts >= MAX_ATTEMPTS;
   const delay = Math.max(retryAfter, Math.min(3600, 30 * 2 ** (job.attempts - 1)));
   // Do not persist provider bodies, token-bearing URLs, or submitted document text in errors.
   await client.query(`UPDATE automation_jobs SET status = $2, locked_at = NULL,

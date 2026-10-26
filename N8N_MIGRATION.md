@@ -36,6 +36,9 @@ Groq's free plan is an account setting, not an API parameter. Keep your account 
 the free plan to avoid paid usage. Jobs respect rate-limit `Retry-After` responses
 and retry with exponential backoff. Five failed attempts leave a job in `failed`
 for inspection/replay. Other providers retain their own quotas and charges.
+Interrupted jobs also stop after five claims, including crashes that prevent the
+runner from recording a normal failure. Exhausted interrupted jobs retain their
+checkpoints and no longer block newer queued work.
 
 ## Deployment and cutover
 
