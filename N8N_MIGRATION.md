@@ -91,6 +91,31 @@ checkpoints and no longer block newer queued work.
 
 ## Deployment and cutover
 
+For the hosted SPARK backend on Render, set these environment variables alongside
+the existing secrets, then save and deploy:
+
+```dotenv
+NODE_ENV=production
+APP_BASE_URL=https://sparkmetrics.online
+PUBLIC_API_BASE_URL=https://api.sparkmetrics.online
+GOOGLE_REDIRECT_URI=https://api.sparkmetrics.online/api/google-drive/callback
+GOOGLE_DRIVE_POST_CONNECT_URL=https://sparkmetrics.online/integrations
+```
+
+Leave `PORT` to Render. `APP_BASE_URL` is the frontend origin used in bot login
+replies; `PUBLIC_API_BASE_URL` is the backend origin used for provider webhooks.
+Production defaults use these domains, but explicit environment values override
+them, so replace any old localhost or temporary tunnel values in Render.
+Add the exact Google redirect URI above to the OAuth client's authorized redirect
+URIs in Google Cloud Console.
+
+Changing environment variables does not update provider registrations. Set Twilio's
+**When a message comes in** URL to
+`https://api.sparkmetrics.online/api/webhooks/whatsapp`, method **POST**, and save.
+The Telegram setup command below registers
+`https://api.sparkmetrics.online/api/webhooks/telegram` using the configured secret.
+After cutover, request a new `/login` link; previously sent links keep their old URL.
+
 1. Deploy this code with the required secrets. Run `npm run migrate` from `server`
    before starting; the existing Docker entrypoint does this automatically.
 2. Run `npm run automation -- check` from `server`. It validates Telegram, Groq
@@ -101,7 +126,7 @@ checkpoints and no longer block newer queued work.
    route is rejected, then registers `/api/webhooks/telegram` with the shared secret.
    Pending updates are preserved. This replaces the bot's previous n8n webhook.
 4. Set the Twilio sandbox/business sender's incoming message webhook to
-   `POST https://YOUR_BACKEND/api/webhooks/whatsapp`. Keep the exact origin consistent
+   `POST https://api.sparkmetrics.online/api/webhooks/whatsapp`. Keep the exact origin consistent
    with `PUBLIC_API_BASE_URL`. Signature validation uses the official Twilio SDK;
    forwarded-host headers do not override the trusted origin.
 5. Send `/login` to the bot and link your existing account. Workspace invites work
