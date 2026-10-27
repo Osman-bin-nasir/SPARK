@@ -1,8 +1,11 @@
 const express = require('express');
 const authController = require('../controllers/auth.controller');
 const { requireAuth } = require('../middleware/auth.middleware');
+const invitationController = require('../controllers/invitation.controller');
 
 const router = express.Router();
+router.post('/invitations/preview', invitationController.preview);
+router.post('/invitations/accept', requireAuth, invitationController.accept);
 
 router.post('/register', authController.register);
 router.post('/signup', authController.register);

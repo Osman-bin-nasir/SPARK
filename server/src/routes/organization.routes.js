@@ -1,5 +1,6 @@
 const express = require('express');
 const organizationController = require('../controllers/organization.controller');
+const invitationController = require('../controllers/invitation.controller');
 const { requireAuth } = require('../middleware/auth.middleware');
 const {
   requireOrganizationMembership,
@@ -22,6 +23,9 @@ router.get('/team', organizationController.getTeam);
 router.post('/team/join-code/regenerate', organizationController.regenerateJoinCode);
 
 router.post('/team/members', organizationController.addMember);
+router.get('/team/invitations', invitationController.list);
+router.post('/team/invitations', invitationController.create);
+router.delete('/team/invitations/:id', invitationController.revoke);
 router.delete('/team/members/:userId', organizationController.removeMember);
 router.patch('/team/members/:userId/role', organizationController.updateMemberRole);
 

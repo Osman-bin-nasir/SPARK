@@ -582,6 +582,25 @@ Prefix all API endpoints with `/api`. Headers should include:
 
 Direct bot intake uses `POST /api/webhooks/telegram` and `POST /api/webhooks/whatsapp`. These endpoints authenticate provider requests and save durable jobs before acknowledging delivery; they no longer route through n8n.
 
+### Workspace invitations
+
+Each account belongs to one organization. Ordinary web signup asks for a workspace
+name and creates that workspace with the account as founder. To add a teammate,
+open **Team → Create invitation**, choose their email and role, then copy and share
+the generated link. SPARK does not send invitation emails automatically and needs
+no additional email-service keys.
+
+The invite page lets a new teammate create an account directly in the inviting
+workspace, without creating a personal organization first. Existing unassigned
+accounts can sign in and accept. An account already in another workspace cannot
+be moved by an invitation; its current membership must be removed first.
+
+Invitation links are email-bound, single-use, expire after seven days, and can be
+revoked from Team. Creating another invitation for the same workspace/email
+replaces the old link. Only a token hash is stored. Migration
+`011_workspace_invitations` is required; the Docker startup migration step applies
+it automatically. Deploy the backend before deploying the updated frontend.
+
 ### 5. Ledger Transactions (`/api/transactions`)
 * `GET /` — Filterable and paginated list of transactions (by page, page size, status, type, vendor, start_date, end_date).
 * `POST /` — Manually inserts a transaction (requires founder/admin role).

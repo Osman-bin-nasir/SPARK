@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { post } from '../../services/http';
 import { endpoints } from '../../services/endpoints';
-import AuthAside from '../auth/auth-aside';
-import '../../styles/auth.css';
+import AuthLayout from '../auth/auth-layout';
 
 const TELEGRAM_BOT_URL = 'https://t.me/osman80bot';
 
@@ -34,34 +33,25 @@ function TelegramIcon() {
   );
 }
 
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="m5 12.5 4.5 4.5L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode, whatsappMode }) {
-  const [email, setEmail] = useState('');
+function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode, whatsappMode, invitation }) {
+  const [email, setEmail] = useState(invitation?.email || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const botMode = Boolean(telegramMode || whatsappMode);
-  const channelLabel = telegramMode ? 'Telegram' : whatsappMode ? 'WhatsApp' : '';
-  const eyebrow = botMode ? `${channelLabel} access` : 'SPARK Finance';
-  const title = telegramMode
+  const eyebrow = 'SPARK';
+  const title = invitation ? `Join ${invitation.organization_name}` : telegramMode
     ? 'Link your Telegram'
     : whatsappMode
       ? 'Link your WhatsApp'
       : 'Welcome back';
-  const subtitle = telegramMode
-    ? 'Sign in to attach this Telegram identity to your SPARK workspace.'
+  const subtitle = invitation ? `Sign in to accept your invitation as ${invitation.role}.` : telegramMode
+    ? 'Sign in to link your Telegram.'
     : whatsappMode
-      ? 'Sign in to attach this WhatsApp number to your SPARK workspace.'
-      : 'Sign in to review receipts, approvals, budgets, and burn in one calm workspace.';
+      ? 'Sign in to link your WhatsApp.'
+      : 'Sign in to your workspace.';
   const submitLabel = loading
     ? 'Signing in…'
     : telegramMode
@@ -78,7 +68,7 @@ function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode, whatsapp
 
     try {
       const result = await post(endpoints.login, { email, password });
-      onSuccess(result);
+      await onSuccess(result);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -87,22 +77,7 @@ function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode, whatsapp
   }
 
   return (
-    <div className="auth-page">
-      <AuthAside />
-
-      <section className="auth-panel" aria-labelledby="auth-title">
-        <div className="auth-panel-inner">
-          <div className="auth-mobile-brand">
-            <Link className="auth-brand" to="/" aria-label="SPARK home">
-              <img src="/logo.png" alt="" />
-              <span>SPARK</span>
-            </Link>
-            <Link className="auth-home-link" to="/">
-              Back to site
-              <span aria-hidden="true">↗</span>
-            </Link>
-          </div>
-
+    <AuthLayout onSwitch={onSwitchToSignup}>
           <p className="auth-form-eyebrow">{eyebrow}</p>
           <h2 className="auth-title" id="auth-title">{title}</h2>
           <p className="auth-subtitle">{subtitle}</p>
@@ -123,6 +98,7 @@ function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode, whatsapp
                   name="email"
                   type="email"
                   value={email}
+                  readOnly={Boolean(invitation)}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="you@company.com"
                   autoComplete="email"
@@ -159,11 +135,6 @@ function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode, whatsapp
               </div>
             </div>
 
-            <div className="auth-meta-row">
-              <span>Secure sign-in</span>
-              <Link className="auth-link" to="/contact">Need help?</Link>
-            </div>
-
             {error && (
               <p className="auth-message is-error" role="alert">
                 {error}
@@ -176,7 +147,7 @@ function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode, whatsapp
             </button>
           </form>
 
-          {!botMode && (
+          {!botMode && !invitation && (
             <>
               <div className="auth-divider">or</div>
               <a
@@ -199,21 +170,14 @@ function LoginPage({ onSuccess, onSwitchToSignup, notice, telegramMode, whatsapp
           </p>
 
           <p className="auth-legal">
-            By continuing you agree to the{' '}
-            <Link to="/terms-of-service">Terms of Service</Link>
+            By continuing, you agree to our{' '}
+            <Link to="/terms-of-service">Terms</Link>
             {' '}and{' '}
             <Link to="/privacy-policy">Privacy Policy</Link>
-            .{' '}
-            <Link to="/contact">Contact SPARK</Link>.
+            .
           </p>
 
-          <p className="auth-trust">
-            <span><CheckIcon /> Encrypted in transit</span>
-            <span><CheckIcon /> Scoped Google OAuth</span>
-          </p>
-        </div>
-      </section>
-    </div>
+    </AuthLayout>
   );
 }
 
