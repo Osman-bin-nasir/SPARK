@@ -100,7 +100,9 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
 
   const [members, setMembers] = useState([]);
   const [invitations, setInvitations] = useState([]);
-  const [inviteLink, setInviteLink] = useState('');
+  const [createdInvitation, setCreatedInvitation] = useState(null);
+  const inviteLink = createdInvitation?.url || '';
+  const [invitationError, setInvitationError] = useState('');
   const [revokingInvite, setRevokingInvite] = useState('');
   const [orgInfo, setOrgInfo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -140,24 +142,25 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
       if (!pageCache.isStale('team', organizationId)) return;
     }
 
-    try {
-      if (!cached) setLoading(true);
-      setError('');
-      const [team, pending] = await Promise.all([
-        get(endpoints.organizationsTeam, authHeaders),
-        get(endpoints.organizationsTeamInvitations, authHeaders)
-      ]);
-      const result = { ...team, invitations: pending.items || [] };
-      
-      pageCache.set('team', organizationId, result);
-      setMembers(result.members || []);
-      setInvitations(result.invitations);
-      setOrgInfo(result.organization || null);
-    } catch (err) {
-      if (!cached) setError(err.message || 'Failed to load team.');
-    } finally {
-      setLoading(false);
-    }
+    if (!cached) setLoading(true);
+    setError('');
+    setInvitationError('');
+    let team;
+    let pending;
+    const rosterRequest = get(endpoints.organizationsTeam, authHeaders)
+      .then(result => {
+        team = result;
+        setMembers(result.members || []);
+        setOrgInfo(result.organization || null);
+      })
+      .catch(err => { if (!cached) setError(err.message || 'Failed to load team.'); })
+      .finally(() => setLoading(false));
+    const invitationsRequest = get(endpoints.organizationsTeamInvitations, authHeaders)
+      .then(result => { pending = result.items || []; setInvitations(pending); })
+      .catch(err => setInvitationError(`Pending invitations could not be loaded: ${err.message || 'Please try again.'}`));
+    await Promise.allSettled([rosterRequest, invitationsRequest]);
+    if (team && pending) pageCache.set('team', organizationId, { ...team, invitations: pending });
+    else pageCache.bust('team', organizationId);
   }, [token, organizationId, authHeaders]);
 
   useEffect(() => { fetchTeam(); }, [fetchTeam]);
@@ -168,7 +171,6 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
     setAdding(true);
     setAddError('');
     setNotice('');
-    setInviteLink('');
     try {
       const finalRole = isCustomInvite ? customInviteRole.trim() : addRole;
       const result = await post(
@@ -180,7 +182,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
       setAddRole('member');
       setIsCustomInvite(false);
       setCustomInviteRole('');
-      setInviteLink(result.invite_url);
+      setCreatedInvitation({ id: result.invitation.id, url: result.invite_url });
       setNotice(`Invitation created for ${addEmail.trim()}. Copy the link and share it with them.`);
       pageCache.bust('team', organizationId);
       fetchTeam();
@@ -197,7 +199,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
     try {
       await del(`${endpoints.organizationsTeamInvitations}/${id}`, authHeaders);
       setInvitations(items => items.filter(item => item.id !== id));
-      setInviteLink('');
+      setCreatedInvitation(current => current?.id === id ? null : current);
       pageCache.bust('team', organizationId);
       setNotice('Invitation revoked.');
     } catch (failure) { setError(failure.message || 'Failed to revoke invitation.'); }
@@ -390,6 +392,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                 catch { setAddError('Select the invitation link and copy it manually.'); }
               }}>Copy link</button>
             </div>}
+            {invitationError && <p role="alert" style={{ color: 'var(--accent-red)', marginTop: '12px', fontSize: '.85rem' }}>{invitationError}</p>}
             {invitations.length > 0 && <section aria-label="Pending invitations" style={{ marginTop: '22px' }}>
               <h4 style={{ margin: '0 0 12px' }}>Pending invitations</h4>
               {invitations.map(invitation => <div key={invitation.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', padding: '10px 0', borderTop: '1px solid var(--border)' }}>

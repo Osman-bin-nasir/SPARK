@@ -567,7 +567,8 @@ function App() {
 
   if (normalizedPathname === '/invite') {
     return <main className="auth-shell"><InvitationPage token={token} user={user}
-      onSuccess={handleAuthSuccess} onSignOut={() => { handleLogout(); navigate('/invite', { replace: true }); }} /></main>;
+      onSuccess={result => { handleAuthSuccess(result); navigate('/dashboard', { replace: true }); }}
+      onSignOut={() => { handleLogout(); navigate('/invite', { replace: true }); }} /></main>;
   }
 
   if (normalizedPathname === '/') {

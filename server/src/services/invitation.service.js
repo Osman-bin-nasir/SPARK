@@ -3,6 +3,7 @@ const invitations = require('../db/invitations.repository');
 const organizations = require('../db/organizations.repository');
 const users = require('../db/users.repository');
 const { pool } = require('../db/pool');
+const { rollbackSafely } = require('../db/rollback');
 const { env } = require('../config/env');
 const { HttpError } = require('../utils/http-error');
 
@@ -52,6 +53,7 @@ async function createInvitation({ organizationId, email: input, role = 'member',
 async function joinInvitation({ token, email: input, userId, passwordHash }) {
   const email = normalizeEmail(input);
   const client = await pool.connect();
+  let releaseError;
   try {
     await client.query('BEGIN');
     const invitation = await getInvitation(token, client, true);
@@ -72,9 +74,9 @@ async function joinInvitation({ token, email: input, userId, passwordHash }) {
     await client.query('COMMIT');
     return user;
   } catch (error) {
-    await client.query('ROLLBACK');
+    releaseError = await rollbackSafely(client);
     throw error;
-  } finally { client.release(); }
+  } finally { client.release(releaseError || undefined); }
 }
 
 module.exports = { createInvitation, getInvitation, joinInvitation };

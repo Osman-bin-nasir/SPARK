@@ -4,6 +4,7 @@ const organizationsRepository = require('../db/organizations.repository');
 const telegramRepository = require('../db/telegram.repository');
 const whatsappRepository = require('../db/whatsapp.repository');
 const { pool } = require('../db/pool');
+const { rollbackSafely } = require('../db/rollback');
 const {
   signAccessToken,
   signRefreshToken,
@@ -132,6 +133,7 @@ async function buildAuthResponse(user) {
 async function createRegisteredUserWithDefaultOrganization({ email, passwordHash, organizationName }) {
   if (!organizationName) return usersRepository.createUser({ email, passwordHash });
   const client = await pool.connect();
+  let releaseError;
   try {
     await client.query('BEGIN');
     const user = await usersRepository.createUser({ email, passwordHash }, client);
@@ -139,8 +141,8 @@ async function createRegisteredUserWithDefaultOrganization({ email, passwordHash
     await client.query('COMMIT');
     return user;
   } catch (error) {
-    await client.query('ROLLBACK'); throw error;
-  } finally { client.release(); }
+    releaseError = await rollbackSafely(client); throw error;
+  } finally { client.release(releaseError || undefined); }
 }
 
 async function completeRegistrationForTelegramUser({ telegramToken, email, passwordHash }) {
