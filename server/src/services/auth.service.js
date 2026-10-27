@@ -12,6 +12,7 @@ const {
 } = require('../utils/jwt');
 const { env } = require('../config/env');
 const { HttpError } = require('../utils/http-error');
+const invitationService = require('./invitation.service');
 
 function normalizeEmail(email) {
   if (typeof email !== 'string') {
@@ -128,8 +129,18 @@ async function buildAuthResponse(user) {
   };
 }
 
-async function createRegisteredUserWithDefaultOrganization({ email, passwordHash }) {
-  return usersRepository.createUser({ email, passwordHash });
+async function createRegisteredUserWithDefaultOrganization({ email, passwordHash, organizationName }) {
+  if (!organizationName) return usersRepository.createUser({ email, passwordHash });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const user = await usersRepository.createUser({ email, passwordHash }, client);
+    await organizationsRepository.createOrganizationForUser({ userId: user.id, organizationName }, client);
+    await client.query('COMMIT');
+    return user;
+  } catch (error) {
+    await client.query('ROLLBACK'); throw error;
+  } finally { client.release(); }
 }
 
 async function completeRegistrationForTelegramUser({ telegramToken, email, passwordHash }) {
@@ -282,8 +293,24 @@ async function register(payload) {
   const body = payload || {};
   const email = normalizeEmail(body.email);
   validatePassword(body.password);
+  const organizationName = typeof body.organization_name === 'string' ? body.organization_name.trim() : '';
+  if (body.organization_name !== undefined && (!organizationName || organizationName.length > 120)) {
+    throw new HttpError(400, 'Workspace name must be 1 to 120 characters');
+  }
   const telegramToken = typeof body.telegram_token === 'string' ? body.telegram_token.trim() : '';
   const whatsappToken = typeof body.whatsapp_token === 'string' ? body.whatsapp_token.trim() : '';
+
+  if (body.invitation_token) {
+    if (telegramToken || whatsappToken) throw new HttpError(400, 'Accept the workspace invitation before linking a bot account');
+    try {
+      const passwordHash = await bcrypt.hash(body.password, 12);
+      const user = await invitationService.joinInvitation({ token: body.invitation_token, email, passwordHash });
+      return buildAuthResponse(user);
+    } catch (error) {
+      if (error.code === '23505') throw new HttpError(409, 'You already have an account. Sign in to accept this invitation.');
+      throw error;
+    }
+  }
 
   if (telegramToken && whatsappToken) {
     throw new HttpError(400, 'Cannot register with both Telegram and WhatsApp tokens simultaneously');
@@ -348,7 +375,7 @@ async function register(payload) {
       return buildAuthResponse(user);
     }
 
-    const user = await createRegisteredUserWithDefaultOrganization({ email, passwordHash });
+    const user = await createRegisteredUserWithDefaultOrganization({ email, passwordHash, organizationName });
 
     return buildAuthResponse(user);
   } catch (error) {
@@ -712,7 +739,15 @@ async function unlinkWhatsappAccount({ userId }) {
   };
 }
 
+async function acceptInvitation({ userId, token }) {
+  const user = await usersRepository.findUserById(userId);
+  if (!user?.email) throw new HttpError(401, 'Sign in with your registered email to accept this invitation');
+  const joinedUser = await invitationService.joinInvitation({ token, email: user.email, userId });
+  return buildAuthResponse(joinedUser);
+}
+
 module.exports = {
+  acceptInvitation,
   createTelegramLogin,
   createWhatsappLogin,
   linkTelegramAccount,

@@ -33,6 +33,22 @@ test('public login neither refreshes an expired old session nor sends its creden
   assert.equal(getStoredUser().id, 'user-a');
 });
 
+test('invitation preview works independently of an expired or different signed-in account', async () => {
+  localStorage.setItem('token', expired());
+  let requests = 0;
+  globalThis.fetch = async (url, options) => {
+    requests++;
+    assert.equal(url, 'https://api.example.test/auth/invitations/preview');
+    assert.equal(options.headers.Authorization, undefined);
+    assert.deepEqual(JSON.parse(options.body), { token: 'preview-token' });
+    return json({ email: 'invited@example.test', organization_name: 'Inviting team' });
+  };
+  const invitation = await api().post('/auth/invitations/preview', { token: 'preview-token' });
+  assert.equal(invitation.email, 'invited@example.test');
+  assert.equal(requests, 1);
+  assert.equal(getStoredUser().id, 'user-a');
+});
+
 test('401 retries use the refreshed token even when the component supplied an old token', async () => {
   const seen = [];
   globalThis.fetch = async (url, options) => {

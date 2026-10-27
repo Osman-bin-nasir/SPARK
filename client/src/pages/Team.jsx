@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { get, post, del, patch } from '../services/http';
 import { endpoints } from '../services/endpoints';
 import { pageCache } from '../services/page-cache';
@@ -99,6 +99,9 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
   const isFounder = ['founder', 'co-founder'].includes(myRole);
 
   const [members, setMembers] = useState([]);
+  const [invitations, setInvitations] = useState([]);
+  const [inviteLink, setInviteLink] = useState('');
+  const [revokingInvite, setRevokingInvite] = useState('');
   const [orgInfo, setOrgInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -122,7 +125,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState('');
   const [deleting, setDeleting] = useState('');
 
-  const authHeaders = { token, headers: { 'X-Organization-Id': organizationId } };
+  const authHeaders = useMemo(() => ({ token, headers: { 'X-Organization-Id': organizationId } }), [token, organizationId]);
 
   const fetchTeam = useCallback(async () => {
     if (!token || !organizationId) { setLoading(false); return; }
@@ -131,6 +134,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
     const cached = pageCache.get('team', organizationId);
     if (cached) {
       setMembers(cached.data.members || []);
+      setInvitations(cached.data.invitations || []);
       setOrgInfo(cached.data.organization || null);
       setLoading(false);
       if (!pageCache.isStale('team', organizationId)) return;
@@ -139,30 +143,36 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
     try {
       if (!cached) setLoading(true);
       setError('');
-      const result = await get(endpoints.organizationsTeam, authHeaders);
+      const [team, pending] = await Promise.all([
+        get(endpoints.organizationsTeam, authHeaders),
+        get(endpoints.organizationsTeamInvitations, authHeaders)
+      ]);
+      const result = { ...team, invitations: pending.items || [] };
       
       pageCache.set('team', organizationId, result);
       setMembers(result.members || []);
+      setInvitations(result.invitations);
       setOrgInfo(result.organization || null);
     } catch (err) {
       if (!cached) setError(err.message || 'Failed to load team.');
     } finally {
       setLoading(false);
     }
-  }, [token, organizationId]);
+  }, [token, organizationId, authHeaders]);
 
   useEffect(() => { fetchTeam(); }, [fetchTeam]);
 
   async function handleAddMember(e) {
     e.preventDefault();
-    if (!addEmail.trim()) return;
+    if (adding || !addEmail.trim()) return;
     setAdding(true);
     setAddError('');
     setNotice('');
+    setInviteLink('');
     try {
       const finalRole = isCustomInvite ? customInviteRole.trim() : addRole;
-      await post(
-        endpoints.organizationsTeamMembers,
+      const result = await post(
+        endpoints.organizationsTeamInvitations,
         { email: addEmail.trim().toLowerCase(), role: finalRole },
         authHeaders
       );
@@ -170,14 +180,28 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
       setAddRole('member');
       setIsCustomInvite(false);
       setCustomInviteRole('');
-      setNotice(`${addEmail.trim()} added to the team.`);
+      setInviteLink(result.invite_url);
+      setNotice(`Invitation created for ${addEmail.trim()}. Copy the link and share it with them.`);
       pageCache.bust('team', organizationId);
       fetchTeam();
     } catch (err) {
-      setAddError(err.message || 'Failed to add member.');
+      setAddError(err.message || 'Failed to create invitation.');
     } finally {
       setAdding(false);
     }
+  }
+
+  async function revokeInvitation(id) {
+    if (revokingInvite) return;
+    setRevokingInvite(id); setError('');
+    try {
+      await del(`${endpoints.organizationsTeamInvitations}/${id}`, authHeaders);
+      setInvitations(items => items.filter(item => item.id !== id));
+      setInviteLink('');
+      pageCache.bust('team', organizationId);
+      setNotice('Invitation revoked.');
+    } catch (failure) { setError(failure.message || 'Failed to revoke invitation.'); }
+    finally { setRevokingInvite(''); }
   }
 
   async function handleRemoveMember(userId, email) {
@@ -278,10 +302,11 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
           <div style={{ padding: '22px 24px 24px' }}>
             <form onSubmit={handleAddMember} style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 260px' }}>
-                <label style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                <label htmlFor="invite-email" style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
                   Email Address
                 </label>
                 <input
+                  id="invite-email"
                   className="premium-input"
                   type="email"
                   placeholder="teammate@example.com"
@@ -293,12 +318,13 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                 />
               </div>
               <div style={{ flex: isCustomInvite ? '1 1 180px' : '0 0 150px' }}>
-                <label style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                <label htmlFor="invite-role" style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
                   Role
                 </label>
                 {isCustomInvite ? (
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <input
+                      id="invite-role"
                       className="premium-input"
                       type="text"
                       placeholder="e.g. CTO"
@@ -318,6 +344,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                   </div>
                 ) : (
                   <select
+                    id="invite-role"
                     className="premium-input"
                     value={addRole}
                     onChange={e => {
@@ -346,7 +373,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                   disabled={adding || !addEmail.trim()}
                   style={{ whiteSpace: 'nowrap', opacity: adding ? 0.7 : 1, padding: '0 18px' }}
                 >
-                  {adding ? 'Adding…' : '+ Add Member'}
+                  {adding ? 'Creating…' : '+ Create invitation'}
                 </button>
               </div>
             </form>
@@ -354,8 +381,22 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
               <p style={{ marginTop: '10px', color: '#ef4444', fontSize: '0.85rem', margin: '10px 0 0' }}>{addError}</p>
             )}
             <p style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 0 }}>
-              The user must already have a SPARK account. New members can join via their Telegram invite link too.
+              Invite by email, then share the link. New members create their account directly in this workspace. Links expire in 7 days; email is not sent automatically.
             </p>
+            {inviteLink && <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
+              <input aria-label="Invitation link" value={inviteLink} readOnly style={{ flex: '1 1 240px', minWidth: 0 }} />
+              <button type="button" onClick={async () => {
+                try { await navigator.clipboard.writeText(inviteLink); setNotice('Invitation link copied.'); }
+                catch { setAddError('Select the invitation link and copy it manually.'); }
+              }}>Copy link</button>
+            </div>}
+            {invitations.length > 0 && <section aria-label="Pending invitations" style={{ marginTop: '22px' }}>
+              <h4 style={{ margin: '0 0 12px' }}>Pending invitations</h4>
+              {invitations.map(invitation => <div key={invitation.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', padding: '10px 0', borderTop: '1px solid var(--border)' }}>
+                <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}><strong>{invitation.email}</strong><div style={{ color: 'var(--text-secondary)', fontSize: '.8rem', marginTop: '4px' }}>{invitation.role} · Expires {formatDate(invitation.expires_at)}</div></div>
+                <button type="button" className="secondary-btn" disabled={Boolean(revokingInvite)} onClick={() => revokeInvitation(invitation.id)}>{revokingInvite === invitation.id ? 'Revoking…' : 'Revoke'}</button>
+              </div>)}
+            </section>}
           </div>
         </div>
       )}

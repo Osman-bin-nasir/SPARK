@@ -543,6 +543,7 @@ module.exports = {
   addOrganizationMember,
   buildDefaultOrganizationName,
   createOrganization,
+  createOrganizationForUser,
   ensureDefaultOrganizationForUser,
   ensureOrganizationJoinCodes,
   findOrganizationById,

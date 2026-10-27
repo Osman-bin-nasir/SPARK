@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { post } from '../../services/http';
 import { endpoints } from '../../services/endpoints';
-import AuthAside from '../auth/auth-aside';
-import '../../styles/auth.css';
+import AuthLayout from '../auth/auth-layout';
 
 function EyeIcon() {
   return (
@@ -23,34 +22,26 @@ function EyeOffIcon() {
   );
 }
 
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="m5 12.5 4.5 4.5L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsappMode, telegramToken, whatsappToken }) {
-  const [email, setEmail] = useState('');
+function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsappMode, telegramToken, whatsappToken, invitation, invitationToken }) {
+  const [email, setEmail] = useState(invitation?.email || '');
   const [password, setPassword] = useState('');
+  const [workspaceName, setWorkspaceName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const createsWorkspace = !invitation && !telegramMode && !whatsappMode;
 
-  const botMode = Boolean(telegramMode || whatsappMode);
-  const channelLabel = telegramMode ? 'Telegram' : whatsappMode ? 'WhatsApp' : '';
-  const eyebrow = botMode ? `${channelLabel} access` : 'SPARK Finance';
-  const title = telegramMode
+  const eyebrow = 'SPARK';
+  const title = invitation ? `Join ${invitation.organization_name}` : telegramMode
     ? 'Create and link'
     : whatsappMode
       ? 'Create and link'
-      : 'Create your account';
-  const subtitle = telegramMode
-    ? 'Set up a SPARK workspace and attach this Telegram identity in one step.'
+      : 'Create your workspace';
+  const subtitle = invitation ? `Create your account to join as ${invitation.role}.` : telegramMode
+    ? 'Create an account to link your Telegram.'
     : whatsappMode
-      ? 'Set up a SPARK workspace and attach this WhatsApp number in one step.'
-      : 'Start with a clean workspace for receipts, approvals, budgets, and burn.';
+      ? 'Create an account to link your WhatsApp.'
+      : 'Start a new workspace. Joining a team? Use its invitation link.';
   const submitLabel = loading
     ? 'Creating account…'
     : telegramMode
@@ -67,6 +58,8 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsapp
 
     try {
       const payload = { email, password };
+      if (invitationToken) payload.invitation_token = invitationToken;
+      if (createsWorkspace) payload.organization_name = workspaceName.trim();
 
       if (telegramToken) {
         payload.telegram_token = telegramToken;
@@ -77,7 +70,7 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsapp
       }
 
       const result = await post(endpoints.register, payload);
-      onSuccess(result);
+      await onSuccess(result);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -86,22 +79,7 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsapp
   }
 
   return (
-    <div className="auth-page">
-      <AuthAside />
-
-      <section className="auth-panel" aria-labelledby="auth-title">
-        <div className="auth-panel-inner">
-          <div className="auth-mobile-brand">
-            <Link className="auth-brand" to="/" aria-label="SPARK home">
-              <img src="/logo.png" alt="" />
-              <span>SPARK</span>
-            </Link>
-            <Link className="auth-home-link" to="/">
-              Back to site
-              <span aria-hidden="true">↗</span>
-            </Link>
-          </div>
-
+    <AuthLayout signup onSwitch={onSwitchToLogin}>
           <p className="auth-form-eyebrow">{eyebrow}</p>
           <h2 className="auth-title" id="auth-title">{title}</h2>
           <p className="auth-subtitle">{subtitle}</p>
@@ -113,6 +91,12 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsapp
           )}
 
           <form className="auth-form" onSubmit={handleSubmit}>
+            {createsWorkspace && <div className="auth-field">
+              <label className="auth-label" htmlFor="signup-workspace">Workspace name</label>
+              <div className="auth-input-wrap"><input className="auth-input" id="signup-workspace" name="organization_name"
+                value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} placeholder="Your company or team"
+                maxLength={120} required /></div>
+            </div>}
             <div className="auth-field">
               <label className="auth-label" htmlFor="signup-email">Work email</label>
               <div className="auth-input-wrap">
@@ -122,6 +106,7 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsapp
                   name="email"
                   type="email"
                   value={email}
+                  readOnly={Boolean(invitation)}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="you@company.com"
                   autoComplete="email"
@@ -180,21 +165,14 @@ function SignupPage({ onSuccess, onSwitchToLogin, notice, telegramMode, whatsapp
           </p>
 
           <p className="auth-legal">
-            By continuing you agree to the{' '}
-            <Link to="/terms-of-service">Terms of Service</Link>
+            By continuing, you agree to our{' '}
+            <Link to="/terms-of-service">Terms</Link>
             {' '}and{' '}
             <Link to="/privacy-policy">Privacy Policy</Link>
-            .{' '}
-            <Link to="/contact">Contact SPARK</Link>.
+            .
           </p>
 
-          <p className="auth-trust">
-            <span><CheckIcon /> Works with Telegram &amp; WhatsApp</span>
-            <span><CheckIcon /> Scoped Google OAuth</span>
-          </p>
-        </div>
-      </section>
-    </div>
+    </AuthLayout>
   );
 }
 

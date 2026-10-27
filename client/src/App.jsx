@@ -8,6 +8,7 @@ import PrivacyPolicyPage from './pages/PrivacyPolicy';
 import TermsOfServicePage from './pages/TermsOfService';
 import ContactPage from './pages/Contact';
 import LandingPage from './pages/Landing';
+import InvitationPage from './pages/Invitation';
 import { post } from './services/http';
 import { endpoints } from './services/endpoints';
 import { clearSession, getStoredUser, startSession, syncSessionFromStorage } from './services/session';
@@ -562,6 +563,11 @@ function App() {
 
   if (publicPageByPath[normalizedPathname]) {
     return publicPageByPath[normalizedPathname];
+  }
+
+  if (normalizedPathname === '/invite') {
+    return <main className="auth-shell"><InvitationPage token={token} user={user}
+      onSuccess={handleAuthSuccess} onSignOut={() => { handleLogout(); navigate('/invite', { replace: true }); }} /></main>;
   }
 
   if (normalizedPathname === '/') {

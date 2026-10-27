@@ -3,7 +3,7 @@ import { assertCurrentSession, captureSession, clearSession, refreshSession } fr
 
 const PUBLIC_AUTH_PATHS = new Set([
   endpoints.login, endpoints.register, endpoints.signup, '/auth/telegram', '/auth/whatsapp',
-  '/auth/create-telegram-login', '/auth/create-whatsapp-login'
+  '/auth/create-telegram-login', '/auth/create-whatsapp-login', '/auth/invitations/preview'
 ]);
 
 function expiresSoon(token) {
