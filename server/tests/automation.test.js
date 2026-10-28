@@ -7,11 +7,13 @@ const telegram = require('../src/services/telegram.service');
 const whatsapp = require('../src/services/whatsapp.service');
 const auth = require('../src/services/auth.service');
 const extraction = require('../src/services/receipt-extraction.service');
+const intent = require('../src/services/bot-intent.service');
+const finance = require('../src/db/bot-finance.repository');
 const ingestion = require('../src/services/ingestion.service');
 const bots = require('../src/integrations/bot.client');
 const googleDrive = require('../src/services/google-drive.service');
 const { env } = require('../src/config/env');
-const originals = new Map([jobs, orgs, telegram, whatsapp, auth, extraction, ingestion, bots, googleDrive].map(o => [o, { ...o }]));
+const originals = new Map([jobs, orgs, telegram, whatsapp, auth, extraction, ingestion, bots, googleDrive, intent, finance].map(o => [o, { ...o }]));
 const originalEnv = { ...env };
 let queued, checkpoints;
 test.beforeEach(() => {
@@ -20,6 +22,11 @@ test.beforeEach(() => {
   jobs.enqueue = async value => { queued.push(value); };
   jobs.checkpoint = async (id, progress) => { checkpoints.push(progress); };
   telegram.getTelegramMemberships = async () => ({ linked: true, user_id: 'user-1', organizations: [{ id: 'org-1', name: 'Spark' }] });
+  finance.loadContext = async () => null;
+  finance.saveContext = async () => {};
+  intent.interpret = async () => ({ intent: 'add_expense', confidence: .95, needs_clarification: false, clarification: null,
+    amount: 42, description: 'Cafe', category: 'food', date: '2026-10-26', start_date: null, end_date: null,
+    comparison_start_date: null, comparison_end_date: null, search: null, language: 'en', general_answer: null, period: null, comparison_period: null });
 });
 test.afterEach(() => {
   for (const [object, saved] of originals) Object.assign(object, saved);
@@ -38,7 +45,7 @@ test('linked expense notes use server-owned membership identity, then enqueue a 
   assert.equal(args.payload.submitted_by_user_id, 'user-1');
   assert.equal(args.automationJobId, 'job-1');
   assert.equal(queued[0].kind, 'reply');
-  assert.match(queued[0].payload.text, /tx-1/);
+  assert.match(queued[0].payload.text, /Recorded 42.00/);
 });
 test('a retry after committed ingestion neither extracts nor creates another transaction', async () => {
   extraction.extract = ingestion.ingestText = async () => { throw new Error('must not repeat'); };

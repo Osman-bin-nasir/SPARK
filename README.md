@@ -582,6 +582,18 @@ Prefix all API endpoints with `/api`. Headers should include:
 
 Direct bot intake uses `POST /api/webhooks/telegram` and `POST /api/webhooks/whatsapp`. These endpoints authenticate provider requests and save durable jobs before acknowledging delivery; they no longer route through n8n.
 
+Conversational text now uses Groq intent recognition, separate from receipt OCR.
+Users can record expenses, ask personal spending questions in English or Hinglish,
+compare periods and complete a clarification through a follow-up message. Replies
+use database totals; the model never executes SQL or calculates account balances.
+Apply migration `012_bot_conversations` before running this version. Existing
+`GROQ_API_KEY`, `GROQ_MODEL` and `AUTOMATION_TIME_ZONE` settings are reused.
+See [native automation configuration](N8N_MIGRATION.md#conversational-expense-messages)
+for query scope, context expiry and supported actions.
+For Render settings and the post-deployment Telegram/WhatsApp cutover, follow
+[the bot deployment guide](server/DEPLOYMENT.md). The public production environment
+template is [`server/.env.production.example`](server/.env.production.example).
+
 ### Workspace invitations
 
 Each account belongs to one organization. Ordinary web signup asks for a workspace

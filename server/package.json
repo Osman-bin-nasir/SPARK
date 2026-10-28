@@ -12,11 +12,12 @@
     "start:worker": "node src/worker.js",
     "automation": "node src/scripts/automation.js",
     "seed:startup-demo": "node src/db/seed-realistic.js",
-    "test": "node --test"
+    "test": "node --test --test-concurrency=2"
   },
   "dependencies": {
     "@langchain/core": "^0.3.40",
     "@langchain/ollama": "^0.2.0",
+    "ajv": "^8.20.0",
     "bcryptjs": "^2.4.3",
     "busboy": "^1.6.0",
     "cors": "^2.8.5",

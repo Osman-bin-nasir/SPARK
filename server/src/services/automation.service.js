@@ -4,6 +4,7 @@ const jobs = require('../db/automation.repository');
 const organizations = require('../db/organizations.repository');
 const bots = require('../integrations/bot.client');
 const extraction = require('./receipt-extraction.service');
+const conversation = require('./bot-conversation.service');
 const ingestion = require('./ingestion.service');
 const insights = require('./insights.service');
 const auth = require('./auth.service');
@@ -14,7 +15,7 @@ const googleDrive = require('./google-drive.service');
 const events = require('./automation-events');
 const { createAutomationRunner } = require('./automation-runner');
 
-const HELP = 'Send one receipt image/PDF or an expense note with amount, vendor and date. Commands: /login, /join CODE, /insights weekly, /insights monthly. Open a workspace invitation to join it.';
+const HELP = 'Send an expense like "I spent 250 on lunch", ask "How much did I spend today?", or upload one receipt image/PDF. English and Hinglish are welcome. Commands: /login, /join CODE, /insights weekly, /insights monthly. Open a workspace invitation to join it.';
 let reportTimer;
 let reportRunning;
 let reportsRequested = false;
@@ -123,6 +124,9 @@ async function processInbound(job) {
     return queueReply(job, 'Link your SPARK account with /login and join a workspace before submitting expenses.');
   }
   const organization = member.organizations[0];
+  if (job.progress.userId && job.progress.userId !== member.user_id) {
+    return queueReply(job, 'Your linked account changed while processing. Please send your message again.');
+  }
   // Refuse to reuse extracted data if the sender changed workspace between retries.
   if (job.progress.organizationId && job.progress.organizationId !== organization.id) {
     return queueReply(job, 'Your workspace changed while processing. Please submit the receipt again.');
@@ -134,6 +138,10 @@ async function processInbound(job) {
   }
   if (job.payload.unsupportedMedia) return queueReply(job, 'Please send one receipt at a time.');
   if (file?.size > env.ocrMaxFileBytes) return queueReply(job, 'Receipt exceeds the free OCR file limit. Please send a file smaller than 1 MB.');
+  if (!file && !job.progress.ingestion) {
+    return queueReply(job, await conversation.processText({ job, organizationId: organization.id,
+      userId: member.user_id, platform, text: trimmed, receivedAt }));
+  }
   let result = job.progress.ingestion;
   if (!result) {
     // Attachments must be archived before a transaction is committed. Check the
