@@ -37,5 +37,6 @@ test('opaque refresh tokens rotate, detect reuse and revoke access; browser cook
   const logout=await fetch(base+'/api/auth/logout',{method:'POST',headers:{cookie,'x-spark-browser-session':'1'}});
   assert.equal(logout.status,204);assert.match(logout.headers.get('set-cookie'),/HttpOnly/);
   assert.equal((await fetch(base+'/api/transactions',{headers:{authorization:'Bearer '+access}})).status,401);
+  assert.equal((await fetch(base+'/api/google-drive/connect',{headers:{authorization:'Bearer '+access}})).status,401);
   assert.equal(listing.mock.callCount(),1);
 });
