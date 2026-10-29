@@ -11,6 +11,14 @@ const originalGoogleClientId = env.googleClientId;
 const originalGoogleClientSecret = env.googleClientSecret;
 const originalGoogleRedirectUri = env.googleRedirectUri;
 const originalGoogleTokenEncryptionKey = env.googleTokenEncryptionKey;
+test('co-founders can create a Drive connection URL consistently with the route permissions',async t=>{
+  const organizations=require('../src/db/organizations.repository');
+  t.mock.method(organizations,'findMembership',async()=>({role:'co-founder'}));
+  env.googleClientId='test-client';env.googleClientSecret='test-secret';
+  env.googleRedirectUri='https://example.test/api/google-drive/callback';
+  env.googleTokenEncryptionKey='a'.repeat(64);
+  assert.match(await googleDriveService.createConnectUrl({userId:'co',organizationId:'org'}),/accounts.google.com/);
+});
 
 test.afterEach(() => {
   integrationsRepository.findByOrganizationId = originalFindIntegration;

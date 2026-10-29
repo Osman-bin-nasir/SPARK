@@ -1,3 +1,4 @@
+import { deferEffect } from '../lib/defer-effect';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { get, getBlob, patch } from '../services/http';
@@ -108,14 +109,14 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
     }
   }, [previewUrl]);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     setSheetError('');
     setSheetInfo(null);
-  }, [organizationId]);
+  }), [organizationId]);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     setSheetRange(preferredSheetRange);
-  }, [preferredSheetRange]);
+  }), [preferredSheetRange]);
 
   const fetchTransactions = useCallback(async (force = false) => {
     listRequest.current?.abort();
@@ -147,7 +148,7 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
       });
       const res = await get(`${endpoints.transactions}?${params}`, { ...authHeaders, signal: controller.signal });
       if (controller.signal.aborted) return;
-      
+
       pageCache.set('transactions', cacheQuery, res);
       setTransactions(res.items || []);
       setTotal(res.pagination?.total || 0);
@@ -158,10 +159,10 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
     }
   }, [token, organizationId, page, pageSize, filters, authHeaders]);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     fetchTransactions();
     return () => { listRequest.current?.abort(); detailRequest.current?.abort(); };
-  }, [fetchTransactions]);
+  }), [fetchTransactions]);
 
   const handleExpand = async (id) => {
     detailRequest.current?.abort();
@@ -310,10 +311,10 @@ export default function TransactionsPage({ activeOrganizationId, token: tokenPro
             <option value="auto_verified">Auto Verified</option>
             <option value="pending_review">Pending Review</option>
           </select>
-          <input 
+          <input
             className="premium-input"
-            type="text" 
-            placeholder="Search vendor..." 
+            type="text"
+            placeholder="Search vendor..."
             aria-label="Search vendor"
             name="vendor"
             key={filters.vendor}

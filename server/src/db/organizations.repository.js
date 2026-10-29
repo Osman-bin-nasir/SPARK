@@ -149,8 +149,8 @@ async function findOrganizationDriveOwner(organizationId, client = pool) {
             om.role
      FROM organization_members om
      WHERE om.organization_id = $1
-       AND om.role IN ('founder', 'admin')
-     ORDER BY CASE om.role WHEN 'founder' THEN 0 ELSE 1 END, om.created_at ASC
+       AND om.role IN ('founder', 'co-founder', 'admin')
+     ORDER BY CASE om.role WHEN 'founder' THEN 0 WHEN 'co-founder' THEN 1 ELSE 2 END, om.created_at ASC
      LIMIT 1`,
     [organizationId]
   );

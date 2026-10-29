@@ -43,7 +43,8 @@ async function removeMember(req, res, next) {
     const { userId } = req.params;
     await organizationService.removeMember({
       organizationId: req.organization.id,
-      targetUserId: userId
+      targetUserId: userId,
+      actorId: req.auth.userId
     });
     res.status(204).end();
   } catch (error) {
@@ -58,7 +59,8 @@ async function updateMemberRole(req, res, next) {
     const result = await organizationService.updateMemberRole({
       organizationId: req.organization.id,
       targetUserId: userId,
-      role
+      role,
+      actorId: req.auth.userId
     });
     res.status(200).json(result);
   } catch (error) {
@@ -88,6 +90,7 @@ async function updateMember(req, res, next) {
       organizationId: req.organization.id,
       targetUserId: userId,
       role,
+      actorId: req.auth.userId,
       receiveInsights: receive_insights
     });
     res.status(200).json(result);

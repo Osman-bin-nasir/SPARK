@@ -1,3 +1,4 @@
+import { deferEffect } from '../../lib/defer-effect';
 import { useEffect, useRef, useState } from 'react';
 import {
   Area,
@@ -17,12 +18,9 @@ import {
   getDashboardBudgets,
   getDashboardConfig,
   getDashboardSnapshot,
-  getOrganizationTeam,
-  regenerateOrganizationJoinCode,
-  updateDashboardBudgets,
-  updateDashboardConfig
+  getOrganizationTeam
 } from './dashboard.api';
-import { getDashboardInvalidationStamp, markDashboardSnapshotStale } from './dashboard.cache';
+import { getDashboardInvalidationStamp } from './dashboard.cache';
 import { pageCache } from '../../services/page-cache';
 import '../../styles/dashboard.css';
 
@@ -164,42 +162,34 @@ function OrganizationSwitcher({ onSelectOrganization, organizationId, organizati
 
 function DashboardPage({
   activeOrganizationId,
-  onLogout,
-  onOpenIntegrations,
-  onSelectOrganization,
   status,
   token,
   user
 }) {
   const organizations = user?.organizations || [];
 
-  const [months, setMonths] = useState(6);
+  const months = 6;
   const [categoryBreakdownWindow, setCategoryBreakdownWindow] = useState('all_time');
   const [categoryBreakdownMenuOpen, setCategoryBreakdownMenuOpen] = useState(false);
   const [snapshot, setSnapshot] = useState(null);
-  const [config, setConfig] = useState({
+  const [, setConfig] = useState({
     configured: false,
     opening_cash_balance: null,
     opening_cash_effective_date: ''
   });
-  const [budgets, setBudgets] = useState({ items: [] });
-  const [team, setTeam] = useState(null);
-  const [cashForm, setCashForm] = useState({
+  const [, setBudgets] = useState({ items: [] });
+  const [, setTeam] = useState(null);
+  const [, setCashForm] = useState({
     opening_cash_balance: '',
     opening_cash_effective_date: ''
   });
-  const [budgetDrafts, setBudgetDrafts] = useState([createBudgetDraft()]);
+  const [, setBudgetDrafts] = useState([createBudgetDraft()]);
   const [loadingSnapshot, setLoadingSnapshot] = useState(true);
   const [loadingSetup, setLoadingSetup] = useState(true);
-  const [loadingTeam, setLoadingTeam] = useState(false);
+  const [, setLoadingTeam] = useState(false);
   const [error, setError] = useState('');
-  const [teamError, setTeamError] = useState('');
-  const [cashMessage, setCashMessage] = useState('');
-  const [budgetMessage, setBudgetMessage] = useState('');
-  const [teamMessage, setTeamMessage] = useState('');
-  const [savingCash, setSavingCash] = useState(false);
-  const [savingBudgets, setSavingBudgets] = useState(false);
-  const [regeneratingJoinCode, setRegeneratingJoinCode] = useState(false);
+  const [, setTeamError] = useState('');
+  const [, setTeamMessage] = useState('');
   const categoryBreakdownMenuRef = useRef(null);
 
   // Derived from backend response once available
@@ -210,14 +200,12 @@ function DashboardPage({
     can_manage_finance: ['founder', 'admin'].includes(organization?.role || ''),
     is_founder: organization?.role === 'founder'
   };
-  const { can_manage_finance: canManageFinance, is_founder: isFounder } = permissions;
+  const { is_founder: isFounder } = permissions;
 
   const dashboardState = loadingSnapshot ? 'loading' : snapshot?.dashboard_state || 'unavailable';
   const snapshotReady = dashboardState === 'ready' || dashboardState === 'no_history';
   const busy = loadingSnapshot || loadingSetup;
-  const noTransactionHistory = dashboardState === 'no_history';
-  const unavailable = dashboardState === 'unavailable';
-  const budgetsConfigured = snapshot?.config.budgets_configured ?? budgets.items.length > 0;
+
   const metricFallback = busy ? 'Loading...' : 'Unavailable';
   const categoryBreakdownItems = snapshot?.category_breakdown || [];
   const categoryBreakdownTotal = sumCategoryAmounts(categoryBreakdownItems);
@@ -273,7 +261,7 @@ function DashboardPage({
     };
   }, []);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     if (!token) {
       setSnapshot(null);
       setLoadingSnapshot(false);
@@ -326,9 +314,9 @@ function DashboardPage({
     return () => {
       isActive = false;
     };
-  }, [months, categoryBreakdownWindow, activeOrganizationId, token]);
+  }), [months, categoryBreakdownWindow, activeOrganizationId, token]);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     if (!token || !organizationId) {
       setConfig({ configured: false, opening_cash_balance: null, opening_cash_effective_date: '' });
       setBudgets({ items: [] });
@@ -394,9 +382,9 @@ function DashboardPage({
     return () => {
       isActive = false;
     };
-  }, [organizationId, token]);
+  }), [organizationId, token]);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     if (!token || !organizationId || !isFounder) {
       setTeam(null);
       setTeamError('');
@@ -436,164 +424,7 @@ function DashboardPage({
     return () => {
       isActive = false;
     };
-  }, [isFounder, organizationId, token]);
-
-  async function refreshSnapshot() {
-    // Bust cache so next navigation fetches fresh data
-    const cacheKey = `${activeOrganizationId}:${months}:${categoryBreakdownWindow}`;
-    pageCache.bust('dashboard', cacheKey);
-    pageCache.bust('dashboard-setup', organizationId);
-    markDashboardSnapshotStale(activeOrganizationId);
-
-    const result = await getDashboardSnapshot({
-      token,
-      organizationId: activeOrganizationId,
-      months,
-      categoryWindow: categoryBreakdownWindow
-    });
-
-    pageCache.set('dashboard', cacheKey, result);
-    setSnapshot(result);
-  }
-
-  async function handleSaveCashConfig(event) {
-    event.preventDefault();
-
-    if (!canManageFinance) {
-      return;
-    }
-
-    try {
-      setSavingCash(true);
-      setCashMessage('');
-      setError('');
-
-      const result = await updateDashboardConfig({
-        token,
-        organizationId,
-        payload: {
-          opening_cash_balance: cashForm.opening_cash_balance,
-          opening_cash_effective_date: cashForm.opening_cash_effective_date
-        }
-      });
-
-      setConfig(result);
-      setCashForm({
-        opening_cash_balance:
-          result.opening_cash_balance === null || result.opening_cash_balance === undefined
-            ? ''
-            : String(result.opening_cash_balance),
-        opening_cash_effective_date: result.opening_cash_effective_date || ''
-      });
-      setCashMessage('Opening cash settings saved.');
-      await refreshSnapshot();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setSavingCash(false);
-    }
-  }
-
-  async function handleSaveBudgets(event) {
-    event.preventDefault();
-
-    if (!canManageFinance) {
-      return;
-    }
-
-    try {
-      setSavingBudgets(true);
-      setBudgetMessage('');
-      setError('');
-
-      const payload = {
-        items: budgetDrafts
-          .map((item) => ({
-            category: item.category.trim(),
-            monthly_limit: item.monthly_limit
-          }))
-          .filter((item) => item.category || item.monthly_limit)
-      };
-
-      const result = await updateDashboardBudgets({
-        token,
-        organizationId,
-        payload
-      });
-
-      setBudgets(result);
-      setBudgetDrafts(createBudgetDrafts(result.items || []));
-      setBudgetMessage(result.items.length ? 'Budgets saved.' : 'Budgets cleared.');
-      await refreshSnapshot();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setSavingBudgets(false);
-    }
-  }
-
-  async function handleRegenerateJoinCode() {
-    if (!isFounder) {
-      return;
-    }
-
-    try {
-      setRegeneratingJoinCode(true);
-      setTeamMessage('');
-      setTeamError('');
-
-      const result = await regenerateOrganizationJoinCode({
-        token,
-        organizationId
-      });
-
-      setTeam((current) => (
-        current
-          ? {
-              ...current,
-              organization: result.organization
-            }
-          : {
-              organization: result.organization,
-              members: []
-            }
-      ));
-      setTeamMessage('Telegram join link regenerated.');
-    } catch (requestError) {
-      setTeamError(requestError.message);
-    } finally {
-      setRegeneratingJoinCode(false);
-    }
-  }
-
-  async function handleCopyJoinLink() {
-    if (!team?.organization) {
-      return;
-    }
-
-    try {
-      const valueToCopy = team.organization.join_link || team.organization.join_code;
-
-      if (!navigator?.clipboard?.writeText) {
-        throw new Error('Clipboard is not available in this browser');
-      }
-
-      await navigator.clipboard.writeText(valueToCopy);
-      setTeamMessage(team.organization.join_link ? 'Telegram join link copied.' : 'Join code copied.');
-    } catch (requestError) {
-      setTeamError(requestError.message);
-    }
-  }
-
-  function handleBudgetDraftChange(id, field, value) {
-    setBudgetDrafts((current) =>
-      current.map((item) => (item.id === id ? { ...item, [field]: value } : item))
-    );
-  }
-
-  function handleAddBudgetRow() {
-    setBudgetDrafts((current) => [...current, createBudgetDraft()]);
-  }
+  }), [isFounder, organizationId, token]);
 
   if (!organizationId && !loadingSnapshot) {
     return (
@@ -798,7 +629,7 @@ function DashboardPage({
               )}
             </div>
           </div>
-          
+
           {busy || !snapshotReady ? (
             <div className="finance-loading">Loading category mix...</div>
           ) : !categoryBreakdownItems.length ? (
@@ -824,8 +655,8 @@ function DashboardPage({
                         <Cell key={entry.category} fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip 
-                      formatter={renderChartTooltip} 
+                    <Tooltip
+                      formatter={renderChartTooltip}
                       contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-primary)' }}
                     />
                   </PieChart>
@@ -914,6 +745,5 @@ function DashboardPage({
 }
 
 // We intentionally ignore the old code below to fully replace it with premium structure.
-
 
 export default DashboardPage;

@@ -2,6 +2,7 @@ const organizationsRepository = require('../db/organizations.repository');
 const usersRepository = require('../db/users.repository');
 const { env } = require('../config/env');
 const { HttpError } = require('../utils/http-error');
+const policy = require('./member-policy');
 
 function buildJoinLink(joinCode) {
   const botUsername = String(env.telegramBotUsername || '').trim().replace(/^@/, '');
@@ -80,7 +81,8 @@ async function regenerateOrganizationJoinCode({ organizationId }) {
   };
 }
 
-async function addMemberByEmail({ organizationId, email, role }) {
+async function addMemberByEmail({ organizationId, email, role = 'member' }) {
+  policy.validateRole(role, { invitation: true });
   const user = await usersRepository.findUserByEmail(email);
   if (!user) {
     throw new HttpError(404, 'User not found. They must create an account first.');
@@ -99,16 +101,12 @@ async function addMemberByEmail({ organizationId, email, role }) {
   return result.membership;
 }
 
-async function removeMember({ organizationId, targetUserId }) {
-  return organizationsRepository.removeOrganizationMember({ organizationId, userId: targetUserId });
+async function removeMember({ organizationId, targetUserId, actorId }) {
+  return policy.changeMember({ organizationId, targetUserId, actorId, remove: true });
 }
 
-async function updateMemberRole({ organizationId, targetUserId, role }) {
-  const membership = await organizationsRepository.updateOrganizationMemberRole({ 
-    organizationId, 
-    userId: targetUserId, 
-    role 
-  });
+async function updateMemberRole({ organizationId, targetUserId, role, actorId }) {
+  const membership = await policy.changeMember({ organizationId, targetUserId, role, actorId });
   
   if (!membership) {
     throw new HttpError(404, 'Membership not found');
@@ -140,7 +138,8 @@ async function updateOrganizationSettings({ organizationId, insightsFrequency, i
   return organization;
 }
 
-async function updateMember({ organizationId, targetUserId, role, receiveInsights }) {
+async function updateMember({ organizationId, targetUserId, role, receiveInsights, actorId }) {
+  if (role !== undefined) return policy.changeMember({ organizationId, targetUserId, role, receiveInsights, actorId });
   const membership = await organizationsRepository.updateOrganizationMember({
     organizationId,
     userId: targetUserId,

@@ -69,3 +69,24 @@ test('admins cannot promote themselves through the generic member-update endpoin
   role='founder';assert.equal((await patch({role:'admin'})).status,200);
   assert.equal(update.mock.callCount(),2);
 });
+test('insights HMAC routes fail closed with empty or whitespace signing configuration',async t=>{
+  const previous=env.webhookSecret;t.after(()=>{env.webhookSecret=previous;});
+  const insights=require('../src/services/insights.service');
+  const organizations=require('../src/db/organizations.repository');
+  const weekly=t.mock.method(insights,'getWeeklyInsights',async()=>({ok:true}));
+  const schedules=t.mock.method(organizations,'listScheduledOrganizations',async()=>[{private:'recipient-data'}]);
+  for(const secret of ['', '  ']) {
+    env.webhookSecret=secret;
+    for(const [route,payload] of [['','org-1:weekly'],['/schedules','weekly']]) {
+      const signature='sha256='+crypto.createHmac('sha256',secret).update(payload).digest('hex');
+      const response=await fetch(`${base}/api/insights${route}`,{headers:{'x-spark-signature':signature,'x-organization-id':'org-1'}});
+      assert.equal(response.status,500);assert.doesNotMatch(await response.text(),/recipient-data/);
+    }
+  }
+  assert.equal(weekly.mock.callCount(),0);assert.equal(schedules.mock.callCount(),0);
+  env.webhookSecret='configured-test-secret';
+  for(const [route,payload] of [['','org-1:weekly'],['/schedules','weekly']]) {
+    const response=await fetch(`${base}/api/insights${route}`,{headers:{'x-spark-signature':'sha256='+crypto.createHmac('sha256',env.webhookSecret).update(payload).digest('hex'),'x-organization-id':'org-1'}});
+    assert.equal(response.status,200);
+  }
+});

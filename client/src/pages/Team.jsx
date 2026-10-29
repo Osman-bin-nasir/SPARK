@@ -1,3 +1,4 @@
+import { deferEffect } from '../lib/defer-effect';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { get, post, del, patch } from '../services/http';
 import { endpoints } from '../services/endpoints';
@@ -131,7 +132,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
 
   const fetchTeam = useCallback(async () => {
     if (!token || !organizationId) { setLoading(false); return; }
-    
+
     // Serve from cache immediately if present
     const cached = pageCache.get('team', organizationId);
     if (cached) {
@@ -163,7 +164,8 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
     else pageCache.bust('team', organizationId);
   }, [token, organizationId, authHeaders]);
 
-  useEffect(() => { fetchTeam(); }, [fetchTeam]);
+  useEffect(() => deferEffect(() => { fetchTeam();
+  }), [fetchTeam]);
 
   async function handleAddMember(e) {
     e.preventDefault();
@@ -360,12 +362,11 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                     disabled={adding}
                     style={{ width: '100%' }}
                   >
-                    {ROLES.map(r => (
+                    {ROLES.filter(r => r !== 'founder').map(r => (
                       <option key={r} value={r}>
                         {r.charAt(0).toUpperCase() + r.slice(1)}
                       </option>
                     ))}
-                    <option value="custom">Custom Title...</option>
                   </select>
                 )}
               </div>
@@ -513,7 +514,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                               style={{ padding: '6px 10px', fontSize: '0.83rem', minWidth: '110px', height: '34px' }}
                               disabled={savingRole === m.user_id}
                             >
-                              {ROLES.map(r => (
+                              {ROLES.filter(r => r !== 'founder' || myRole === 'founder').map(r => (
                                 <option key={r} value={r}>
                                   {r.charAt(0).toUpperCase() + r.slice(1)}
                                 </option>
@@ -523,7 +524,6 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                                   {m.role}
                                 </option>
                               )}
-                              <option value="custom">Custom Title...</option>
                             </select>
                           )}
                           {roleChanged && (
@@ -713,7 +713,6 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
           </div>
         </div>
       )}
-
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }

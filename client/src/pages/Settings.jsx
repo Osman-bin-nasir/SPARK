@@ -1,3 +1,4 @@
+import { deferEffect } from '../lib/defer-effect';
 import { useEffect, useMemo, useState } from 'react';
 import '../styles/dashboard.css';
 
@@ -71,9 +72,9 @@ export default function SettingsPage({
     userSettings?.monthly_close_reminders
   ].filter(Boolean).length;
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     setLastUpdatedAt(new Date());
-  }, [userSettings]);
+  }), [userSettings]);
 
   function handleSettingChange(key, value) {
     if (typeof onUpdateUserSettings === 'function') {
