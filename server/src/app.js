@@ -22,7 +22,14 @@ const signedWebhookJsonParser = express.json({
   }
 });
 
+function alternateWwwOrigin(origin) {
+  const url = new URL(origin);
+  url.hostname = url.hostname.startsWith('www.') ? url.hostname.slice(4) : `www.${url.hostname}`;
+  return url.origin;
+}
+
 const allowedOrigins = new Set([env.appBaseUrl, env.publicApiBaseUrl].filter(Boolean));
+if (env.appBaseUrl) allowedOrigins.add(alternateWwwOrigin(env.appBaseUrl));
 if (env.nodeEnv === 'development') {
   for (const port of [5173, 8000]) allowedOrigins.add(`http://localhost:${port}`);
 }

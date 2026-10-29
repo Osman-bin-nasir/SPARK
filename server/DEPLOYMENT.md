@@ -6,9 +6,10 @@ database. No new API keys, GPU, worker service, or polling process is needed.
 Docker, CI and the package engines use Node.js 24 LTS. Use Node.js 24 locally and
 select Node.js 24 for frontend hosting to support the current build/lint tools.
 
-Browser API access is limited to `APP_BASE_URL` and `PUBLIC_API_BASE_URL` (plus
-local development origins in explicit development mode). Render's single ingress
-is trusted only when `RENDER=true`; authentication attempts are throttled per IP.
+Browser API access is limited to `APP_BASE_URL`, its `www`/apex counterpart, and
+`PUBLIC_API_BASE_URL` (plus local development origins in explicit development
+mode). Render's single ingress is trusted only when `RENDER=true`; authentication
+attempts are throttled per IP.
 Legacy `/api/auth/telegram`, `/whatsapp`, `/create-telegram-login` and
 `/create-whatsapp-login` require `X-Spark-Signature: sha256=HEX_HMAC` over the exact
 JSON body using `WEBHOOK_SECRET`. Native provider webhooks and bot account linking
