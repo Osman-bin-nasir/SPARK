@@ -33,6 +33,11 @@ test('legacy bot token endpoints reject unsigned, forged and tampered requests b
 test('security headers and CORS restrict browser access without breaking provider requests',async()=>{
   const good=await fetch(`${base}/health`,{headers:{origin:env.appBaseUrl}});
   assert.equal(good.status,200);assert.equal(good.headers.get('access-control-allow-origin'),env.appBaseUrl);
+  const www=new URL(env.appBaseUrl);
+  www.hostname=www.hostname.startsWith('www.')?www.hostname.slice(4):`www.${www.hostname}`;
+  const preflight=await fetch(`${base}/api/auth/login`,{method:'OPTIONS',headers:{origin:www.origin,'access-control-request-method':'POST'}});
+  assert.equal(preflight.status,204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'),www.origin);
   assert.equal(good.headers.get('x-content-type-options'),'nosniff');
   assert.equal(good.headers.get('referrer-policy'),'no-referrer');
   assert.equal(good.headers.get('x-powered-by'),null);
