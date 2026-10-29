@@ -120,9 +120,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
   const [pendingRoles, setPendingRoles] = useState({});
   const [savingRole, setSavingRole] = useState('');
 
-  const [customRolesEditing, setCustomRolesEditing] = useState({}); // { [userId]: boolean }
-  const [isCustomInvite, setIsCustomInvite] = useState(false);
-  const [customInviteRole, setCustomInviteRole] = useState('');
+   // { [userId]: boolean }
 
   // Confirm delete state
   const [confirmDeleteId, setConfirmDeleteId] = useState('');
@@ -174,7 +172,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
     setAddError('');
     setNotice('');
     try {
-      const finalRole = isCustomInvite ? customInviteRole.trim() : addRole;
+      const finalRole = addRole;
       const result = await post(
         endpoints.organizationsTeamInvitations,
         { email: addEmail.trim().toLowerCase(), role: finalRole },
@@ -182,8 +180,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
       );
       setAddEmail('');
       setAddRole('member');
-      setIsCustomInvite(false);
-      setCustomInviteRole('');
+
       setCreatedInvitation({ id: result.invitation.id, url: result.invite_url });
       setNotice(`Invitation created for ${addEmail.trim()}. Copy the link and share it with them.`);
       pageCache.bust('team', organizationId);
@@ -239,7 +236,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
       );
       setMembers(prev => prev.map(m => m.user_id === userId ? { ...m, role: newRole } : m));
       setPendingRoles(prev => { const next = { ...prev }; delete next[userId]; return next; });
-      setCustomRolesEditing(prev => { const next = { ...prev }; delete next[userId]; return next; });
+
       setNotice(`${email}'s role updated to ${newRole}.`);
       // Update cache optimistically
       const cached = pageCache.get('team', organizationId);
@@ -321,44 +318,15 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                   required
                 />
               </div>
-              <div style={{ flex: isCustomInvite ? '1 1 180px' : '0 0 150px' }}>
+              <div style={{ flex: '0 0 150px' }}>
                 <label htmlFor="invite-role" style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
                   Role
                 </label>
-                {isCustomInvite ? (
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input
-                      id="invite-role"
-                      className="premium-input"
-                      type="text"
-                      placeholder="e.g. CTO"
-                      value={customInviteRole}
-                      onChange={e => setCustomInviteRole(e.target.value)}
-                      style={{ flex: 1, height: '50px' }}
-                      disabled={adding}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => { setIsCustomInvite(false); setAddRole('member'); }}
-                      style={{ height: '50px', width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid var(--border-strong)', color: 'var(--text-secondary)', fontSize: '1.2rem', padding: 0 }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ) : (
-                  <select
+                {<select
                     id="invite-role"
                     className="premium-input"
                     value={addRole}
-                    onChange={e => {
-                      if (e.target.value === 'custom') {
-                        setIsCustomInvite(true);
-                        setCustomInviteRole('');
-                      } else {
-                        setAddRole(e.target.value);
-                      }
-                    }}
+                    onChange={e => setAddRole(e.target.value)}
                     disabled={adding}
                     style={{ width: '100%' }}
                   >
@@ -367,8 +335,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                         {r.charAt(0).toUpperCase() + r.slice(1)}
                       </option>
                     ))}
-                  </select>
-                )}
+                  </select>}
               </div>
               <div style={{ padding: '0 0 1px' }}>
                 <button
@@ -476,41 +443,10 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                     <td style={{ padding: '14px 24px' }}>
                       {isFounder && !isMe && !isOtherFounder ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {customRolesEditing[m.user_id] ? (
-                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                              <input
-                                className="premium-input"
-                                type="text"
-                                placeholder="e.g. CTO"
-                                value={pendingRole ?? m.role}
-                                onChange={e => setPendingRoles(prev => ({ ...prev, [m.user_id]: e.target.value }))}
-                                style={{ padding: '6px 10px', fontSize: '0.83rem', width: '90px', height: '34px' }}
-                                disabled={savingRole === m.user_id}
-                                required
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setCustomRolesEditing(prev => ({ ...prev, [m.user_id]: false }));
-                                  setPendingRoles(prev => { const next = { ...prev }; delete next[m.user_id]; return next; });
-                                }}
-                                style={{ height: '34px', width: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)', padding: 0 }}
-                              >
-                                ×
-                              </button>
-                            </div>
-                          ) : (
-                            <select
+                          {<select
                               className="premium-input"
-                              value={ROLES.includes(pendingRole || m.role) ? (pendingRole || m.role) : 'custom'}
-                              onChange={e => {
-                                if (e.target.value === 'custom') {
-                                  setCustomRolesEditing(prev => ({ ...prev, [m.user_id]: true }));
-                                  setPendingRoles(prev => ({ ...prev, [m.user_id]: ROLES.includes(m.role) ? '' : m.role }));
-                                } else {
-                                  setPendingRoles(prev => ({ ...prev, [m.user_id]: e.target.value }));
-                                }
-                              }}
+                              value={pendingRole || m.role}
+                              onChange={e => setPendingRoles(prev => ({...prev,[m.user_id]:e.target.value}))}
                               style={{ padding: '6px 10px', fontSize: '0.83rem', minWidth: '110px', height: '34px' }}
                               disabled={savingRole === m.user_id}
                             >
@@ -524,8 +460,7 @@ export default function TeamPage({ activeOrganizationId, token, user }) {
                                   {m.role}
                                 </option>
                               )}
-                            </select>
-                          )}
+                            </select>}
                           {roleChanged && (
                             <button
                               onClick={() => handleUpdateRole(m.user_id)}

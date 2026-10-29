@@ -72,6 +72,7 @@ async function joinInvitation({ token, email: input, userId, passwordHash }) {
     if (!result.membership) throw new HttpError(409, 'Unable to join this workspace. Please try again.');
     await invitations.accept(invitation.id, client);
     await client.query('COMMIT');
+    require('./automation-events').emit('reports-changed');
     return user;
   } catch (error) {
     releaseError = await rollbackSafely(client);

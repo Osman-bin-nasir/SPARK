@@ -98,6 +98,7 @@ async function addMemberByEmail({ organizationId, email, role = 'member' }) {
     throw new HttpError(409, 'User already belongs to another organization');
   }
   
+  require('./automation-events').emit('reports-changed');
   return result.membership;
 }
 

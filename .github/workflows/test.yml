@@ -12,7 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build combined frontend and API image
-        run: docker build -t spark-smoke .
+        run: |
+          bash scripts/package-deployment.sh
+          unzip -q app.zip -d packaged-context
+          docker build -t spark-smoke packaged-context
       - name: Verify frontend and SPA routes in built image
         run: |
           docker run -d --name spark-smoke -p 4000:4000 --entrypoint node spark-smoke -e "require('./src/app').listen(4000)"

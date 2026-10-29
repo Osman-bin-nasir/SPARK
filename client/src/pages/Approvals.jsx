@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { del, get, getBlob, patch } from '../services/http';
 import { endpoints } from '../services/endpoints';
 import { pageCache } from '../services/page-cache';
-import { getStoredUser } from '../services/session';
+import { getStoredUser, getAccessToken } from '../services/session';
 import { markDashboardSnapshotStale } from '../features/dashboard/dashboard.cache';
 
 function getOrganizationPreferenceKey(userId) {
@@ -94,7 +94,7 @@ function buildTransactionPayload(form, transaction) {
 }
 
 export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, user: userProp }) {
-  const token = tokenProp || localStorage.getItem('token') || '';
+  const token = tokenProp || getAccessToken() || '';
   const user = userProp || getStoredUser();
   const organizationId = activeOrganizationId || resolveActiveOrganizationId(user);
   const authHeaders = useMemo(() => ({
@@ -177,15 +177,15 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
   }, [token, organizationId, queuePage, authHeaders, approvalsCacheKey]);
 
   useEffect(() => deferEffect(() => {
-    setCurrentIndex(0);
-    setDetail(null);
-    setForm(buildFormState(null));
-    setFeedback({ tone: 'muted', text: '' });
     fetchApprovals();
     return () => listRequest.current?.abort();
   }), [fetchApprovals]);
+  useEffect(() => deferEffect(() => {setCurrentIndex(0);setDetail(null);}),[organizationId,queuePage]);
 
   const tx = pending[currentIndex] || null;
+  const reviewIdentity = tx?.id;
+  const draftSource = useRef(tx);
+  useEffect(() => { draftSource.current = tx; }, [tx]);
 
   useEffect(() => deferEffect(() => {
     setToast(null);
@@ -193,8 +193,8 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
 
   useEffect(() => deferEffect(() => {
     setFeedback({ tone: 'muted', text: '' });
-    setForm(buildFormState(tx));
-  }), [tx]);
+    setForm(buildFormState(draftSource.current));
+  }), [reviewIdentity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -297,6 +297,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
       const updatedTransaction = await patch(`${endpoints.transactions}/${tx.id}`, payload, authHeaders);
       updatePendingTransaction(updatedTransaction);
       setDetail(updatedTransaction);
+      setForm(buildFormState(updatedTransaction));
       pageCache.bustNs('approvals');
       pageCache.bustNs('transactions');
       markDashboardSnapshotStale(organizationId);

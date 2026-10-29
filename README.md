@@ -492,9 +492,10 @@ When an ingestion job finishes:
 
 2. **Configure Environment Variables**:
    * Create `server/.env` based on `server/.env.example` (or the root `.env.example`).
-   * Generate secure JWT secrets:
+   * Generate independent signing secrets and paste the output into `server/.env`
+     before migrating or starting locally. Blank/example values are rejected:
      ```bash
-     node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+     node -e "const c=require('crypto');for(const k of ['JWT_SECRET','REFRESH_JWT_SECRET','TELEGRAM_JWT_SECRET','WEBHOOK_SECRET'])console.log(k+'='+c.randomBytes(32).toString('hex'))"
      ```
 
 3. **Run Database Migrations & Seeds**:
@@ -555,8 +556,9 @@ Prefix all API endpoints with `/api`. Headers should include:
 
 ### 1. Authentication (`/api/auth`)
 * `POST /signup` — Register email, name, password. Automatically configures a default organization.
-* `POST /login` — Logs in using credentials; returns access token (short-lived) and refresh token (long-lived).
-* `POST /refresh` — Regenerates access tokens using refresh tokens.
+* `POST /login` — Returns a short-lived access token; browser clients receive their refresh credential only in an HttpOnly cookie. API clients receive an opaque refresh token.
+* `POST /refresh` — Rotates the stored refresh session; reuse revokes the session family. Browser calls include credentials and `X-Spark-Browser-Session: 1`.
+* `POST /logout` — Revokes the session family, invalidates its access tokens and clears the refresh cookie.
 * `POST /create-telegram-login` — Generates a temporary linking link for Telegram bot users.
 * `POST /telegram` — Consumes a Telegram login token to link the profile.
 * `POST /create-whatsapp-login` — Generates a temporary linking link for WhatsApp bot users.

@@ -1,5 +1,57 @@
 # Deploy conversational bots to Render
 
+## Security rollout (migration 013)
+
+Generate unique random signing keys before starting either API or worker. Blank
+keys, known example strings, and production keys shorter than 32 characters fail
+startup. Copying an env example alone is intentionally insufficient, including
+local development. Generate values locally and paste the output into your env:
+
+```sh
+node -e "const c=require('crypto');for(const k of ['JWT_SECRET','REFRESH_JWT_SECRET','TELEGRAM_JWT_SECRET','WEBHOOK_SECRET','TELEGRAM_WEBHOOK_SECRET'])console.log(k+'='+c.randomBytes(32).toString('hex'))"
+```
+
+Keep existing strong keys; rotate exposed, blank or example keys and coordinate
+WEBHOOK_SECRET changes with trusted legacy callers. Never commit generated values.
+When Telegram is enabled its webhook secret must also be non-empty and at least
+32 characters. Coordinate a rotation with Render and `automation setup --apply-telegram`
+after deployment so Telegram and the API use the same value.
+Run migration `013_secure_sessions` before starting the API. Existing stateless
+refresh tokens stop working: users must sign in again. Browser access tokens are
+memory-only; refresh credentials use a Secure, HttpOnly, host-only SameSite=Lax
+cookie (non-Secure localhost cookie only in explicit development mode). API clients
+receive an opaque refresh token in JSON; `/auth/refresh` rotates it and `/auth/logout`
+revokes its family. Reusing a consumed token revokes the family and its associated
+access tokens. Both browser endpoints require `X-Spark-Browser-Session: 1` when a
+session cookie is present. CORS allows credentials only from configured app origins.
+Use HTTPS and a same-site frontend/API, or the same-origin `/api` proxy. Preview
+origins need their own explicitly configured backend; do not wildcard CORS.
+
+The API verifies session-family status on authenticated browser requests; no idle
+polling was added. Logout reports revocation failures instead of claiming success.
+Access tokens issued by older releases expire normally; rotate the JWT key if an
+immediate forced logout of pre-migration sessions is needed. Refresh history is
+kept through expiry to detect replay; existing daily maintenance removes at most
+500 rows expired for an extra seven days, using the expiry index. No extra polling
+timer or service was added.
+
+SPARK-generated workbook sharing is restricted to current workspace members and
+the active integration owner's Google account. Synchronization reconciles legacy
+direct/nonmember shares before publishing new financial data. Member removal
+revokes that member's direct workbook grants before committing, and uses the same
+workspace lock as sharing to prevent stale jobs from restoring access. Google
+owners and inherited access cannot be silently revoked: transfer/reconnect the
+integration or remove parent sharing first. Removal fails if revocation fails.
+Audit existing Drive ownership/parent sharing during rollout; copies/downloads of
+previously shared files cannot be recalled by software. Only SPARK's known generated
+workbook is reconciled; unrelated Drive files are not modified.
+
+CSP is enabled in both the API's static host and Vercel. Inline styles remain
+allowed for the existing React UI; inline scripts and arbitrary script hosts are
+blocked. Registration/login throttling counts successful requests too. Refresh
+and logout have a separate rate bucket so failed login attempts do not consume
+their budget.
+
 The local tunnel and local test database are not part of deployment. Production
 runs the same intent pipeline against the existing Render backend and PostgreSQL
 database. No new API keys, GPU, worker service, or polling process is needed.

@@ -14,6 +14,7 @@ router.post('/login', authController.login);
 router.post('/telegram', requireBotSignature, authController.telegramLogin);
 router.post('/whatsapp', requireBotSignature, authController.whatsappLogin);
 router.post('/refresh', authController.refresh);
+router.post('/logout', authController.logout);
 router.post('/create-telegram-login', requireBotSignature, authController.createTelegramLogin);
 router.post('/create-whatsapp-login', requireBotSignature, authController.createWhatsappLogin);
 router.post('/link-telegram', requireAuth, authController.linkTelegram);

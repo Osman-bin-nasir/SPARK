@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { get, getBlob, patch } from '../services/http';
 import { endpoints } from '../services/endpoints';
 import { pageCache } from '../services/page-cache';
-import { getStoredUser } from '../services/session';
+import { getStoredUser, getAccessToken } from '../services/session';
 import { markDashboardSnapshotStale } from '../features/dashboard/dashboard.cache';
 
 const GOOGLE_SHEET_WINDOWS = [
@@ -63,7 +63,7 @@ function getReviewStatusMeta(transaction) {
 }
 
 export default function TransactionsPage({ activeOrganizationId, token: tokenProp, user: userProp, userSettings }) {
-  const token = tokenProp || localStorage.getItem('token') || '';
+  const token = tokenProp || getAccessToken() || '';
   const user = userProp || getStoredUser();
   const organizationId = activeOrganizationId || resolveActiveOrganizationId(user);
   const pageSize = Number(userSettings?.transactions_page_size) || 50;

@@ -35,6 +35,7 @@ test.before(async () => {
       role TEXT, receive_insights BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE (organization_id,user_id));
   `);
   await migration.up({ query: sql => db.exec(sql) });
+  await require('../src/db/migrations/013_secure_sessions').up({query:sql=>db.exec(sql)});
   const query = async (sql, params) => { const result = await db.query(sql, params); return { ...result, rowCount: result.affectedRows }; };
   pool.query = query;
   pool.connect = async () => ({ query, release() {} });

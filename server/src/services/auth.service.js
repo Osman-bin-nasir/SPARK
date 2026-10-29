@@ -7,9 +7,7 @@ const { pool } = require('../db/pool');
 const { rollbackSafely } = require('../db/rollback');
 const {
   signAccessToken,
-  signRefreshToken,
-  signTelegramAccessToken,
-  verifyRefreshToken
+  signTelegramAccessToken
 } = require('../utils/jwt');
 const { env } = require('../config/env');
 const { HttpError } = require('../utils/http-error');
@@ -45,6 +43,7 @@ function validatePassword(password) {
   if (password.length < 8) {
     throw new HttpError(400, 'password must be at least 8 characters');
   }
+  if(Buffer.byteLength(password,'utf8')>72)throw new HttpError(400,'password must not exceed 72 UTF-8 bytes');
 }
 
 function normalizeTelegramId(telegramId) {
@@ -120,11 +119,9 @@ async function buildAuthResponse(user) {
   const accessToken = signAccessToken(user, {
     organizationId: hydratedUser.default_organization_id
   });
-  const refreshToken = signRefreshToken(user);
 
   return {
     access_token: accessToken,
-    refresh_token: refreshToken,
     token: accessToken,
     user: hydratedUser
   };
@@ -440,7 +437,7 @@ async function loginWithTelegram(payload) {
     organizationId
   });
 
-  return { token };
+  return { token, user: mappedUser };
 }
 
 async function loginWithWhatsapp(payload) {
@@ -467,22 +464,7 @@ async function loginWithWhatsapp(payload) {
     organizationId
   });
 
-  return { token };
-}
-
-async function refreshAccessToken(payload) {
-  if (!payload || typeof payload.refresh_token !== 'string' || !payload.refresh_token.trim()) {
-    throw new HttpError(400, 'refresh_token is required');
-  }
-
-  const tokenPayload = verifyRefreshToken(payload.refresh_token);
-  const user = await usersRepository.findUserById(tokenPayload.sub);
-
-  if (!user) {
-    throw new HttpError(401, 'invalid refresh token');
-  }
-
-  return buildAuthResponse(usersRepository.mapUser(user));
+  return { token, user: mappedUser };
 }
 
 async function createTelegramLogin(payload) {
@@ -749,6 +731,7 @@ async function acceptInvitation({ userId, token }) {
 }
 
 module.exports = {
+  buildAuthResponse,
   acceptInvitation,
   createTelegramLogin,
   createWhatsappLogin,
@@ -759,6 +742,5 @@ module.exports = {
   login,
   loginWithTelegram,
   loginWithWhatsapp,
-  refreshAccessToken,
   register
 };

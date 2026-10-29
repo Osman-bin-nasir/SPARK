@@ -18,7 +18,7 @@ async function preview(req, res, next) {
 }
 
 async function accept(req, res, next) {
-  try { res.json(await auth.acceptInvitation({ userId: req.auth.userId, token: req.body.token })); }
+  try { await require('../services/session.service').respond(req,res,await auth.acceptInvitation({ userId: req.auth.userId, token: req.body.token })); }
   catch (error) { next(error); }
 }
 

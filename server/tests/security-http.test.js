@@ -14,7 +14,9 @@ test.after(async()=>{await new Promise(resolve=>server.close(resolve));});
 
 test('legacy bot token endpoints reject unsigned, forged and tampered requests before issuing credentials',async t=>{
   const methods=['loginWithTelegram','loginWithWhatsapp','createTelegramLogin','createWhatsappLogin'];
-  for(const method of methods) t.mock.method(auth,method,async()=>({token:'test-only-issued-token'}));
+  for(const method of methods) t.mock.method(auth,method,async()=>({token:'test-only-issued-token',user:{id:'test-user'}}));
+  t.mock.method(auth,'buildAuthResponse',async user=>({user}));
+  t.mock.method(require('../src/services/session.service'),'respond',async(_req,res,result)=>res.status(200).json(result));
   const routes=['telegram','whatsapp','create-telegram-login','create-whatsapp-login'];
   const body=JSON.stringify({telegram_id:'123',whatsapp_id:'123'});
   for(const route of routes) {

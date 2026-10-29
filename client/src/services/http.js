@@ -1,9 +1,9 @@
 import { API_BASE_URL, endpoints } from './endpoints.js';
-import { assertCurrentSession, captureSession, clearSession, refreshSession } from './session.js';
+import { assertCurrentSession, captureSession, clearSession, refreshSession, getAccessToken } from './session.js';
 
 const PUBLIC_AUTH_PATHS = new Set([
   endpoints.login, endpoints.register, endpoints.signup, '/auth/telegram', '/auth/whatsapp',
-  '/auth/create-telegram-login', '/auth/create-whatsapp-login', '/auth/invitations/preview'
+  '/auth/create-telegram-login', '/auth/create-whatsapp-login', '/auth/invitations/preview', '/auth/refresh', '/auth/logout'
 ]);
 
 function expiresSoon(token) {
@@ -34,11 +34,11 @@ export function createHttpClient(baseUrl, { timeoutMs = 90000 } = {}) {
     }
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     try {
-      const headers = { ...options.headers };
+      const headers = { 'X-Spark-Browser-Session':'1', ...options.headers };
       if (options.body !== undefined) headers['Content-Type'] = 'application/json';
       if (token) headers.Authorization = `Bearer ${token}`;
       const response = await fetch(`${baseUrl}${path}`, {
-        method: options.method || 'GET', headers, body: options.body, signal: controller.signal
+        method: options.method || 'GET', headers, body: options.body, signal: controller.signal, credentials:'include'
       });
       const data = response.ok && responseType === 'blob'
         ? await response.blob()
@@ -59,13 +59,11 @@ export function createHttpClient(baseUrl, { timeoutMs = 90000 } = {}) {
   }
 
   async function refresh(session) {
-    const refreshToken = localStorage.getItem('refresh_token');
-    if (!refreshToken) throw requestError('Session expired. Please sign in again.', 401);
     if (refreshPromise?.identity === session.identity) return refreshPromise.promise;
     const operation = { identity: session.identity };
-    operation.promise = (async () => {
+    const perform = async () => {
       const { response, data } = await transport(endpoints.refresh, {
-        method: 'POST', body: JSON.stringify({ refresh_token: refreshToken })
+        method: 'POST', body: '{}'
       }, session);
       if (!response.ok) {
         if ([400, 401, 403].includes(response.status)) clearSession();
@@ -74,7 +72,10 @@ export function createHttpClient(baseUrl, { timeoutMs = 90000 } = {}) {
       if (!data?.access_token && !data?.token) throw requestError('Invalid session response. Please try again.', 502);
       refreshSession(data, session);
       return data.access_token || data.token;
-    })().finally(() => { if (refreshPromise === operation) refreshPromise = null; });
+    };
+    operation.promise = (globalThis.navigator?.locks
+      ? navigator.locks.request('spark-refresh',perform) : perform())
+      .finally(() => { if (refreshPromise === operation) refreshPromise = null; });
     refreshPromise = operation;
     return operation.promise;
   }
@@ -83,14 +84,14 @@ export function createHttpClient(baseUrl, { timeoutMs = 90000 } = {}) {
     if (!baseUrl) throw new Error('VITE_API_BASE_URL is not configured');
     const session = captureSession();
     const publicRequest = PUBLIC_AUTH_PATHS.has(path.split('?')[0]);
-    let token = publicRequest ? '' : options.token || localStorage.getItem('token') || '';
+    let token = publicRequest ? '' : options.token || getAccessToken() || '';
     let refreshed = false;
-    if (token && expiresSoon(token) && localStorage.getItem('refresh_token')) {
+    if (token && expiresSoon(token)) {
       token = await refresh(session);
       refreshed = true;
     }
     let result = await transport(path, options, session, token, responseType);
-    if (!publicRequest && result.response.status === 401 && token && !refreshed && localStorage.getItem('refresh_token')) {
+    if (!publicRequest && result.response.status === 401 && token && !refreshed) {
       token = await refresh(session);
       result = await transport(path, options, session, token, responseType);
     }
@@ -102,6 +103,7 @@ export function createHttpClient(baseUrl, { timeoutMs = 90000 } = {}) {
   }
 
   return {
+    restoreSession: () => refresh(captureSession()),
     get: (path, options) => request(path, options),
     getBlob: (path, options) => request(path, options, 'blob'),
     post: (path, body, options) => request(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
@@ -111,4 +113,4 @@ export function createHttpClient(baseUrl, { timeoutMs = 90000 } = {}) {
   };
 }
 
-export const { get, getBlob, post, put, patch, del } = createHttpClient(API_BASE_URL);
+export const { get, getBlob, post, put, patch, del, restoreSession } = createHttpClient(API_BASE_URL);

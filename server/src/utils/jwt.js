@@ -85,7 +85,7 @@ function signTelegramAccessToken({ userId, email, telegramId, whatsappId, organi
       organizationId
     }),
     env.jwtSecret,
-    { expiresIn: '7d' }
+    { expiresIn: env.accessTokenExpiresIn }
   );
 }
 
@@ -102,25 +102,25 @@ function signGoogleOauthState(payload) {
 }
 
 function verifyAccessToken(token) {
-  const payload = jwt.verify(token, env.jwtSecret);
+  const payload = jwt.verify(token, env.jwtSecret, { algorithms: ['HS256'] });
   assertTokenType(payload, 'access');
   return payload;
 }
 
 function verifyRefreshToken(token) {
-  const payload = jwt.verify(token, env.refreshJwtSecret);
+  const payload = jwt.verify(token, env.refreshJwtSecret, { algorithms: ['HS256'] });
   assertTokenType(payload, 'refresh');
   return payload;
 }
 
 function verifyTelegramLoginToken(token) {
-  const payload = jwt.verify(token, env.telegramJwtSecret);
+  const payload = jwt.verify(token, env.telegramJwtSecret, { algorithms: ['HS256'] });
   assertTokenType(payload, 'telegram-link');
   return payload;
 }
 
 function verifyGoogleOauthState(token) {
-  const payload = jwt.verify(token, env.googleOauthStateSecret);
+  const payload = jwt.verify(token, env.googleOauthStateSecret, { algorithms: ['HS256'] });
   assertTokenType(payload, 'google-oauth-state');
   return payload;
 }

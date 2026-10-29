@@ -8,4 +8,8 @@ test('Docker image builds a same-origin frontend and CI gates lint',()=>{
   assert.match(docker,/AS client-build/);assert.match(docker,/ARG VITE_API_BASE_URL=\/api/);
   assert.match(docker,/RUN npm run build/);assert.match(docker,/COPY --from=client-build \/client\/dist .\/public/);
   assert.match(fs.readFileSync(path.join(root,'.github/workflows/test.yml'),'utf8'),/run: npm run lint/);
+  const packaging=fs.readFileSync(path.join(root,'scripts/package-deployment.sh'),'utf8');
+  assert.match(packaging,/Dockerfile server\/ client\//);
+  assert.match(packaging,/node_modules/);assert.match(packaging,/\.env/);
+  assert.match(fs.readFileSync(path.join(root,'.github/workflows/deploy.yml'),'utf8'),/scripts\/package-deployment.sh/);
 });

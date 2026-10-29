@@ -7,7 +7,8 @@ const google = require('../src/services/google-drive.service');
 const integrations = require('../src/db/google-integrations.repository');
 const organizations = require('../src/db/organizations.repository');
 const transactions = require('../src/db/transactions.repository');
-const originals = new Map([sheets, drive, google, integrations, organizations, transactions].map(object => [object, { ...object }]));
+const access=require('../src/services/sheet-access.service');
+const originals = new Map([sheets, drive, google, integrations, organizations, transactions,access].map(object => [object, { ...object }]));
 let calls, metadata, members, rows;
 test.beforeEach(() => {
   calls = { reads: 0, writes: [], formats: 0, shares: 0, metadata: 0 };
@@ -21,6 +22,7 @@ test.beforeEach(() => {
   organizations.listOrganizationMembers = async () => members;
   drive.getFileMetadata = async () => ({ id: 'sheet-1' });
   drive.ensureFileEditors = async () => { calls.shares++; };
+  access.reconcile=async()=>{calls.shares++;};
   sheets.createSheetsClient = () => ({});
   sheets.getSpreadsheet = async () => ({ spreadsheet_id: 'sheet-1', spreadsheet_url: 'https://sheets.example',
     sheets: sheets.TRANSACTION_SHEET_WINDOWS.map((window, index) => ({ sheet_id: index, title: window.label })) });
@@ -44,11 +46,11 @@ test('one transaction query partitions all four windows; format and sharing run 
   await service.getOrganizationTransactionsSheet({ organizationId: 'org-1' });
   assert.equal(calls.reads, 2);
   assert.equal(calls.formats, 1);
-  assert.equal(calls.shares, 1);
+  assert.equal(calls.shares, 2);
   assert.equal(calls.metadata, 1);
   members.push({ email: 'new@example.com' });
   await service.getOrganizationTransactionsSheet({ organizationId: 'org-1' });
-  assert.equal(calls.shares, 2);
+  assert.equal(calls.shares, 3);
   assert.equal(calls.formats, 1);
 });
 

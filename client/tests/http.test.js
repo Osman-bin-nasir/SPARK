@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHttpClient } from '../src/services/http.js';
-import { captureSession, clearSession, getStoredUser, startSession, syncSessionFromStorage } from '../src/services/session.js';
+import { captureSession, clearSession, getStoredUser, getAccessToken, startSession, syncSessionFromStorage } from '../src/services/session.js';
 import { pageCache } from '../src/services/page-cache.js';
 
 const originalFetch = globalThis.fetch;
@@ -20,7 +20,7 @@ test.beforeEach(() => {
 test.afterEach(() => { globalThis.fetch = originalFetch; clearSession(); });
 
 test('public login neither refreshes an expired old session nor sends its credentials', async () => {
-  localStorage.setItem('token', expired());
+  startSession({access_token:expired(),user});
   let requests = 0;
   globalThis.fetch = async (url, options) => {
     requests++;
@@ -34,7 +34,7 @@ test('public login neither refreshes an expired old session nor sends its creden
 });
 
 test('invitation preview works independently of an expired or different signed-in account', async () => {
-  localStorage.setItem('token', expired());
+  startSession({access_token:expired(),user});
   let requests = 0;
   globalThis.fetch = async (url, options) => {
     requests++;
@@ -61,7 +61,7 @@ test('401 retries use the refreshed token even when the component supplied an ol
 });
 
 test('parallel protected requests share one refresh operation', async () => {
-  localStorage.setItem('token', expired());
+  startSession({access_token:expired(),user});
   const ready = deferred();
   let refreshes = 0;
   globalThis.fetch = async url => {
@@ -77,7 +77,7 @@ test('parallel protected requests share one refresh operation', async () => {
 
 for (const replacement of ['logout', 'another account']) {
   test(`an old refresh cannot restore credentials after ${replacement}`, async () => {
-    localStorage.setItem('token', expired());
+    startSession({access_token:expired(),user});
     const ready = deferred();
     globalThis.fetch = async () => { await ready.promise; return json({ access_token: 'old-restored', user }); };
     const result = assert.rejects(api().get('/transactions'), error => error.name === 'AbortError');
@@ -85,7 +85,7 @@ for (const replacement of ['logout', 'another account']) {
     else startSession({ access_token: 'access-b', refresh_token: 'refresh-b', user: { id: 'user-b' } });
     ready.resolve();
     await result;
-    assert.equal(localStorage.getItem('token'), replacement === 'logout' ? null : 'access-b');
+    assert.equal(getAccessToken(), replacement === 'logout' ? '' : 'access-b');
   });
 }
 
@@ -96,19 +96,19 @@ test('an old failed request cannot sign out a newly logged-in account', async ()
   startSession({ access_token: 'access-b', user: { id: 'user-b' } });
   ready.resolve();
   await result;
-  assert.equal(localStorage.getItem('token'), 'access-b');
+  assert.equal(getAccessToken(), 'access-b');
 });
 
 test('transient refresh failures preserve the session for a later retry', async () => {
-  localStorage.setItem('token', expired());
+  startSession({access_token:expired(),user});
   globalThis.fetch = async () => json({ error: 'Temporarily unavailable' }, 503);
   await assert.rejects(api().get('/transactions'), error => error.statusCode === 503);
-  assert.equal(localStorage.getItem('refresh_token'), 'refresh-a');
+  assert.equal(localStorage.getItem('refresh_token'), null);
   assert.equal(getStoredUser().id, 'user-a');
 });
 
 test('document downloads use the same authenticated refresh path', async () => {
-  localStorage.setItem('token', expired());
+  startSession({access_token:expired(),user});
   globalThis.fetch = async (url, options) => {
     if (url.endsWith('/auth/refresh')) return json({ access_token: 'fresh', user });
     assert.equal(options.headers.Authorization, 'Bearer fresh');
@@ -127,7 +127,7 @@ test('request timeouts and unexpected HTML produce useful errors without signing
     signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
   });
   await assert.rejects(createHttpClient('https://api.example.test', { timeoutMs: 5 }).get('/transactions'), /taking too long/);
-  assert.equal(localStorage.getItem('token'), 'access-a');
+  assert.equal(getAccessToken(), 'access-a');
 });
 
 test('malformed stored users fail closed; switching accounts clears all financial caches', () => {
@@ -149,4 +149,15 @@ test('cross-tab session changes abort old work and clear cached financial data',
   syncSessionFromStorage();
   assert.equal(old.signal.aborted, true);
   assert.equal(pageCache.get('team', 'org-a'), null);
+});
+test('access credentials stay in memory and cookie refresh uses credentials plus CSRF intent without a token body',async()=>{
+  assert.equal(localStorage.getItem('token'),null);assert.equal(localStorage.getItem('refresh_token'),null);
+  startSession({access_token:expired(),refresh_token:'must-not-persist',user});
+  globalThis.fetch=async(url,options)=>{
+    assert.equal(options.credentials,'include');assert.equal(options.headers['X-Spark-Browser-Session'],'1');
+    if(url.endsWith('/auth/refresh')){assert.deepEqual(JSON.parse(options.body),{});return json({access_token:'rotated-access',user});}
+    assert.equal(options.headers.Authorization,'Bearer rotated-access');return json({ok:true});
+  };
+  await api().get('/transactions');
+  assert.equal(getAccessToken(),'rotated-access');assert.equal(localStorage.getItem('token'),null);assert.equal(localStorage.getItem('refresh_token'),null);
 });

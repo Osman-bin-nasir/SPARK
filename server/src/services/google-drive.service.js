@@ -64,7 +64,7 @@ async function createDevelopmentConnectUrl({ organizationId }) {
   const driveOwner = await organizationsRepository.findOrganizationDriveOwner(organizationId);
 
   if (!driveOwner) {
-    throw new HttpError(409, 'Organization does not have a founder or admin to own the Google Drive integration');
+    throw new HttpError(409, 'Organization does not have a founder, co-founder or admin to own the Google Drive integration');
   }
 
   const state = signGoogleOauthState({

@@ -46,8 +46,16 @@ Edit `.env` with your configuration:
 **Critical (must change):**
 ```env
 JWT_SECRET=<generate-secure-key>
+WEBHOOK_SECRET=<generate-a-different-secure-key>
 DB_PASSWORD=<generate-strong-password>
 ```
+
+Generate each signing key independently (at least 32 random bytes), including
+`REFRESH_JWT_SECRET` and `TELEGRAM_JWT_SECRET` when set. Known placeholder values
+are rejected even in development. See `server/DEPLOYMENT.md` for the generator and
+session migration instructions. The optional worker inherits `WEBHOOK_SECRET`
+through the shared automation environment; set `AUTOMATION_RUN_IN_API=false` when
+using `docker compose --profile worker up` to avoid two automation owners.
 
 Compose constructs `DATABASE_URL` from the `DB_*` values. The bundled
 PostgreSQL service uses `DATABASE_SSL=false`; set it to `true` when connecting
@@ -274,6 +282,7 @@ See `.env.example` for complete list. Key variables:
 | DATABASE_URL | Yes | - | PostgreSQL connection string |
 | DATABASE_SSL | No | false in Compose | Enable TLS for the database connection |
 | JWT_SECRET | Yes | - | JWT signing key |
+| WEBHOOK_SECRET | Yes | - | Generated HMAC key; blank/public example values prevent startup. Shared with the optional worker. |
 | GOOGLE_CLIENT_ID | No | - | Google OAuth ID |
 | TELEGRAM_BOT_USERNAME | No | osman80bot | Telegram bot username |
 | APP_BASE_URL | No | http://localhost:8000 | Application URL for redirects |

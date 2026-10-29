@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname,'../src/config/env.js'),'utf8');
 function config(overrides={}) {
-  const context={module:{exports:{}},require:()=>({config(){}}),process:{env:{DATABASE_URL:'postgres://test',JWT_SECRET:'test-only',WEBHOOK_SECRET:'test-only-signature',...overrides}},Intl,URL};
+  const context={module:{exports:{}},require:()=>({config(){}}),process:{env:{DATABASE_URL:'postgres://test',JWT_SECRET:'a'.repeat(64),WEBHOOK_SECRET:'b'.repeat(64),...overrides}},Intl,URL};
   vm.runInNewContext(source,context);
   return context.module.exports;
 }
@@ -36,4 +36,8 @@ test('unset and unknown runtime modes default to production-safe URLs and checks
 });
 test('startup rejects empty and whitespace webhook secrets',()=>{
   for (const value of ['', '  ']) assert.throws(()=>config({WEBHOOK_SECRET:value}).validateEnv(),/WEBHOOK_SECRET/);
+});
+test('public example secrets and short production keys cannot boot',()=>{
+  for(const key of ['JWT_SECRET','REFRESH_JWT_SECRET','TELEGRAM_JWT_SECRET','GOOGLE_OAUTH_STATE_SECRET','WEBHOOK_SECRET'])
+    for(const value of ['your-webhook-secret-key','replace-with-a-unique-random-secret','short'])assert.throws(()=>config({[key]:value}).validateEnv(),/generated secret/);
 });

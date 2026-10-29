@@ -13,7 +13,12 @@ const app = express();
 app.disable('x-powered-by');
 // Render is the single trusted ingress; never trust arbitrary forwarded chains.
 app.set('trust proxy', process.env.RENDER === 'true' ? 1 : 0);
-app.use(helmet({ contentSecurityPolicy: false, referrerPolicy: { policy: 'no-referrer' } }));
+app.use(helmet({ contentSecurityPolicy: { directives: {
+  defaultSrc:["'self'"], scriptSrc:["'self'",'https://va.vercel-scripts.com'],
+  styleSrc:["'self'","'unsafe-inline'",'https://fonts.googleapis.com'], fontSrc:["'self'",'https://fonts.gstatic.com','data:'],
+  imgSrc:["'self'",'data:','blob:'], frameSrc:["'self'",'blob:'], connectSrc:["'self'",env.publicApiBaseUrl||"'self'",'https://vitals.vercel-insights.com'],
+  upgradeInsecureRequests:env.nodeEnv==='development'?null:[]
+} }, referrerPolicy: { policy: 'no-referrer' } }));
 const defaultJsonParser = express.json();
 const signedWebhookJsonParser = express.json({
   limit: env.ingestionMaxBodyBytes,
@@ -33,14 +38,16 @@ if (env.appBaseUrl) allowedOrigins.add(alternateWwwOrigin(env.appBaseUrl));
 if (env.nodeEnv === 'development') {
   for (const port of [5173, 8000]) allowedOrigins.add(`http://localhost:${port}`);
 }
-app.use(cors({ origin(origin, done) {
+app.use(cors({ credentials:true, origin(origin, done) {
   if (!origin || allowedOrigins.has(origin)) return done(null, true);
   return done(Object.assign(new Error('Origin not allowed'), { statusCode: 403 }));
 } }));
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30,
-  standardHeaders: 'draft-8', legacyHeaders: false, skipSuccessfulRequests: true,
+  standardHeaders: 'draft-8', legacyHeaders: false,
   message: { error: 'Too many authentication attempts. Please try again later.' } });
-app.use('/api/auth', authLimiter);
+const refreshLimiter=rateLimit({windowMs:15*60*1000,limit:120,standardHeaders:'draft-8',legacyHeaders:false});
+app.use('/api/auth', (req,res,next)=>['/refresh','/logout'].includes(req.path)
+  ? refreshLimiter(req,res,next) : authLimiter(req,res,next));
 app.use((req, res, next) => {
   if (/^\/api\/(auth\/(telegram|whatsapp|create-telegram-login|create-whatsapp-login)\/?|ingestion\/text\/?|(telegram|whatsapp)(?:\/.*)?)$/.test(req.path)) {
     signedWebhookJsonParser(req, res, next);

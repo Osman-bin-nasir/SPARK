@@ -14,12 +14,7 @@ import {
   XAxis,
   YAxis
 } from 'recharts';
-import {
-  getDashboardBudgets,
-  getDashboardConfig,
-  getDashboardSnapshot,
-  getOrganizationTeam
-} from './dashboard.api';
+import { getDashboardSnapshot } from './dashboard.api';
 import { getDashboardInvalidationStamp } from './dashboard.cache';
 import { pageCache } from '../../services/page-cache';
 import '../../styles/dashboard.css';
@@ -29,7 +24,6 @@ import '../../styles/dashboard.css';
 // cached data instantly and revalidate silently in the background.
 const CACHE_TTL_MS   = 60_000;   // 60 s — serve stale data up to this age
 
-const RANGE_OPTIONS = [3, 6, 12];
 const CATEGORY_COLORS = ['#0073bb', '#1d8102', '#d13212', '#ff9900', '#232f3e', '#879196'];
 const CATEGORY_BREAKDOWN_OPTIONS = [
   {
@@ -61,18 +55,6 @@ const CATEGORY_BREAKDOWN_OPTIONS = [
 
 function getCategoryBreakdownOption(value) {
   return CATEGORY_BREAKDOWN_OPTIONS.find((option) => option.value === value) || CATEGORY_BREAKDOWN_OPTIONS[0];
-}
-
-function createBudgetDraft(item = {}) {
-  return {
-    id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-    category: item.category || '',
-    monthly_limit: item.monthly_limit === undefined || item.monthly_limit === null ? '' : String(item.monthly_limit)
-  };
-}
-
-function createBudgetDrafts(items) {
-  return items.length ? items.map((item) => createBudgetDraft(item)) : [createBudgetDraft()];
 }
 
 function formatCurrency(value, options = {}) {
@@ -107,56 +89,12 @@ function renderChartTooltip(value, name) {
   return [formatCurrency(value, { maximumFractionDigits: 0 }), name];
 }
 
-function MetricCard({ label, value, helper }) {
-  return (
-    <article className="finance-metric-card">
-      <span className="finance-metric-label">{label}</span>
-      <strong className="finance-metric-value">{value}</strong>
-      <span className="finance-metric-helper">{helper}</span>
-    </article>
-  );
-}
-
-function Panel({ actions, children, className = '', subtitle, title }) {
-  return (
-    <section className={`finance-panel ${className}`.trim()}>
-      <div className="finance-panel-header">
-        <div>
-          <h2>{title}</h2>
-          {subtitle && <p>{subtitle}</p>}
-        </div>
-        {actions}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function EmptyState({ title, body }) {
   return (
     <div className="finance-empty-state">
       <strong>{title}</strong>
       <p>{body}</p>
     </div>
-  );
-}
-
-function OrganizationSwitcher({ onSelectOrganization, organizationId, organizations }) {
-  if (!organizations.length) {
-    return null;
-  }
-
-  return (
-    <label className="finance-org-switcher">
-      <span className="field-label">Workspace</span>
-      <select value={organizationId} onChange={(event) => onSelectOrganization(event.target.value)}>
-        {organizations.map((organization) => (
-          <option key={organization.id} value={organization.id}>
-            {organization.name} · {organization.role}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 
@@ -172,39 +110,21 @@ function DashboardPage({
   const [categoryBreakdownWindow, setCategoryBreakdownWindow] = useState('all_time');
   const [categoryBreakdownMenuOpen, setCategoryBreakdownMenuOpen] = useState(false);
   const [snapshot, setSnapshot] = useState(null);
-  const [, setConfig] = useState({
-    configured: false,
-    opening_cash_balance: null,
-    opening_cash_effective_date: ''
-  });
-  const [, setBudgets] = useState({ items: [] });
-  const [, setTeam] = useState(null);
-  const [, setCashForm] = useState({
-    opening_cash_balance: '',
-    opening_cash_effective_date: ''
-  });
-  const [, setBudgetDrafts] = useState([createBudgetDraft()]);
+
   const [loadingSnapshot, setLoadingSnapshot] = useState(true);
-  const [loadingSetup, setLoadingSetup] = useState(true);
-  const [, setLoadingTeam] = useState(false);
+
   const [error, setError] = useState('');
-  const [, setTeamError] = useState('');
-  const [, setTeamMessage] = useState('');
+
   const categoryBreakdownMenuRef = useRef(null);
 
   // Derived from backend response once available
   const organization = snapshot?.organization || organizations.find((item) => item.id === activeOrganizationId) || null;
   const organizationId = organization?.id || activeOrganizationId || '';
   const selectedCategoryBreakdownOption = getCategoryBreakdownOption(categoryBreakdownWindow);
-  const permissions = organization?.permissions || {
-    can_manage_finance: ['founder', 'admin'].includes(organization?.role || ''),
-    is_founder: organization?.role === 'founder'
-  };
-  const { is_founder: isFounder } = permissions;
 
   const dashboardState = loadingSnapshot ? 'loading' : snapshot?.dashboard_state || 'unavailable';
   const snapshotReady = dashboardState === 'ready' || dashboardState === 'no_history';
-  const busy = loadingSnapshot || loadingSetup;
+  const busy = loadingSnapshot;
 
   const metricFallback = busy ? 'Loading...' : 'Unavailable';
   const categoryBreakdownItems = snapshot?.category_breakdown || [];
@@ -315,116 +235,6 @@ function DashboardPage({
       isActive = false;
     };
   }), [months, categoryBreakdownWindow, activeOrganizationId, token]);
-
-  useEffect(() => deferEffect(() => {
-    if (!token || !organizationId) {
-      setConfig({ configured: false, opening_cash_balance: null, opening_cash_effective_date: '' });
-      setBudgets({ items: [] });
-      setBudgetDrafts([createBudgetDraft()]);
-      setLoadingSetup(false);
-      return;
-    }
-
-    let isActive = true;
-    const entry = pageCache.get('dashboard-setup', organizationId);
-    const cached = entry ? { ...entry.data, ts: entry.ts } : null;
-
-    // Serve setup data from cache instantly
-    if (cached) {
-      setConfig(cached.config);
-      setBudgets(cached.budgets);
-      setCashForm({
-        opening_cash_balance: cached.config.opening_cash_balance ?? '',
-        opening_cash_effective_date: cached.config.opening_cash_effective_date ?? ''
-      });
-      setBudgetDrafts(createBudgetDrafts(cached.budgets.items));
-      setLoadingSetup(false);
-
-      if (Date.now() - cached.ts < CACHE_TTL_MS) return;
-    }
-
-    async function loadSetup() {
-      try {
-        if (!cached) setLoadingSetup(true); // spinner only on first load
-        setError('');
-
-        const [configResult, budgetResult] = await Promise.all([
-          getDashboardConfig({ token, organizationId }),
-          getDashboardBudgets({ token, organizationId })
-        ]);
-
-        if (!isActive) return;
-
-        pageCache.set('dashboard-setup', organizationId, { config: configResult, budgets: budgetResult });
-        setConfig(configResult);
-        setCashForm({
-          opening_cash_balance:
-            configResult.opening_cash_balance === null || configResult.opening_cash_balance === undefined
-              ? ''
-              : String(configResult.opening_cash_balance),
-          opening_cash_effective_date: configResult.opening_cash_effective_date || ''
-        });
-        setBudgets(budgetResult);
-        setBudgetDrafts(createBudgetDrafts(budgetResult.items || []));
-      } catch (requestError) {
-        if (isActive && !cached) {
-          setError(requestError.message);
-        }
-      } finally {
-        if (isActive) {
-          setLoadingSetup(false);
-        }
-      }
-    }
-
-    loadSetup();
-
-    return () => {
-      isActive = false;
-    };
-  }), [organizationId, token]);
-
-  useEffect(() => deferEffect(() => {
-    if (!token || !organizationId || !isFounder) {
-      setTeam(null);
-      setTeamError('');
-      setTeamMessage('');
-      setLoadingTeam(false);
-      return;
-    }
-
-    let isActive = true;
-
-    async function loadTeam() {
-      try {
-        setLoadingTeam(true);
-        setTeamError('');
-
-        const result = await getOrganizationTeam({
-          token,
-          organizationId
-        });
-
-        if (isActive) {
-          setTeam(result);
-        }
-      } catch (requestError) {
-        if (isActive) {
-          setTeamError(requestError.message);
-        }
-      } finally {
-        if (isActive) {
-          setLoadingTeam(false);
-        }
-      }
-    }
-
-    loadTeam();
-
-    return () => {
-      isActive = false;
-    };
-  }), [isFounder, organizationId, token]);
 
   if (!organizationId && !loadingSnapshot) {
     return (

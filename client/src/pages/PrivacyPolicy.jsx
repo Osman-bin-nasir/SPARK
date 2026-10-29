@@ -94,7 +94,7 @@ export default function PrivacyPolicyPage() {
 
       <LegalSection title="4. Google Drive, Google Sheets, and Google User Data">
         <p>
-          If an authorized organization founder or admin connects Google Drive, SPARK requests the
+          If an authorized organization founder, co-founder or admin connects Google Drive, SPARK requests the
           {' '}
           <code className="rounded-md bg-slate-100 px-2 py-1 text-[13px] text-slate-900">https://www.googleapis.com/auth/drive.file</code>
           {' '}
@@ -163,7 +163,7 @@ export default function PrivacyPolicyPage() {
             'We use HTTPS or other encrypted transport protections in production to protect data in transit.',
             'Passwords are stored as hashes, not as plaintext passwords.',
             'Google refresh tokens are encrypted at rest before storage.',
-            'Access to Google Drive management is restricted to authenticated founder or admin users for an organization.',
+            'Access to Google Drive management is restricted to authenticated founder, co-founder or admin users for an organization.',
             'We use reasonable administrative, technical, and organizational safeguards to protect data.'
           ]}
         />

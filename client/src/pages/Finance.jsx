@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { post, get } from '../services/http';
 import { endpoints } from '../services/endpoints';
 import { markDashboardSnapshotStale } from '../features/dashboard/dashboard.cache';
-import { getStoredUser } from '../services/session';
+import { getStoredUser, getAccessToken } from '../services/session';
 
 const INCOME_CATEGORIES = ['funding', 'revenue', 'grant', 'loan', 'other_income'];
 const EXPENSE_CATEGORIES = ['software', 'cloud', 'payroll', 'marketing', 'office', 'travel', 'legal', 'hardware', 'other'];
@@ -245,7 +245,7 @@ function buildFinanceStatCards(result) {
 }
 
 export default function FinancePage({ activeOrganizationId, token: tokenProp, user: userProp }) {
-  const token = tokenProp || localStorage.getItem('token') || '';
+  const token = tokenProp || getAccessToken() || '';
   const user = userProp || getStoredUser();
   const organizationId = activeOrganizationId || resolveActiveOrganizationId(user);
   const authHeaders = useMemo(() => ({ token, headers: organizationId ? { 'X-Organization-Id': organizationId } : {} }), [token, organizationId]);

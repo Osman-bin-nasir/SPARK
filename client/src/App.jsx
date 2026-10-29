@@ -10,9 +10,9 @@ import TermsOfServicePage from './pages/TermsOfService';
 import ContactPage from './pages/Contact';
 import LandingPage from './pages/Landing';
 import InvitationPage from './pages/Invitation';
-import { post } from './services/http';
-import { endpoints } from './services/endpoints';
-import { clearSession, getStoredUser, startSession, syncSessionFromStorage } from './services/session';
+import { post, restoreSession } from './services/http';
+import { endpoints, API_BASE_URL } from './services/endpoints';
+import { clearSession, getStoredUser, getAccessToken, startSession, syncSessionFromStorage } from './services/session';
 import {
   getUserSettings,
   getUserSettingsEventName,
@@ -99,12 +99,13 @@ function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const normalizedPathname = normalizePathname(location.pathname);
-  const initialToken = getStoredUser() ? localStorage.getItem('token') || '' : '';
+  const initialToken = getStoredUser() ? getAccessToken() : '';
   const initialTelegramToken = getPendingTelegramToken();
   const initialWhatsappToken = getPendingWhatsappToken();
   const initialUser = getStoredUser();
   const initialUserSettings = getUserSettings(initialUser);
   const [token, setToken] = useState(initialToken);
+  const [restoringSession,setRestoringSession]=useState(Boolean(initialUser&&!initialToken));
   const [user, setUser] = useState(initialUser);
   const [userSettings, setUserSettings] = useState(initialUserSettings);
   const [preferredOrganization, setPreferredOrganization] = useState(() => ({
@@ -129,6 +130,10 @@ function App() {
       : ''
   );
   const isDarkMode = userSettings.theme_mode === 'dark';
+  useEffect(() => {
+    localStorage.removeItem('token');localStorage.removeItem('refresh_token');
+    if(getStoredUser()&&!getAccessToken()) restoreSession().catch(()=>{}).finally(()=>setRestoringSession(false));
+  }, []);
 
   useEffect(() => deferEffect(() => {
     setUserSettings(getUserSettings(user));
@@ -204,7 +209,7 @@ function App() {
 
   useEffect(() => {
     function handleAuthUpdated(event) {
-      setToken(event.detail?.token || localStorage.getItem('token') || '');
+      setToken(event.detail?.token || getAccessToken() || '');
       setUser(event.detail?.user || getStoredUser());
     }
 
@@ -213,7 +218,11 @@ function App() {
       const session = syncSessionFromStorage();
       setToken(session.token);
       setUser(session.user);
-      if (!session.token) navigate('/login', { replace: true });
+      if (!session.token && session.user) {
+        setRestoringSession(true);
+        restoreSession().catch(()=>{}).finally(()=>setRestoringSession(false));
+      }
+      else if(!session.token) navigate('/login', { replace: true });
     }
 
     function handleAuthExpired() {
@@ -274,7 +283,7 @@ function App() {
         setPendingTelegramToken(telegramToken);
         setStatus('Finish signup or login to link your Telegram account.');
 
-        if (!localStorage.getItem('token')) {
+        if (!getAccessToken()) {
           setScreen('signup');
         }
       });
@@ -287,7 +296,7 @@ function App() {
         setPendingTelegramToken(storedTelegramToken);
         setStatus('Finish signup or login to link your Telegram account.');
 
-        if (!localStorage.getItem('token')) {
+        if (!getAccessToken()) {
           setScreen('signup');
         }
       });
@@ -318,7 +327,7 @@ function App() {
         setPendingWhatsappToken(whatsappToken);
         setStatus('Finish signup or login to link your WhatsApp account.');
 
-        if (!localStorage.getItem('token')) {
+        if (!getAccessToken()) {
           setScreen('signup');
         }
       });
@@ -331,7 +340,7 @@ function App() {
         setPendingWhatsappToken(storedWhatsappToken);
         setStatus('Finish signup or login to link your WhatsApp account.');
 
-        if (!localStorage.getItem('token')) {
+        if (!getAccessToken()) {
           setScreen('signup');
         }
       });
@@ -486,7 +495,11 @@ function App() {
     navigate('/dashboard', { replace: true });
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    try {
+      const response=await fetch(`${API_BASE_URL}/auth/logout`,{method:'POST',credentials:'include',headers:{'X-Spark-Browser-Session':'1'}});
+      if(!response.ok)throw new Error('Sign out failed');
+    } catch { setStatus('Unable to revoke your session. Check your connection and try signing out again.');return; }
     setToken('');
     setUser(null);
     setUserSettings(getUserSettings(null));
@@ -562,6 +575,7 @@ function App() {
     '/contact.html': <ContactPage />
   };
 
+  if(restoringSession)return <main role="status">Restoring your session...</main>;
   if (publicPageByPath[normalizedPathname]) {
     return publicPageByPath[normalizedPathname];
   }
@@ -569,7 +583,7 @@ function App() {
   if (normalizedPathname === '/invite') {
     return <main className="auth-shell"><InvitationPage token={token} user={user}
       onSuccess={result => { handleAuthSuccess(result); navigate('/dashboard', { replace: true }); }}
-      onSignOut={() => { handleLogout(); navigate('/invite', { replace: true }); }} /></main>;
+      onSignOut={async() => { await handleLogout(); }} /></main>;
   }
 
   if (normalizedPathname === '/') {

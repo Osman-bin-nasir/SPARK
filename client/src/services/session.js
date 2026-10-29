@@ -3,6 +3,8 @@ import { pageCache } from './page-cache.js';
 const SESSION_KEY = 'spark.session-id';
 let controller = new AbortController();
 let knownIdentity;
+let accessToken='';
+export const getAccessToken=()=>accessToken;
 
 export function getStoredUser() {
   try {
@@ -14,7 +16,7 @@ export function getStoredUser() {
 }
 
 export function getSessionIdentity() {
-  return `${localStorage.getItem(SESSION_KEY) || 'legacy'}:${getStoredUser()?.id || ''}:${Boolean(localStorage.getItem('token'))}`;
+  return `${localStorage.getItem(SESSION_KEY) || 'legacy'}:${getStoredUser()?.id || ''}`;
 }
 
 function invalidateRequests() {
@@ -26,7 +28,7 @@ function invalidateRequests() {
 
 export function captureSession() {
   const identity = getSessionIdentity();
-  if (knownIdentity !== undefined && knownIdentity !== identity) invalidateRequests();
+  if (knownIdentity !== undefined && knownIdentity !== identity) { accessToken=''; invalidateRequests(); }
   knownIdentity = identity;
   return { identity, signal: controller.signal };
 }
@@ -39,13 +41,14 @@ export function assertCurrentSession(session) {
 
 export function syncSessionFromStorage() {
   captureSession();
-  return { token: getStoredUser() ? localStorage.getItem('token') || '' : '', user: getStoredUser() };
+  return { token: getStoredUser() ? accessToken : '', user: getStoredUser() };
 }
 
 function writeAuth(result) {
   const token = result.access_token || result.token || '';
-  if (token) localStorage.setItem('token', token);
-  if (result.refresh_token) localStorage.setItem('refresh_token', result.refresh_token);
+  accessToken=token;
+  localStorage.removeItem('token');
+  localStorage.removeItem('refresh_token');
   if (result.user) localStorage.setItem('user', JSON.stringify(result.user));
   window.dispatchEvent(new CustomEvent('spark-auth-updated', { detail: { token, user: result.user || getStoredUser() } }));
 }
@@ -64,6 +67,7 @@ export function refreshSession(result, session) {
 }
 
 export function clearSession() {
+  accessToken='';
   localStorage.removeItem('token');
   localStorage.removeItem('refresh_token');
   localStorage.removeItem('user');
