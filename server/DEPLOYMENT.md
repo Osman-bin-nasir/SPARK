@@ -61,7 +61,12 @@ select Node.js 24 for frontend hosting to support the current build/lint tools.
 Browser API access is limited to `APP_BASE_URL`, its `www`/apex counterpart, and
 `PUBLIC_API_BASE_URL` (plus local development origins in explicit development
 mode). Render's single ingress is trusted only when `RENDER=true`; authentication
-attempts are throttled per IP.
+attempts are throttled per IP. The Elastic Beanstalk deployment archive includes
+`.ebextensions/01-proxy.config`, which configures exactly one trusted proxy hop
+for the EB nginx ingress. Keep `TRUST_PROXY_HOPS` set to the actual number of
+trusted proxies in front of Express; do not set it to `true` or trust arbitrary
+forwarded chains. The deployment archive and CI Docker build include this EB
+configuration.
 Legacy `/api/auth/telegram`, `/whatsapp`, `/create-telegram-login` and
 `/create-whatsapp-login` require `X-Spark-Signature: sha256=HEX_HMAC` over the exact
 JSON body using `WEBHOOK_SECRET`. Native provider webhooks and bot account linking
@@ -69,6 +74,9 @@ continue to use their existing verification. Never give that signing secret to
 the frontend. Access logs omit URL query parameters; server errors omit internals.
 Only founders/co-founders can change member roles, including through the generic
 member update route; admins can still update report-recipient preferences.
+Pending invitations from older releases with custom or founder roles remain
+usable, but acceptance safely downgrades those legacy roles to `member`; resend
+an invite with a supported role if a different role is intended.
 PostgreSQL TLS verifies the server certificate and hostname (`verify-full`). Keep
 `DATABASE_SSL=true` for hosted databases; local Compose explicitly disables TLS
 for its internal PostgreSQL service. Do not disable TLS to bypass certificate errors.

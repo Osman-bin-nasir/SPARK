@@ -13,6 +13,8 @@ async function changeMember({ organizationId, targetUserId, actorId, role, remov
   if (!remove) validateRole(role);
   const client = await pool.connect();
   let releaseError;
+  let sheetRevocation;
+  let committed = false;
   try {
     await client.query('BEGIN');
     // Serialize all removals/demotions in a workspace, including concurrent requests.
@@ -27,15 +29,29 @@ async function changeMember({ organizationId, targetUserId, actorId, role, remov
       const { rows } = await client.query("SELECT COUNT(*)::int AS count FROM organization_members WHERE organization_id=$1 AND role='founder'", [organizationId]);
       if (rows[0].count <= 1) throw new HttpError(409, 'The last founder cannot be removed or demoted');
     }
-    if(remove)await require('./sheet-access.service').revokeMember(organizationId,targetUserId,client);
+    if(remove)sheetRevocation=await require('./sheet-access.service').revokeMember(organizationId,targetUserId,client);
     const result = remove
       ? await organizations.removeOrganizationMember({ organizationId, userId: targetUserId }, client)
       : await organizations.updateOrganizationMember({ organizationId, userId: targetUserId, role, receiveInsights }, client);
     await client.query('COMMIT');
+    committed = true;
     require('./automation-events').emit('reports-changed');
     require('./automation-events').emit('membership-changed', { organizationId });
     return result;
-  } catch (error) { releaseError = await rollbackSafely(client); throw error; }
+  } catch (error) {
+    if (!committed) {
+      releaseError = await rollbackSafely(client);
+      if (sheetRevocation) {
+        try {
+          await require('./sheet-access.service').restoreMemberRevocation(sheetRevocation);
+        } catch {
+          // Keep the original failure; the normal workbook reconciliation can
+          // restore access on a later sync if the compensating API call fails.
+        }
+      }
+    }
+    throw error;
+  }
   finally { client.release(releaseError || undefined); }
 }
 module.exports = { validateRole, changeMember };

@@ -12,17 +12,46 @@ async function permissions(drive,fileId) {
 async function revokeMember(organizationId,userId,client) {
   const integration=await integrations.findByOrganizationId(organizationId);
   if(integration?.owner_user_id===userId)throw new HttpError(409,'Reconnect Google Drive under another active member before removing its integration owner');
-  if(!integration?.transactions_sheet_id) return;
+  if(!integration?.transactions_sheet_id) return null;
   const {rows}=await client.query('SELECT email FROM users WHERE id=$1',[userId]);
   const email=rows[0]?.email?.toLowerCase();if(!email)return;
   const {drive}=await driveService.getOrganizationDriveClient(organizationId);
   const fileId=integration.transactions_sheet_id;
-  for(const permission of await permissions(drive,fileId)) {
+  const revoked=[];
+  const existing=await permissions(drive,fileId);
+  const memberPermissions=existing.filter(permission=>permission.emailAddress?.toLowerCase()===email);
+  for(const permission of existing) {
     if(permission.role==='owner'&&permission.emailAddress?.toLowerCase()!==integration.google_email?.toLowerCase())throw new HttpError(409,'Transfer the existing SPARK workbook to the active Google integration owner before removing members');
-    if(permission.emailAddress?.toLowerCase()!==email)continue;
-    if(permission.role==='owner'||permission.permissionDetails?.some(d=>d.inherited))throw new HttpError(409,'Transfer ownership or remove inherited Google access before removing this member');
-    await drive.permissions.delete({fileId,permissionId:permission.id});
-    await client.query('DELETE FROM managed_sheet_permissions WHERE file_id=$1 AND permission_id=$2',[fileId,permission.id]);
+    if(memberPermissions.includes(permission)&&(permission.role==='owner'||permission.permissionDetails?.some(d=>d.inherited)))throw new HttpError(409,'Transfer ownership or remove inherited Google access before removing this member');
+  }
+  try {
+    for(const permission of memberPermissions) {
+      await drive.permissions.delete({fileId,permissionId:permission.id});
+      revoked.push({type:permission.type,emailAddress:permission.emailAddress,role:permission.role});
+      await client.query('DELETE FROM managed_sheet_permissions WHERE file_id=$1 AND permission_id=$2',[fileId,permission.id]);
+    }
+  } catch(error) {
+    if(revoked.length) {
+      try { await restoreMemberRevocation({organizationId,fileId,email,drive,revoked}); } catch { /* retry via reconciliation */ }
+    }
+    throw error;
+  }
+  return revoked.length ? {organizationId,fileId,email,drive,revoked} : null;
+}
+async function restoreMemberRevocation(revocation) {
+  if(!revocation)return;
+  for(const permission of revocation.revoked) {
+    // A sync may have restored the membership's grant after the transaction
+    // rolled back but before this compensation runs. Reuse it instead of
+    // creating a duplicate Drive permission.
+    const current=(await permissions(revocation.drive,revocation.fileId))
+      .find(item=>item.emailAddress?.toLowerCase()===revocation.email);
+    const result=current ? {data:{id:current.id}} : await revocation.drive.permissions.create({
+      fileId:revocation.fileId,fields:'id',sendNotificationEmail:false,
+      requestBody:{type:permission.type||'user',emailAddress:permission.emailAddress,role:permission.role}
+    });
+    await pool.query('INSERT INTO managed_sheet_permissions(organization_id,file_id,permission_id,email) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',
+      [revocation.organizationId,revocation.fileId,result.data.id,revocation.email]);
   }
 }
 async function reconcile({drive,spreadsheetId,organizationId}) {
@@ -52,4 +81,4 @@ async function reconcile({drive,spreadsheetId,organizationId}) {
     await client.query('COMMIT');
   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
 }
-module.exports={permissions,revokeMember,reconcile};
+module.exports={permissions,revokeMember,restoreMemberRevocation,reconcile};

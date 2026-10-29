@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { env } = require('../src/config/env');
 env.webhookSecret = 'test-only-signing-secret';
+process.env.TRUST_PROXY_HOPS = '1';
 const app = require('../src/app');
 const auth = require('../src/services/auth.service');
 let server, base;
@@ -58,6 +59,16 @@ test('authentication throttling returns 429 while health and provider webhooks r
   let status;
   for(let i=0;i<32;i++) status=(await fetch(`${base}/api/auth/login`,{method:'POST',headers:{'content-type':'application/json'},body:'{}'})).status;
   assert.equal(status,429);assert.equal((await fetch(`${base}/health`)).status,200);
+});
+test('authentication limits use distinct forwarded client IPs behind the configured proxy',async()=>{
+  assert.equal(app.get('trust proxy'),1);
+  const statuses=[];
+  for(let i=0;i<31;i++) {
+    const clientIp=i%2?'198.51.100.11':'198.51.100.12';
+    const response=await fetch(`${base}/api/auth/login`,{method:'POST',headers:{'content-type':'application/json','x-forwarded-for':clientIp},body:'{}'});
+    statuses.push(response.status);
+  }
+  assert.ok(statuses.every(status=>status===400));
 });
 test('admins cannot promote themselves through the generic member-update endpoint',async t=>{
   env.jwtSecret='test-only-security-access-key';

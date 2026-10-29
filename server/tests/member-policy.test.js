@@ -32,3 +32,17 @@ test('role mutations preserve a founder, prevent self escalation/removal and che
   assert.equal((await db.query("SELECT COUNT(*)::int AS count FROM organization_members WHERE role='founder'")).rows[0].count,1);
   assert.ok(sql.some(query=>query.includes('FOR UPDATE')));
 });
+test('a failed membership transaction restores Drive access revoked during offboarding',async t=>{
+  const calls=[];
+  t.mock.method(pool,'connect',async()=>({query:async sql=>{calls.push(sql);return{rows:[]};},release(){}}));
+  const organizations=require('../src/db/organizations.repository');
+  t.mock.method(organizations,'findMembership',async({userId})=>({role:userId==='actor'?'founder':'member'}));
+  t.mock.method(organizations,'removeOrganizationMember',async()=>{throw new Error('simulated write failure');});
+  const access=require('../src/services/sheet-access.service');
+  const restore=t.mock.method(access,'restoreMemberRevocation',async()=>calls.push('RESTORED'));
+  t.mock.method(access,'revokeMember',async()=>({fileId:'sheet',revoked:[]}));
+  await assert.rejects(()=>policy.changeMember({organizationId:'org',actorId:'actor',targetUserId:'member',remove:true}),/simulated write failure/);
+  assert.ok(calls.includes('ROLLBACK'));
+  assert.ok(calls.indexOf('RESTORED')>calls.indexOf('ROLLBACK'));
+  assert.equal(restore.mock.callCount(),1);
+});

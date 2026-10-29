@@ -11,8 +11,15 @@ const { notFoundHandler, errorHandler } = require('./middleware/error.middleware
 
 const app = express();
 app.disable('x-powered-by');
-// Render is the single trusted ingress; never trust arbitrary forwarded chains.
-app.set('trust proxy', process.env.RENDER === 'true' ? 1 : 0);
+// Set TRUST_PROXY_HOPS to the exact number of trusted reverse proxies. Do not
+// trust arbitrary forwarded chains; Render is the default single ingress.
+const trustProxyHops = process.env.TRUST_PROXY_HOPS === undefined
+  ? (process.env.RENDER === 'true' ? 1 : 0)
+  : Number(process.env.TRUST_PROXY_HOPS);
+if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0 || trustProxyHops > 5) {
+  throw new Error('TRUST_PROXY_HOPS must be an integer from 0 to 5');
+}
+app.set('trust proxy', trustProxyHops);
 app.use(helmet({ contentSecurityPolicy: { directives: {
   defaultSrc:["'self'"], scriptSrc:["'self'",'https://va.vercel-scripts.com'],
   styleSrc:["'self'","'unsafe-inline'",'https://fonts.googleapis.com'], fontSrc:["'self'",'https://fonts.gstatic.com','data:'],

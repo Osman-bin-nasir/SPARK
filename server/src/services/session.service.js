@@ -22,6 +22,7 @@ async function rotate(token) {
     // concurrent descendant refresh. Advisory locks last only this transaction.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[row.family_id]);
     const {rows:current}=await client.query('SELECT * FROM auth_sessions WHERE token_hash=$1 FOR UPDATE',[hash(token)]);
+    if(!current[0])throw invalid();
     if(current[0].consumed_at||current[0].revoked_at) {
       await client.query('UPDATE auth_sessions SET revoked_at=NOW() WHERE family_id=$1',[row.family_id]);
       await client.query('COMMIT');throw invalid();

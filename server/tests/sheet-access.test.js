@@ -10,6 +10,23 @@ test('member offboarding revokes legacy direct grants and refuses owner/inherite
   permission={...permission,role:'owner'};await assert.rejects(()=>access.revokeMember('org','departed',client),error=>error.statusCode===409);
   permission={...permission,role:'writer',permissionDetails:[{inherited:true}]};await assert.rejects(()=>access.revokeMember('org','departed',client));
 });
+test('a rolled-back offboarding can recreate direct Drive access and track the new grant',async t=>{
+  const sql=[];const deleted=[];const created=[];let permissionPresent=true;
+  t.mock.method(integrations,'findByOrganizationId',async()=>({transactions_sheet_id:'sheet'}));
+  const drive={permissions:{
+    list:async()=>({data:{permissions:permissionPresent?[{id:'old-grant',type:'user',emailAddress:'departed@example.test',role:'writer'}]:[]}}),
+    delete:async value=>{deleted.push(value);permissionPresent=false;},
+    create:async value=>{created.push(value);permissionPresent=true;return{data:{id:'restored-grant'}}}
+  }};
+  t.mock.method(google,'getOrganizationDriveClient',async()=>({drive}));
+  t.mock.method(pool,'query',async(...args)=>{sql.push(args);return{rows:[]};});
+  const client={query:async()=>({rows:[{email:'departed@example.test'}]})};
+  const revocation=await access.revokeMember('org','departed',client);
+  assert.deepEqual(deleted,[{fileId:'sheet',permissionId:'old-grant'}]);
+  await access.restoreMemberRevocation(revocation);
+  assert.deepEqual(created[0].requestBody,{type:'user',emailAddress:'departed@example.test',role:'writer'});
+  assert.deepEqual(sql[0][1],['org','sheet','restored-grant','departed@example.test']);
+});
 test('reconciliation removes old/nonmember shares under the membership lock and preserves active members',async t=>{
   const calls=[];t.mock.method(pool,'connect',async()=>({query:async sql=>{calls.push(sql);return{rows:[]};},release(){}}));
   t.mock.method(organizations,'listOrganizationMembers',async()=>[{email:'active@example.test'}]);

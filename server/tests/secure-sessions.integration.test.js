@@ -1,6 +1,19 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 const {PGlite}=require('@electric-sql/pglite');const {pool}=require('../src/db/pool');
 const sessions=require('../src/services/session.service');const {env}=require('../src/config/env');
+test('a session row disappearing before the locked refresh read returns 401 instead of 500',async t=>{
+  const calls=[];
+  t.mock.method(pool,'connect',async()=>({
+    query:async(sql)=>{
+      calls.push(sql);
+      if(sql.includes('FOR UPDATE'))return{rows:[]};
+      if(sql.startsWith('SELECT * FROM auth_sessions'))return{rows:[{family_id:'00000000-0000-0000-0000-000000000001',user_id:'user',revoked_at:null,expires_at:new Date(Date.now()+60000)}]};
+      return{rows:[]};
+    },release(){}
+  }));
+  await assert.rejects(()=>sessions.rotate('a'.repeat(43)),error=>error.statusCode===401);
+  assert.ok(calls.includes('ROLLBACK'));
+});
 test('opaque refresh tokens rotate, detect reuse and revoke access; browser cookie is HttpOnly and CSRF guarded',async t=>{
   const db=new PGlite();t.after(()=>db.close());
   await db.exec('CREATE TABLE users(id UUID PRIMARY KEY); CREATE TABLE organizations(id UUID PRIMARY KEY);');
