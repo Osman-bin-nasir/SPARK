@@ -1,7 +1,7 @@
 require('dotenv').config();
 
-const nodeEnv = process.env.NODE_ENV || 'development';
-const production = nodeEnv === 'production';
+const nodeEnv = process.env.NODE_ENV || 'production';
+const production = nodeEnv !== 'development';
 const appBaseUrl = (process.env.APP_BASE_URL || (production ? 'https://sparkmetrics.online' : 'http://localhost:5173')).replace(/\/+$/, '');
 const publicApiBaseUrl = (process.env.PUBLIC_API_BASE_URL || (production ? 'https://api.sparkmetrics.online' : '')).replace(/\/+$/, '');
 
@@ -56,12 +56,13 @@ const env = {
 };
 
 function validateEnv() {
-  if (env.nodeEnv === 'production') {
+  if (production) {
     for (const [name, value] of [['APP_BASE_URL', env.appBaseUrl], ['PUBLIC_API_BASE_URL', env.publicApiBaseUrl]]) {
       let url;
       try { url = new URL(value); } catch { throw new Error(`${name} must be a public HTTPS origin`); }
+      const hostname = url.hostname.replace(/\.+$/, '').toLowerCase();
       if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash
-        || /^(localhost|127\..*|\[::1\])$/i.test(url.hostname) || url.hostname.endsWith('.trycloudflare.com')) {
+        || /^(localhost|127\..*|\[::1\])$/i.test(hostname) || hostname.endsWith('.trycloudflare.com')) {
         throw new Error(`${name} must be a permanent public HTTPS origin in production`);
       }
     }

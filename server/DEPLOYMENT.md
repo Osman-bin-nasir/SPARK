@@ -3,6 +3,22 @@
 The local tunnel and local test database are not part of deployment. Production
 runs the same intent pipeline against the existing Render backend and PostgreSQL
 database. No new API keys, GPU, worker service, or polling process is needed.
+Docker, CI and the package engines use Node.js 24 LTS. Use Node.js 24 locally and
+select Node.js 24 for frontend hosting to support the current build/lint tools.
+
+Browser API access is limited to `APP_BASE_URL` and `PUBLIC_API_BASE_URL` (plus
+local development origins in explicit development mode). Render's single ingress
+is trusted only when `RENDER=true`; authentication attempts are throttled per IP.
+Legacy `/api/auth/telegram`, `/whatsapp`, `/create-telegram-login` and
+`/create-whatsapp-login` require `X-Spark-Signature: sha256=HEX_HMAC` over the exact
+JSON body using `WEBHOOK_SECRET`. Native provider webhooks and bot account linking
+continue to use their existing verification. Never give that signing secret to
+the frontend. Access logs omit URL query parameters; server errors omit internals.
+Only founders/co-founders can change member roles, including through the generic
+member update route; admins can still update report-recipient preferences.
+PostgreSQL TLS verifies the server certificate and hostname (`verify-full`). Keep
+`DATABASE_SSL=true` for hosted databases; local Compose explicitly disables TLS
+for its internal PostgreSQL service. Do not disable TLS to bypass certificate errors.
 
 ## 1. Deploy the PR
 
@@ -66,13 +82,18 @@ Use a linked production account and ask for this month's spending first, then
 not the entire team's ledger. Test an explicitly marked small expense only if
 desired; queries do not create records. Test both channels. Inspect queue status
 and Render logs if delivery fails; do not log prompts, tokens or financial payloads.
-The model needs the existing Groq quota; 429 and temporary outages use the existing
-durable queue's bounded retries and provider cooldowns.
+The model needs the existing Groq quota. HTTP 429 and 503 responses use provider
+cooldowns. Timeouts and other network failures use bounded durable-queue retries
+without a provider cooldown.
 
 Context survives restarts in PostgreSQL and expires for lookup after 30 minutes.
 Queries include pending review, exclude duplicates and income, and show amounts as
 recorded (there is no per-record currency field). Bot edits/deletes are disabled.
 Receipt images/PDFs retain their existing Google Drive and OCR requirements.
 
-If the new release fails, redeploy the previous working release. Keep the additive
-migration and database records; no database rollback or data deletion is necessary.
+If the new release fails after bot cutover, stop intake and drain or quarantine
+pending new-release `inbound` jobs before redeploying the previous release. The
+old release cannot safely interpret conversational jobs or their intent checkpoints.
+Keep a compatible release serving the queue if it cannot be drained safely.
+Keep the additive migration and database records; do not roll back the migration
+or delete data.

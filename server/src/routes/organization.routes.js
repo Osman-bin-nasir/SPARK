@@ -14,7 +14,10 @@ router.use(requireAuth, requireOrganizationMembership);
 
 // 1. Settings and member details can be updated by founder, co-founder, or admin
 router.patch('/', requireOrganizationRole(['founder', 'co-founder', 'admin']), organizationController.updateSettings);
-router.patch('/team/members/:userId', requireOrganizationRole(['founder', 'co-founder', 'admin']), organizationController.updateMember);
+router.patch('/team/members/:userId', requireOrganizationRole(['founder', 'co-founder', 'admin']),
+  (req, res, next) => req.body?.role !== undefined
+    ? requireOrganizationRole(['founder', 'co-founder'])(req, res, next)
+    : next(), organizationController.updateMember);
 
 // 2. Team management and join-code regeneration remain founder and co-founder only
 router.use(requireOrganizationRole(['founder', 'co-founder']));

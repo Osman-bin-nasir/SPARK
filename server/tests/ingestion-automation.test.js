@@ -75,3 +75,18 @@ test('a fenced runner sees the previously committed transaction without insertin
   assert.ok(!events.includes('transaction'));
   assert.ok(events.includes('COMMIT'));
 });
+test('identical chat replies use resolved expense fields and sender for hashing, preserving original text',async()=>{
+  const hashes=[];const texts=[];
+  transactions.findExactDuplicateDocument=async({contentHash})=>{hashes.push(contentHash);return null;};
+  transactions.insertTransactionWithDocumentAndJobs=async value=>{
+    texts.push(value.document.text_content);return {id:value.transaction.id};
+  };
+  const original=args();original.payload.text='lunch';
+  await ingestion.ingestText(original);
+  await ingestion.ingestText(original);
+  await ingestion.ingestText({...original,payload:{...original.payload,transaction_date:'2026-10-27'}});
+  await ingestion.ingestText({...original,payload:{...original.payload,amount:50}});
+  await ingestion.ingestText({...original,payload:{...original.payload,submitted_by_user_id:'user-2'}});
+  assert.equal(hashes[0],hashes[1]);assert.equal(new Set(hashes).size,4);
+  assert.ok(texts.every(text=>text==='lunch'));
+});

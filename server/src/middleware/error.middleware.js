@@ -14,12 +14,13 @@ function errorHandler(error, _req, res, _next) {
   }
 
   if (error.code === '23505') {
-    res.status(409).json({ error: error.message || 'Resource already exists' });
+    res.status(409).json({ error: 'Resource already exists' });
     return;
   }
 
-  const statusCode = error.statusCode || error.status || 500;
-  const message = error.message || 'Internal server error';
+  const candidate = Number(error.statusCode || error.status || 500);
+  const statusCode = Number.isInteger(candidate) && candidate >= 400 && candidate <= 599 ? candidate : 500;
+  const message = statusCode >= 500 ? 'Internal server error' : error.message || 'Request failed';
 
   res.status(statusCode).json({ error: message });
 }
