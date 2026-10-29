@@ -10,12 +10,12 @@ async function permissions(drive,fileId) {
   return all;
 }
 async function revokeMember(organizationId,userId,client) {
-  const integration=await integrations.findByOrganizationId(organizationId);
+  const integration=await integrations.findByOrganizationId(organizationId,client);
   if(integration?.owner_user_id===userId)throw new HttpError(409,'Reconnect Google Drive under another active member before removing its integration owner');
   if(!integration?.transactions_sheet_id) return null;
   const {rows}=await client.query('SELECT email FROM users WHERE id=$1',[userId]);
   const email=rows[0]?.email?.toLowerCase();if(!email)return;
-  const {drive}=await driveService.getOrganizationDriveClient(organizationId);
+  const {drive}=await driveService.getOrganizationDriveClient(organizationId,client);
   const fileId=integration.transactions_sheet_id;
   const revoked=[];
   const existing=await permissions(drive,fileId);
@@ -75,7 +75,17 @@ async function reconcile({drive,spreadsheetId,organizationId}) {
       await client.query('DELETE FROM managed_sheet_permissions WHERE file_id=$1 AND permission_id=$2',[spreadsheetId,p.id]);
     }
     for(const email of emails)if(!existing.some(p=>p.emailAddress?.toLowerCase()===email)) {
-      const result=await drive.permissions.create({fileId:spreadsheetId,fields:'id',sendNotificationEmail:false,requestBody:{role:'writer',type:'user',emailAddress:email}});
+      let result;
+      try {
+        result=await drive.permissions.create({fileId:spreadsheetId,fields:'id',sendNotificationEmail:false,requestBody:{role:'writer',type:'user',emailAddress:email}});
+      } catch(error) {
+        // Some member addresses cannot receive Drive access. Other grants and
+        // workbook writes may proceed once unsafe existing access is removed.
+        console.warn('Unable to grant SPARK workbook access', {
+          organizationId, status:error?.response?.status||error?.status||error?.code||null
+        });
+        continue;
+      }
       await client.query('INSERT INTO managed_sheet_permissions(organization_id,file_id,permission_id,email) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[organizationId,spreadsheetId,result.data.id,email]);
     }
     await client.query('COMMIT');

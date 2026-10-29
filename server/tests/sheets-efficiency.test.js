@@ -103,3 +103,70 @@ test('four tabs use two Google batch value calls and raw values', async () => {
   assert.equal(operations[1][1].requestBody.data.length, 4);
   assert.equal(operations[1][1].requestBody.valueInputOption, 'RAW');
 });
+
+function useRealReconciliation(t, permissions) {
+  const { pool } = require('../src/db/pool');
+  const queries = [];
+  t.mock.method(pool, 'connect', async () => ({ query: async sql => { queries.push(sql); return { rows: [] }; }, release() {} }));
+  t.mock.method(integrations, 'findByOrganizationId', async () => ({}));
+  const getClient = google.getOrganizationDriveClient;
+  google.getOrganizationDriveClient = async () => ({ ...await getClient(), drive: { permissions } });
+  access.reconcile = originals.get(access).reconcile;
+  return queries;
+}
+
+test('a failed member grant logs only organization/status and still writes all workbook tabs', async t => {
+  members = [{ email: 'unshareable@example.test' }, { email: 'active@example.test' }];
+  const grants = [], deleted = [], warnings = [];
+  t.mock.method(console, 'warn', (...args) => warnings.push(args));
+  const queries = useRealReconciliation(t, {
+    list: async () => ({ data: { permissions: [{ id: 'former', emailAddress: 'former@example.test', role: 'writer' }] } }),
+    delete: async value => deleted.push(value.permissionId),
+    create: async value => {
+      grants.push(value.requestBody.emailAddress);
+      if (grants.length === 1) throw Object.assign(new Error('sensitive member email'), { response: { status: 400 } });
+      return { data: { id: 'new-grant' } };
+    }
+  });
+  await service.getOrganizationTransactionsSheet({ organizationId: 'org-1' });
+  assert.deepEqual(deleted, ['former']);
+  assert.deepEqual(grants, members.map(member => member.email));
+  assert.deepEqual(warnings, [['Unable to grant SPARK workbook access', { organizationId: 'org-1', status: 400 }]]);
+  assert.ok(queries.includes('COMMIT'));
+  assert.equal(calls.writes[0].length, 4);
+});
+
+for (const failure of ['owner', 'inherited', 'removal', 'listing', 'tracking']) {
+  test(`workbook sync still fails closed for ${failure} errors and preserves error details`, async t => {
+    const { HttpError } = require('../src/utils/http-error');
+    const fatal = new HttpError(502, 'Specific Drive failure');
+    const queries = useRealReconciliation(t, {
+      list: async () => {
+        if (failure === 'listing') throw fatal;
+        return { data: { permissions: failure === 'tracking' ? [] : [{
+          id: 'external', emailAddress: 'former@example.test', role: failure === 'owner' ? 'owner' : 'writer',
+          permissionDetails: failure === 'inherited' ? [{ inherited: true }] : []
+        }] } };
+      },
+      delete: async () => { throw fatal; },
+      create: async () => ({ data: { id: 'grant' } })
+    });
+    if (failure === 'tracking') {
+      const { pool } = require('../src/db/pool');
+      t.mock.method(pool, 'connect', async () => ({ query: async sql => {
+        queries.push(sql);
+        if (sql.startsWith('INSERT')) throw fatal;
+        return { rows: [] };
+      }, release() {} }));
+    }
+    await assert.rejects(service.getOrganizationTransactionsSheet({ organizationId: 'org-1' }), error => {
+      if (failure === 'owner' || failure === 'inherited') {
+        assert.equal(error.statusCode, 409);
+        assert.match(error.message, /external owner\/inherited access/);
+      } else assert.equal(error, fatal);
+      return true;
+    });
+    assert.ok(queries.includes('ROLLBACK'));
+    assert.equal(calls.writes.length, 0);
+  });
+}

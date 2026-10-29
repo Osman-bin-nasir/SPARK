@@ -147,8 +147,8 @@ async function getDriveStatus(organizationId) {
   };
 }
 
-async function getOrganizationDriveClient(organizationId) {
-  const integration = await googleIntegrationsRepository.findByOrganizationId(organizationId);
+async function getOrganizationDriveClient(organizationId, client) {
+  const integration = await googleIntegrationsRepository.findByOrganizationId(organizationId, client);
 
   if (!integration) {
     const error = new HttpError(409, 'Google Drive is not connected for this organization');

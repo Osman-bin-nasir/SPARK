@@ -39,3 +39,19 @@ test('reconnecting a different Google account does not legitimize a former workb
   t.mock.method(google,'getOrganizationDriveClient',async()=>({drive:{permissions:{list:async()=>({data:{permissions:[{id:'owner',role:'owner',emailAddress:'old-google@example.test'}]}})}}}));
   await assert.rejects(()=>access.revokeMember('org','former',{query:async()=>({rows:[{email:'old-login@example.test'}]})}),error=>error.statusCode===409);
 });
+
+test('offboarding reuses the transaction connection for integration and Drive client reads', async t => {
+  const client = { query: async () => ({ rows: [{ email: 'departed@example.test' }] }) };
+  t.mock.method(integrations, 'findByOrganizationId', async (organizationId, connection) => {
+    assert.equal(organizationId, 'org');
+    assert.equal(connection, client);
+    return { transactions_sheet_id: 'sheet' };
+  });
+  t.mock.method(google, 'getOrganizationDriveClient', async (organizationId, connection) => {
+    assert.equal(organizationId, 'org');
+    assert.equal(connection, client);
+    return { drive: { permissions: { list: async () => ({ data: { permissions: [] } }) } } };
+  });
+  t.mock.method(pool, 'query', async () => assert.fail('must not acquire a second connection'));
+  await access.revokeMember('org', 'departed', client);
+});

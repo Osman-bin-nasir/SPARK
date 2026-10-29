@@ -113,12 +113,8 @@ async function shareSpreadsheetWithOrganization({
   spreadsheetId,
   organizationId
 }) {
-  try {
-    await require('./sheet-access.service').reconcile({drive,spreadsheetId,organizationId});
-    return true;
-  } catch (error) {
-    throw new HttpError(error.statusCode || 503, 'Unable to reconcile SPARK workbook access. Check its owner and inherited sharing before retrying.');
-  }
+  await require('./sheet-access.service').reconcile({drive,spreadsheetId,organizationId});
+  return true;
 }
 
 async function syncOrganizationTransactionsSheet({

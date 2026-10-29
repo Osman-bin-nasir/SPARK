@@ -55,7 +55,11 @@ async function prune() {
   return rowCount;
 }
 function access(user,familyId) {
-  return jwt.sign({sub:user.id,user_id:user.id,type:'access',sid:familyId,email:user.email,organization_id:user.default_organization_id},env.jwtSecret,{algorithm:'HS256',expiresIn:env.accessTokenExpiresIn});
+  const payload={sub:user.id,user_id:user.id,type:'access',sid:familyId,email:user.email,organization_id:user.default_organization_id};
+  for(const field of ['telegram_id','whatsapp_id']) {
+    if(user[field]!==undefined&&user[field]!==null&&String(user[field]).trim())payload[field]=String(user[field]);
+  }
+  return jwt.sign(payload,env.jwtSecret,{algorithm:'HS256',expiresIn:env.accessTokenExpiresIn});
 }
 const cookieName=env.nodeEnv==='development'?'spark_refresh':'__Host-spark_refresh';
 function cookieToken(req) {

@@ -54,3 +54,19 @@ test('buildAuthUrl requests only the drive.file scope', () => {
   assert.equal(url.searchParams.get('access_type'), 'offline');
   assert.equal(url.searchParams.get('prompt'), 'consent');
 });
+
+test('Drive client initialization reads integration through the supplied transaction connection', async t => {
+  const { pool } = require('../src/db/pool');
+  const { encryptText } = require('../src/utils/encryption');
+  env.googleTokenEncryptionKey = 'a'.repeat(64);
+  const encrypted = encryptText('test-refresh-token');
+  const client = { query: async (_sql, params) => {
+    assert.deepEqual(params, ['org']);
+    return { rows: [{ organization_id: 'org', refresh_token_ciphertext: encrypted.ciphertext,
+      refresh_token_iv: encrypted.iv, refresh_token_tag: encrypted.tag }] };
+  } };
+  t.mock.method(pool, 'query', async () => assert.fail('must not acquire a second connection'));
+  const result = await googleDriveService.getOrganizationDriveClient('org', client);
+  assert.equal(result.integration.organization_id, 'org');
+  assert.ok(result.drive);
+});

@@ -53,3 +53,39 @@ test('opaque refresh tokens rotate, detect reuse and revoke access; browser cook
   assert.equal((await fetch(base+'/api/google-drive/connect',{headers:{authorization:'Bearer '+access}})).status,401);
   assert.equal(listing.mock.callCount(),1);
 });
+
+test('session-issued tokens preserve platform IDs on login and refresh while remaining revocable', async t => {
+  const jwt = require('jsonwebtoken');
+  const { requireAuth } = require('../src/middleware/auth.middleware');
+  const previous = env.jwtSecret;
+  env.jwtSecret = 'test-only-platform-session-secret-123456';
+  t.after(() => { env.jwtSecret = previous; });
+  t.mock.method(pool, 'query', async () => ({ rows: [] }));
+  const user = { id: 'user', email: 'user@example.test', default_organization_id: 'org', telegram_id: 123456, whatsapp_id: '919876543210' };
+  for (const session of [undefined, { familyId: 'refresh-family', token: 'refresh', userId: user.id }]) {
+    const response = { cookie() {}, set() {}, status() { return this; }, json(body) { this.body = body; } };
+    await sessions.respond({ headers: {}, get: () => undefined }, response, { user }, 200, session);
+    const payload = jwt.verify(response.body.token, env.jwtSecret);
+    assert.equal(payload.telegram_id, '123456');
+    assert.equal(payload.whatsapp_id, user.whatsapp_id);
+    assert.equal(payload.organization_id, 'org');
+    assert.ok(payload.sid);
+    if (session) assert.equal(payload.sid, session.familyId);
+    const request = { get: () => 'Bearer ' + response.body.token };
+    const active = t.mock.method(sessions, 'active', async () => true);
+    let error;
+    await requireAuth(request, {}, value => { error = value; });
+    assert.equal(error, undefined);
+    assert.equal(request.auth.telegramId, '123456');
+    assert.deepEqual(active.mock.calls[0].arguments, [payload.sid, user.id]);
+    active.mock.mockImplementation(async () => false);
+    await requireAuth(request, {}, value => { error = value; });
+    assert.equal(error.statusCode, 401);
+    active.mock.restore();
+  }
+  for (const value of [undefined, null, '', '   ']) {
+    const payload = jwt.verify(sessions.access({ ...user, telegram_id: value, whatsapp_id: value }, 'family'), env.jwtSecret);
+    assert.equal(Object.hasOwn(payload, 'telegram_id'), false);
+    assert.equal(Object.hasOwn(payload, 'whatsapp_id'), false);
+  }
+});

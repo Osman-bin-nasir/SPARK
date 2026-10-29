@@ -1,3 +1,4 @@
+import { buildFormState, buildTransactionPayload } from '../lib/approval-form';
 import { deferEffect } from '../lib/defer-effect';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { del, get, getBlob, patch } from '../services/http';
@@ -30,15 +31,6 @@ function resolveActiveOrganizationId(user) {
   return organizations[0]?.id || '';
 }
 
-function buildFormState(transaction) {
-  return {
-    vendor: transaction?.vendor || '',
-    category: transaction?.category || '',
-    amount: transaction?.amount === null || transaction?.amount === undefined ? '' : String(transaction.amount),
-    transaction_date: transaction?.transaction_date ? String(transaction.transaction_date).slice(0, 10) : ''
-  };
-}
-
 function getFormValidationMessage(form) {
   if (!form.vendor.trim()) {
     return 'Vendor is required.';
@@ -61,38 +53,6 @@ function getFormValidationMessage(form) {
   return '';
 }
 
-function buildTransactionPayload(form, transaction) {
-  if (!transaction) {
-    return {};
-  }
-
-  const payload = {};
-  const nextVendor = form.vendor.trim();
-  const nextCategory = form.category.trim();
-  const nextDate = String(form.transaction_date || '').slice(0, 10);
-  const currentDate = String(transaction.transaction_date || '').slice(0, 10);
-  const nextAmount = Number(form.amount);
-  const currentAmount = Number(transaction.amount);
-
-  if (nextVendor && nextVendor !== transaction.vendor) {
-    payload.vendor = nextVendor;
-  }
-
-  if (nextCategory && nextCategory !== transaction.category) {
-    payload.category = nextCategory;
-  }
-
-  if (nextDate && nextDate !== currentDate) {
-    payload.transaction_date = nextDate;
-  }
-
-  if (Number.isFinite(nextAmount) && Number.isFinite(currentAmount) && Number(nextAmount.toFixed(2)) !== Number(currentAmount.toFixed(2))) {
-    payload.amount = nextAmount;
-  }
-
-  return payload;
-}
-
 export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, user: userProp }) {
   const token = tokenProp || getAccessToken() || '';
   const user = userProp || getStoredUser();
@@ -111,7 +71,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
   const [loading, setLoading] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [detail, setDetail] = useState(null);
-  const [form, setForm] = useState(buildFormState(null));
+  const [draft, setDraft] = useState({ identity: null, edits: {} });
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewError, setPreviewError] = useState('');
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -183,9 +143,18 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
   useEffect(() => deferEffect(() => {setCurrentIndex(0);setDetail(null);}),[organizationId,queuePage]);
 
   const tx = pending[currentIndex] || null;
-  const reviewIdentity = tx?.id;
-  const draftSource = useRef(tx);
-  useEffect(() => { draftSource.current = tx; }, [tx]);
+  const reviewIdentity = tx ? `${organizationId}:${tx.id}` : null;
+  // Keep only reviewer edits; untouched fields always use the latest queue data.
+  if (draft.identity !== reviewIdentity) {
+    setDraft({ identity: reviewIdentity, edits: {} });
+  }
+  const form = buildFormState(tx, draft.identity === reviewIdentity ? draft.edits : {});
+  const updateFormField = (field, value) => {
+    setDraft((current) => ({
+      identity: reviewIdentity,
+      edits: { ...(current.identity === reviewIdentity ? current.edits : {}), [field]: value }
+    }));
+  };
 
   useEffect(() => deferEffect(() => {
     setToast(null);
@@ -193,7 +162,6 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
 
   useEffect(() => deferEffect(() => {
     setFeedback({ tone: 'muted', text: '' });
-    setForm(buildFormState(draftSource.current));
   }), [reviewIdentity]);
 
   useEffect(() => {
@@ -297,7 +265,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
       const updatedTransaction = await patch(`${endpoints.transactions}/${tx.id}`, payload, authHeaders);
       updatePendingTransaction(updatedTransaction);
       setDetail(updatedTransaction);
-      setForm(buildFormState(updatedTransaction));
+      setDraft({ identity: reviewIdentity, edits: {} });
       pageCache.bustNs('approvals');
       pageCache.bustNs('transactions');
       markDashboardSnapshotStale(organizationId);
@@ -600,19 +568,19 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
             <div className="ocr-grid">
               <div className="ocr-field">
                 <label>Merchant</label>
-                <input type="text" value={form.vendor} onChange={(event) => setForm({ ...form, vendor: event.target.value })} />
+                <input type="text" value={form.vendor} onChange={(event) => updateFormField('vendor', event.target.value)} />
               </div>
               <div className="ocr-field">
                 <label>Date</label>
-                <input type="date" value={form.transaction_date} onChange={(event) => setForm({ ...form, transaction_date: event.target.value })} />
+                <input type="date" value={form.transaction_date} onChange={(event) => updateFormField('transaction_date', event.target.value)} />
               </div>
               <div className="ocr-field">
                 <label>Amount</label>
-                <input type="number" min="0" step="0.01" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} />
+                <input type="number" min="0" step="0.01" value={form.amount} onChange={(event) => updateFormField('amount', event.target.value)} />
               </div>
               <div className="ocr-field">
                 <label>Category</label>
-                <input type="text" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} />
+                <input type="text" value={form.category} onChange={(event) => updateFormField('category', event.target.value)} />
               </div>
             </div>
           </div>
