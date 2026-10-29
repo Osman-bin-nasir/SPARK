@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { deferEffect } from '../lib/defer-effect';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { post, get } from '../services/http';
 import { endpoints } from '../services/endpoints';
 import { markDashboardSnapshotStale } from '../features/dashboard/dashboard.cache';
@@ -247,7 +248,7 @@ export default function FinancePage({ activeOrganizationId, token: tokenProp, us
   const token = tokenProp || localStorage.getItem('token') || '';
   const user = userProp || getStoredUser();
   const organizationId = activeOrganizationId || resolveActiveOrganizationId(user);
-  const authHeaders = { token, headers: organizationId ? { 'X-Organization-Id': organizationId } : {} };
+  const authHeaders = useMemo(() => ({ token, headers: organizationId ? { 'X-Organization-Id': organizationId } : {} }), [token, organizationId]);
 
   const [form, setForm] = useState(createEmptyForm);
   const [submitting, setSubmitting] = useState(false);
@@ -276,14 +277,15 @@ export default function FinancePage({ activeOrganizationId, token: tokenProp, us
       const exp = (result.items || []).filter(t => t.transaction_type === 'expense' || t.transaction_type === 'salary').reduce((s, t) => s + Number(t.amount || 0), 0);
       setIncomeTotal(inc);
       setExpenseTotal(exp);
-    } catch (e) {
+    } catch  {
       // silently fail — page still usable
     } finally {
       setLoadingRecent(false);
     }
-  }, [token, organizationId]);
+  }, [token, organizationId, authHeaders]);
 
-  useEffect(() => { fetchRecent(); }, [fetchRecent]);
+  useEffect(() => deferEffect(() => { fetchRecent();
+  }), [fetchRecent]);
 
   async function handleFinanceSearch(event) {
     event.preventDefault();

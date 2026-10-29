@@ -1,3 +1,4 @@
+import { deferEffect } from './lib/defer-effect';
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import './App.css';
@@ -129,9 +130,9 @@ function App() {
   );
   const isDarkMode = userSettings.theme_mode === 'dark';
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     setUserSettings(getUserSettings(user));
-  }, [user?.id]);
+  }), [user]);
 
   useEffect(() => {
     if (isDarkMode) {

@@ -2,7 +2,7 @@ const express = require('express');
 const insightsController = require('../controllers/insights.controller');
 const { requireAuth } = require('../middleware/auth.middleware');
 const { requireOrganizationMembership } = require('../middleware/organization.middleware');
-const { env } = require('../config/env');
+const { env, assertWebhookEnv } = require('../config/env');
 const crypto = require('crypto');
 const { HttpError } = require('../utils/http-error');
 
@@ -10,6 +10,7 @@ const router = express.Router();
 
 // 1. Webhook-only schedule endpoint (defined before general dual-auth middleware)
 router.get('/schedules', (req, res, next) => {
+  try { assertWebhookEnv(); } catch (error) { return next(error); }
   const signature = req.get('x-spark-signature');
   if (!signature) {
     return next(new HttpError(401, 'Unauthorized: Signature missing'));
@@ -45,6 +46,7 @@ router.use((req, res, next) => {
   const orgId = req.get('x-organization-id');
 
   if (signature && orgId) {
+    try { assertWebhookEnv(); } catch (error) { return next(error); }
     const period = req.query.period || 'weekly';
     const payload = `${orgId}:${period}`;
     const expected = crypto

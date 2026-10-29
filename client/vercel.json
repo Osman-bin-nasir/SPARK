@@ -1,6 +1,10 @@
 {
     "rewrites": [
         {
+            "source": "/api/:path*",
+            "destination": "https://api.sparkmetrics.online/api/:path*"
+        },
+        {
             "source": "/(.*)",
             "destination": "/index.html"
         }

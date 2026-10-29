@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname,'../src/config/env.js'),'utf8');
 function config(overrides={}) {
-  const context={module:{exports:{}},require:()=>({config(){}}),process:{env:{DATABASE_URL:'postgres://test',JWT_SECRET:'test-only',...overrides}},Intl,URL};
+  const context={module:{exports:{}},require:()=>({config(){}}),process:{env:{DATABASE_URL:'postgres://test',JWT_SECRET:'test-only',WEBHOOK_SECRET:'test-only-signature',...overrides}},Intl,URL};
   vm.runInNewContext(source,context);
   return context.module.exports;
 }
@@ -33,4 +33,7 @@ test('unset and unknown runtime modes default to production-safe URLs and checks
     validateEnv();assert.equal(env.appBaseUrl,'https://sparkmetrics.online');
     assert.throws(()=>config({NODE_ENV:mode,APP_BASE_URL:'http://localhost:5173'}).validateEnv(),/HTTPS origin/);
   }
+});
+test('startup rejects empty and whitespace webhook secrets',()=>{
+  for (const value of ['', '  ']) assert.throws(()=>config({WEBHOOK_SECRET:value}).validateEnv(),/WEBHOOK_SECRET/);
 });

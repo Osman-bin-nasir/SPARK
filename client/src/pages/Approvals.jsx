@@ -1,3 +1,4 @@
+import { deferEffect } from '../lib/defer-effect';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { del, get, getBlob, patch } from '../services/http';
 import { endpoints } from '../services/endpoints';
@@ -125,11 +126,11 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
     }
   }, [previewUrl]);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     if (currentIndex > pending.length - 1) {
       setCurrentIndex(Math.max(0, pending.length - 1));
     }
-  }, [currentIndex, pending.length]);
+  }), [currentIndex, pending.length]);
 
   const fetchApprovals = useCallback(async () => {
     listRequest.current?.abort();
@@ -175,25 +176,25 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
     }
   }, [token, organizationId, queuePage, authHeaders, approvalsCacheKey]);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     setCurrentIndex(0);
     setDetail(null);
     setForm(buildFormState(null));
     setFeedback({ tone: 'muted', text: '' });
     fetchApprovals();
     return () => listRequest.current?.abort();
-  }, [fetchApprovals]);
+  }), [fetchApprovals]);
 
   const tx = pending[currentIndex] || null;
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     setToast(null);
-  }, [tx?.id]);
+  }), [tx]);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     setFeedback({ tone: 'muted', text: '' });
     setForm(buildFormState(tx));
-  }, [tx?.id]);
+  }), [tx]);
 
   useEffect(() => {
     let cancelled = false;
@@ -256,7 +257,7 @@ export default function ApprovalsPage({ activeOrganizationId, token: tokenProp, 
       cancelled = true;
       controller.abort();
     };
-  }, [tx?.id, organizationId, token, authHeaders]);
+  }, [tx, organizationId, token, authHeaders]);
 
   const activeTransaction = detail || tx;
   const document = activeTransaction?.document || null;

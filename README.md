@@ -428,7 +428,7 @@ The SPARK platform uses environment variables configured either inside the `serv
 | **`GOOGLE_CLIENT_SECRET`**| No | `your-client-secret` | Google Cloud credentials for OAuth2 integration. |
 | **`GOOGLE_REDIRECT_URI`** | No | `http://localhost:.../callback`| Callback webhook redirect mapped in Google Console. |
 | **`GOOGLE_TOKEN_ENCRYPTION_KEY`**| No | `32-byte-hex-key` | Cryptographic key to encrypt/decrypt Drive tokens in DB. |
-| **`WEBHOOK_SECRET`** | For signed ingestion | `your-webhook-secret` | HMAC key for the existing `/api/ingestion` endpoints; direct bot webhooks use provider-specific validation. |
+| **`WEBHOOK_SECRET`** | Yes | — | Non-empty HMAC key required at startup for signed ingestion, legacy bot auth and insights integrations. Direct bot webhooks use provider-specific validation. |
 | **`TELEGRAM_BOT_TOKEN`**, **`TELEGRAM_WEBHOOK_SECRET`** | For Telegram | — | Telegram API token and the shared secret for direct Telegram webhooks. |
 | **`TWILIO_ACCOUNT_SID`**, **`TWILIO_AUTH_TOKEN`**, **`TWILIO_WHATSAPP_FROM`** | For WhatsApp | — | Twilio credentials, request validation, and WhatsApp sender. |
 | **`TWILIO_INSIGHTS_CONTENT_SID`** | For scheduled WhatsApp reports | — | Approved template required for scheduled WhatsApp reports; without it those deliveries are skipped. |
@@ -704,6 +704,8 @@ SPARK is configured for automated CI/CD and deployment to **AWS Elastic Beanstal
 ### 1. Production Dockerfile
 The project utilizes a simplified backend [Dockerfile](./Dockerfile) built on `node:24-alpine`:
 * Proper signal handling implemented via `dumb-init`.
+* Builds the client in a separate Node.js 24 stage with `/api` as its API base,
+  copies the output into `public`, and serves the website and API together.
 * Runs as a secure non-root `nodejs` container user.
 * Exposes port `4000`.
 * Embeds a container `HEALTHCHECK` pointing to `/health`.

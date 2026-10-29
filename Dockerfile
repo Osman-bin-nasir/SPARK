@@ -1,3 +1,12 @@
+FROM node:24-alpine AS client-build
+WORKDIR /client
+COPY client/package*.json ./
+RUN npm ci
+COPY client/ ./
+ARG VITE_API_BASE_URL=/api
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+RUN npm run build
+
 FROM node:24-alpine
 
 WORKDIR /app
@@ -13,6 +22,7 @@ RUN npm ci --omit=dev
 
 # Copy server code
 COPY server/src ./src
+COPY --from=client-build /client/dist ./public
 
 # Create non-root user
 RUN addgroup -S nodejs && adduser -S nodejs -G nodejs

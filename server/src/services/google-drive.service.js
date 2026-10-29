@@ -32,8 +32,8 @@ async function assertOrganizationAdmin(userId, organizationId) {
     throw new HttpError(403, 'You do not have access to this organization');
   }
 
-  if (!['founder', 'admin'].includes(membership.role)) {
-    throw new HttpError(403, 'Only founders and admins can manage Google Drive');
+  if (!['founder', 'co-founder', 'admin'].includes(membership.role)) {
+    throw new HttpError(403, 'Only founders, co-founders and admins can manage Google Drive');
   }
 
   return membership;

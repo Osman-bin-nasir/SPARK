@@ -25,6 +25,13 @@ SPARK consists of:
 
 ## Quick Start
 
+The base Compose file is explicitly for local development. Production uses
+`docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d`
+with permanent HTTPS origins and real secrets. The multi-stage image builds the
+client with `VITE_API_BASE_URL=/api` and serves it alongside the API at port 4000
+(mapped to localhost:8000 by Compose). Separate Vercel hosting must configure the
+build-time value documented in `client/.env.example`.
+
 ### 1. Clone and Setup
 
 ```bash

@@ -33,6 +33,11 @@ Local demo accounts and expenses are not copied to production.
 ## 2. Environment
 
 Keep the existing database, JWT, Google, Telegram, Twilio, Groq and OCR secrets.
+`WEBHOOK_SECRET` is required at startup, including local Compose. Generate a
+unique value with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+If a deployed service ever used an empty signing secret, replace it in Render
+and every trusted legacy integration, then redeploy. Do not reuse an empty or
+placeholder value. Native Telegram and Twilio use their own provider signatures.
 `server/.env.production.example` contains placeholders and deployment settings.
 In Render, verify these values and save/deploy if they change:
 

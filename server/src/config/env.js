@@ -76,6 +76,7 @@ function validateEnv() {
   if (!env.jwtSecret) {
     missing.push('JWT_SECRET');
   }
+  if (!env.webhookSecret.trim()) missing.push('WEBHOOK_SECRET');
 
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
@@ -144,7 +145,7 @@ function assertGoogleDriveEnv() {
 }
 
 function assertWebhookEnv() {
-  if (!env.webhookSecret) {
+  if (!env.webhookSecret.trim()) {
     throw new Error('Missing required environment variable: WEBHOOK_SECRET');
   }
 }

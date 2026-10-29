@@ -6,6 +6,7 @@ const { pool } = require('../db/pool');
 const { rollbackSafely } = require('../db/rollback');
 const { env } = require('../config/env');
 const { HttpError } = require('../utils/http-error');
+const { validateRole } = require('./member-policy');
 
 function normalizeEmail(email) {
   if (typeof email !== 'string' || email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
@@ -29,9 +30,7 @@ async function getInvitation(token, client = pool, lock = false) {
 
 async function createInvitation({ organizationId, email: input, role = 'member', createdBy }) {
   const email = normalizeEmail(input);
-  if (typeof role !== 'string' || !role.trim() || role.trim().length > 64) {
-    throw new HttpError(400, 'Choose a role of 1 to 64 characters');
-  }
+  validateRole(role, { invitation: true });
   const existingUser = await users.findUserByEmail(email);
   if (existingUser) {
     const memberships = await organizations.listMembershipsByUserId(existingUser.id);
@@ -57,6 +56,7 @@ async function joinInvitation({ token, email: input, userId, passwordHash }) {
   try {
     await client.query('BEGIN');
     const invitation = await getInvitation(token, client, true);
+    validateRole(invitation.role, { invitation: true });
     if (invitation.email !== email) throw new HttpError(403, 'Sign in with the email address this invitation was sent to');
     let user;
     if (userId) {

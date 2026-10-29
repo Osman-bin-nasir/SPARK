@@ -7,6 +7,19 @@ on:
       - main
 
 jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build combined frontend and API image
+        run: docker build -t spark-smoke .
+      - name: Verify frontend and SPA routes in built image
+        run: |
+          docker run -d --name spark-smoke -p 4000:4000 --entrypoint node spark-smoke -e "require('./src/app').listen(4000)"
+          for i in $(seq 1 30); do curl --fail http://localhost:4000/health && break || sleep 1; done
+          curl --fail http://localhost:4000/login | grep '<div id="root">'
+          curl --fail http://localhost:4000/transactions | grep '<div id="root">'
+          docker rm -f spark-smoke
   server:
     runs-on: ubuntu-latest
     defaults:
@@ -48,3 +61,5 @@ jobs:
         run: npm test
       - name: Build client
         run: npm run build
+      - name: Lint client
+        run: npm run lint

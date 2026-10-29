@@ -1,6 +1,6 @@
 const configuredApiBaseUrl = import.meta.env?.VITE_API_BASE_URL?.trim().replace(/\/+$/, '');
 
-export const API_BASE_URL = configuredApiBaseUrl || (import.meta.env?.DEV ? 'http://localhost:4000/api' : '');
+export const API_BASE_URL = configuredApiBaseUrl || (import.meta.env?.DEV ? 'http://localhost:4000/api' : '/api');
 
 export const endpoints = {
   register: '/auth/register',
