@@ -503,8 +503,12 @@ async function ingestText({ organizationId, payload, automationJobId }) {
 
   try {
     const normalizedText = normalizeExtractedText(normalizedPayload.text, env.extractionMaxTextChars);
-    const textBuffer = Buffer.from(normalizedText, 'utf8');
-    const contentHash = hashBuffer(textBuffer);
+    // Include interpreted fields and sender, without altering the displayed chat text.
+    const contentHash = hashBuffer(Buffer.from(JSON.stringify([
+      normalizedText, normalizedPayload.transaction_date, normalizedPayload.amount,
+      normalizedPayload.vendor, normalizedPayload.category, normalizedPayload.submitted_by_user_id,
+      normalizedPayload.transaction_type
+    ]), 'utf8'));
     const effectiveConfidence = clampConfidence(
       normalizedPayload.confidence_score === null ? 1 : normalizedPayload.confidence_score
     );

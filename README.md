@@ -84,7 +84,7 @@ Startups often operate in a spreadsheet-heavy financial environment where tracki
 ## Technology Stack
 
 ### Backend
-* **Runtime Environment**: Node.js (v20 or higher)
+* **Runtime Environment**: Node.js 24 LTS (`.nvmrc`)
 * **Framework**: Express.js (REST API Gateway)
 * **Database**: PostgreSQL (Neon Serverless) with `pgvector` for high-dimensional similarity searches and `pg_trgm` for trigram vendor resolution.
 * **Authentication**: JSON Web Tokens (JWT) with HS256 algorithm and cryptographically secure password hashing (BCrypt).
@@ -471,7 +471,7 @@ When an ingestion job finishes:
 ## Installation & Local Setup Guide
 
 ### Prerequisites
-* **Node.js**: v20 or higher
+* **Node.js**: 24 LTS (run `nvm use` with nvm installed)
 * **npm**: v10 or higher
 * **PostgreSQL**: v16 with `pgvector` and `pg_trgm` extensions enabled.
 * **Docker / Docker Compose** (Optional, for containerized runtimes)
@@ -582,6 +582,18 @@ Prefix all API endpoints with `/api`. Headers should include:
 
 Direct bot intake uses `POST /api/webhooks/telegram` and `POST /api/webhooks/whatsapp`. These endpoints authenticate provider requests and save durable jobs before acknowledging delivery; they no longer route through n8n.
 
+Conversational text now uses Groq intent recognition, separate from receipt OCR.
+Users can record expenses, ask personal spending questions in English or Hinglish,
+compare periods and complete a clarification through a follow-up message. Replies
+use database totals; the model never executes SQL or calculates account balances.
+Apply migration `012_bot_conversations` before running this version. Existing
+`GROQ_API_KEY`, `GROQ_MODEL` and `AUTOMATION_TIME_ZONE` settings are reused.
+See [native automation configuration](N8N_MIGRATION.md#conversational-expense-messages)
+for query scope, context expiry and supported actions.
+For Render settings and the post-deployment Telegram/WhatsApp cutover, follow
+[the bot deployment guide](server/DEPLOYMENT.md). The public production environment
+template is [`server/.env.production.example`](server/.env.production.example).
+
 ### Workspace invitations
 
 Each account belongs to one organization. Ordinary web signup asks for a workspace
@@ -690,7 +702,7 @@ Natural Language Query ──> Generate Search Filters ──> SQL Match ──>
 SPARK is configured for automated CI/CD and deployment to **AWS Elastic Beanstalk (Docker Platform)**:
 
 ### 1. Production Dockerfile
-The project utilizes a simplified backend [Dockerfile](./Dockerfile) built on `node:20-alpine`:
+The project utilizes a simplified backend [Dockerfile](./Dockerfile) built on `node:24-alpine`:
 * Proper signal handling implemented via `dumb-init`.
 * Runs as a secure non-root `nodejs` container user.
 * Exposes port `4000`.

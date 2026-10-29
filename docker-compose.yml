@@ -53,7 +53,7 @@ services:
       # Node environment
       <<: *automation-environment
       AUTOMATION_RUN_IN_API: ${AUTOMATION_RUN_IN_API:-true}
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: development
       PORT: 4000
 
       # Database
@@ -112,7 +112,7 @@ services:
     container_name: spark-worker
     environment:
       <<: *automation-environment
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: development
       DATABASE_URL: "postgresql://${DB_USER:-spark_user}:${DB_PASSWORD:-spark_password}@postgres:5432/${DB_NAME:-spark_db}"
       DATABASE_SSL: "false"
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}

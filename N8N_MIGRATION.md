@@ -9,6 +9,40 @@ this list before retiring n8n.
 
 ## Configuration
 
+### Conversational expense messages
+
+Both bots route linked users' text through a shared Groq intent classifier before
+performing financial work. Previously every non-command message went to receipt
+extraction, so questions looked like invalid receipts and undated notes failed.
+Groq now identifies expense notes, personal spending queries, comparisons,
+category summaries and clarification follow-ups in English or Hinglish. The
+existing `GROQ_API_KEY` and `GROQ_MODEL` are reused; no new keys are needed.
+`openai/gpt-oss-120b` supports the strict JSON schema used here. AJV independently
+validates output before execution. Dates are checked on the server; named calendar
+periods use `AUTOMATION_TIME_ZONE` and last week means Monday through Sunday.
+Undated expense notes default to today. Queries default to this month to date.
+
+Migration `012_bot_conversations` stores only the last interpreted query or pending
+clarification, separately per workspace, user and platform, with a 30-minute expiry.
+Expired context is ignored; each identity overwrites its single row. No polling
+or additional worker is introduced. Deploy migrations before starting the bots.
+Interpretations and ingestion results are checkpointed in the existing durable
+queue; webhook redelivery protection and transactional ingestion remain in use.
+
+Conversational queries include only transactions attributed to the sender by the
+existing `transaction.created` audit trail, exclude duplicates/income, and include
+expenses and salaries awaiting review. They never expose another member's spend.
+Legacy entries without creation attribution are omitted. Category queries use
+case-insensitive labels and common food/transport aliases. Replies use SQL totals,
+not model-calculated amounts. SPARK has no per-transaction currency field, so
+amounts are reported in recorded units without guessing a currency or conversion.
+
+Attachments still use the existing OCR/Drive path. Slash commands and scheduled
+workspace reports retain their existing behavior. Chat edit/delete/undo requests
+do not modify records: users are directed to the existing Transactions UI to review
+and confirm changes. General finance replies are basic guidance; assessing whether
+spending is excessive requires the user's budget/goals and is not inferred by AI.
+
 Use `server/.env` for local Node, the root `.env` for Docker Compose, or your host's
 environment secrets. Do not commit real credentials. Existing database, JWT and
 Google OAuth settings remain required.

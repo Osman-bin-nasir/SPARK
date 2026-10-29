@@ -88,7 +88,7 @@ test('authenticated transaction listing passes organization and query context th
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { items: [{ id: 'tx-1' }], total: 1 });
-  assert.deepEqual(serviceArgs, {
+  assert.deepEqual({ ...serviceArgs, query: { ...serviceArgs.query } }, {
     organizationId: 'org-1',
     query: { limit: '25', status: 'pending_review' }
   });

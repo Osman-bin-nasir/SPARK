@@ -1,9 +1,12 @@
 require('dotenv').config();
 
-const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:5173';
+const nodeEnv = process.env.NODE_ENV || 'production';
+const production = nodeEnv !== 'development';
+const appBaseUrl = (process.env.APP_BASE_URL || (production ? 'https://sparkmetrics.online' : 'http://localhost:5173')).replace(/\/+$/, '');
+const publicApiBaseUrl = (process.env.PUBLIC_API_BASE_URL || (production ? 'https://api.sparkmetrics.online' : '')).replace(/\/+$/, '');
 
 const env = {
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv,
   port: Number(process.env.PORT || 4000),
   databaseUrl: process.env.DATABASE_URL || '',
   databaseSsl: process.env.DATABASE_SSL !== 'false',
@@ -19,7 +22,7 @@ const env = {
   appBaseUrl,
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-  googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || '',
+  googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || (production ? `${publicApiBaseUrl}/api/google-drive/callback` : ''),
   googleOauthStateSecret: process.env.GOOGLE_OAUTH_STATE_SECRET || process.env.JWT_SECRET || '',
   googleOauthStateExpiresIn: process.env.GOOGLE_OAUTH_STATE_EXPIRES_IN || '10m',
   googleTokenEncryptionKey: process.env.GOOGLE_TOKEN_ENCRYPTION_KEY || '',
@@ -33,7 +36,7 @@ const env = {
   databasePoolMax: Number(process.env.DATABASE_POOL_MAX || 8),
   automationTimeZone: process.env.AUTOMATION_TIME_ZONE || 'Asia/Kolkata',
   automationReportHour: Number(process.env.AUTOMATION_REPORT_HOUR || 9),
-  publicApiBaseUrl: process.env.PUBLIC_API_BASE_URL || '',
+  publicApiBaseUrl,
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || '',
   twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
@@ -53,6 +56,17 @@ const env = {
 };
 
 function validateEnv() {
+  if (production) {
+    for (const [name, value] of [['APP_BASE_URL', env.appBaseUrl], ['PUBLIC_API_BASE_URL', env.publicApiBaseUrl]]) {
+      let url;
+      try { url = new URL(value); } catch { throw new Error(`${name} must be a public HTTPS origin`); }
+      const hostname = url.hostname.replace(/\.+$/, '').toLowerCase();
+      if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash
+        || /^(localhost|127\..*|\[::1\])$/i.test(hostname) || hostname.endsWith('.trycloudflare.com')) {
+        throw new Error(`${name} must be a permanent public HTTPS origin in production`);
+      }
+    }
+  }
   const missing = [];
 
   if (!env.databaseUrl) {

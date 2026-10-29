@@ -2,6 +2,7 @@
   "name": "spark-server",
   "version": "1.0.0",
   "private": true,
+  "engines": { "node": "24.x" },
   "type": "commonjs",
   "main": "src/server.js",
   "scripts": {
@@ -12,24 +13,25 @@
     "start:worker": "node src/worker.js",
     "automation": "node src/scripts/automation.js",
     "seed:startup-demo": "node src/db/seed-realistic.js",
-    "test": "node --test"
+    "test": "node --test --test-concurrency=2"
   },
   "dependencies": {
-    "@langchain/core": "^0.3.40",
-    "@langchain/ollama": "^0.2.0",
-    "bcryptjs": "^2.4.3",
+    "ajv": "^8.20.0",
+    "bcryptjs": "^3.0.3",
     "busboy": "^1.6.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "googleapis": "^171.4.0",
-    "jsonwebtoken": "^9.0.2",
-    "morgan": "^1.10.0",
-    "pg": "^8.12.0",
-    "twilio": "^5.13.1"
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "googleapis": "^188.0.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.12.1",
+    "pg": "^8.23.1",
+    "twilio": "^6.2.0"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.12",
-    "nodemon": "^3.1.4"
+    "@electric-sql/pglite": "^0.5.13",
+    "nodemon": "^3.1.14"
   }
 }
