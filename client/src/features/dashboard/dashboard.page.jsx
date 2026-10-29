@@ -696,7 +696,7 @@ function DashboardPage({
         {/* Cash Balance Card */}
         <div className="premium-card" style={{ borderLeft: '3px solid var(--accent-green)' }}>
           <span className="premium-label">Cash Balance</span>
-          <div className="premium-hero-value" style={{ fontSize: '2.6rem', color: snapshotReady && snapshot.metrics.cash_on_hand != null ? 'var(--accent-green)' : 'var(--text-primary)' }}>
+          <div className="premium-hero-value" style={{ fontSize: '2.6rem', color: snapshotReady && cashOnHand != null ? (Number(cashOnHand) < 0 ? 'var(--accent-red)' : 'var(--accent-green)') : 'var(--text-primary)' }}>
             {snapshotReady
               ? formatCurrency(snapshot.metrics.cash_on_hand, { fallback: '$0' })
               : metricFallback}
