@@ -72,7 +72,7 @@ export function getUserSettings(user) {
     }
 
     return normalizeUserSettings(JSON.parse(rawValue), user);
-  } catch (_error) {
+  } catch  {
     return normalizeUserSettings({}, user);
   }
 }

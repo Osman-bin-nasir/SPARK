@@ -6,6 +6,14 @@ const { pool } = require('../db/pool');
 const { rollbackSafely } = require('../db/rollback');
 const { env } = require('../config/env');
 const { HttpError } = require('../utils/http-error');
+const { validateRole } = require('./member-policy');
+const ACCEPTABLE_INVITATION_ROLES = new Set(['member', 'admin', 'co-founder']);
+
+function normalizeInvitationRole(role) {
+  // Older releases allowed custom titles (and founder) in invitations. Keep
+  // those links usable without granting an unrecognized or founder role.
+  return ACCEPTABLE_INVITATION_ROLES.has(role) ? role : 'member';
+}
 
 function normalizeEmail(email) {
   if (typeof email !== 'string' || email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
@@ -24,14 +32,12 @@ function hashToken(token) {
 async function getInvitation(token, client = pool, lock = false) {
   const invitation = await invitations.findActive(hashToken(token), client, lock);
   if (!invitation) throw new HttpError(400, 'This invitation is invalid or expired. Ask your team for a new link.');
-  return invitation;
+  return { ...invitation, role: normalizeInvitationRole(invitation.role) };
 }
 
 async function createInvitation({ organizationId, email: input, role = 'member', createdBy }) {
   const email = normalizeEmail(input);
-  if (typeof role !== 'string' || !role.trim() || role.trim().length > 64) {
-    throw new HttpError(400, 'Choose a role of 1 to 64 characters');
-  }
+  validateRole(role, { invitation: true });
   const existingUser = await users.findUserByEmail(email);
   if (existingUser) {
     const memberships = await organizations.listMembershipsByUserId(existingUser.id);
@@ -72,6 +78,7 @@ async function joinInvitation({ token, email: input, userId, passwordHash }) {
     if (!result.membership) throw new HttpError(409, 'Unable to join this workspace. Please try again.');
     await invitations.accept(invitation.id, client);
     await client.query('COMMIT');
+    require('./automation-events').emit('reports-changed');
     return user;
   } catch (error) {
     releaseError = await rollbackSafely(client);

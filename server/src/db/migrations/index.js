@@ -10,6 +10,7 @@ const nativeAutomationMigration = require('./009_native_automation');
 const efficientAutomationMigration = require('./010_efficient_automation');
 const workspaceInvitationsMigration = require('./011_workspace_invitations');
 const botConversationsMigration = require('./012_bot_conversations');
+const secureSessionsMigration = require('./013_secure_sessions');
 
 const migrations = [
   initialSchemaMigration,
@@ -23,7 +24,8 @@ const migrations = [
   nativeAutomationMigration,
   efficientAutomationMigration,
   workspaceInvitationsMigration,
-  botConversationsMigration
+  botConversationsMigration,
+  secureSessionsMigration
 ];
 
 const latestMigrationName = migrations[migrations.length - 1]?.name || null;

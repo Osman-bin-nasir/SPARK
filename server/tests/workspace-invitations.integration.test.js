@@ -35,6 +35,7 @@ test.before(async () => {
       role TEXT, receive_insights BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE (organization_id,user_id));
   `);
   await migration.up({ query: sql => db.exec(sql) });
+  await require('../src/db/migrations/013_secure_sessions').up({query:sql=>db.exec(sql)});
   const query = async (sql, params) => { const result = await db.query(sql, params); return { ...result, rowCount: result.affectedRows }; };
   pool.query = query;
   pool.connect = async () => ({ query, release() {} });
@@ -78,6 +79,15 @@ test('invitation signup atomically joins the intended workspace with its chosen 
   const { rows: after } = await db.query('SELECT COUNT(*)::int AS count FROM organizations');
   assert.equal(after[0].count, before[0].count);
   await assert.rejects(() => service.getInvitation(token), /invalid or expired/);
+});
+
+test('legacy custom-role invitations remain usable but grant only the safe member role', async () => {
+  const invite = await create('legacy-role@example.test');
+  await db.query("UPDATE organization_invitations SET role='Finance Lead' WHERE id=$1", [invite.invitation.id]);
+  const token = tokenFrom(invite);
+  assert.equal((await service.getInvitation(token)).role, 'member');
+  const result = await auth.register({ email: 'legacy-role@example.test', password: 'test-password', invitation_token: token });
+  assert.equal(result.user.organizations[0].role, 'member');
 });
 
 test('email mismatch cannot claim an invitation or leave behind a new account', async () => {

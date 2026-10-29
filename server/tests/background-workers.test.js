@@ -7,10 +7,12 @@ const orphans = require('../src/db/ingestion.repository');
 const jobs = require('../src/db/automation.repository');
 const workers = require('../src/services/background-workers.service');
 const googleDrive = require('../src/services/google-drive.service');
-const originals = new Map([pool, orphans, jobs, googleDrive].map(object => [object, { ...object }]));
+const sessions=require('../src/services/session.service');
+const originals = new Map([pool, orphans, jobs, googleDrive,sessions].map(object => [object, { ...object }]));
 const originalEnv = { ...env };
 let claims, redactions, releases;
 test.beforeEach(() => {
+  sessions.prune=async()=>0;
   claims = redactions = releases = 0;
   pool.connect = async () => {
     const client = new EventEmitter();

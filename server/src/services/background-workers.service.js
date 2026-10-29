@@ -18,6 +18,7 @@ const MAX_IDLE_BACKOFF_MULTIPLIER = 1;
 let cleanupRunning;
 let ownsAutomation = false;
 let retentionDueAt = 0;
+let sessionCleanupDueAt=0;
 const DAY_MS = 86400000;
 
 async function processOrphanDriveFiles() {
@@ -112,9 +113,14 @@ async function runOrphanCleanupLoop() {
   try {
     const summary = await processOrphanDriveFiles();
     let retentionPending = false;
+    if(Date.now()>=sessionCleanupDueAt){
+      const pruned=await require('./session.service').prune();
+      retentionPending=pruned===500;
+      sessionCleanupDueAt=retentionPending?0:Date.now()+DAY_MS;
+    }
     if (env.automationRetentionDays && Date.now() >= retentionDueAt) {
       const count = await automationJobs.redactCompleted(env.automationRetentionDays);
-      retentionPending = count === 500;
+      retentionPending ||= count === 500;
       retentionDueAt = retentionPending ? 0 : Date.now() + DAY_MS;
     }
     orphanCleanupDelayMs = calculateNextDelay({

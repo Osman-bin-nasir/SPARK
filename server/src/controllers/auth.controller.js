@@ -1,9 +1,11 @@
 const authService = require('../services/auth.service');
+const sessions=require('../services/session.service');
+const users=require('../db/users.repository');
 
 async function register(req, res, next) {
   try {
     const result = await authService.register(req.body);
-    res.status(201).json(result);
+    await sessions.respond(req,res,result,201);
   } catch (error) {
     next(error);
   }
@@ -12,7 +14,7 @@ async function register(req, res, next) {
 async function login(req, res, next) {
   try {
     const result = await authService.login(req.body);
-    res.status(200).json(result);
+    await sessions.respond(req,res,result);
   } catch (error) {
     next(error);
   }
@@ -21,7 +23,7 @@ async function login(req, res, next) {
 async function telegramLogin(req, res, next) {
   try {
     const result = await authService.loginWithTelegram(req.body);
-    res.status(200).json(result);
+    await sessions.respond(req,res,await authService.buildAuthResponse(result.user));
   } catch (error) {
     next(error);
   }
@@ -30,7 +32,7 @@ async function telegramLogin(req, res, next) {
 async function whatsappLogin(req, res, next) {
   try {
     const result = await authService.loginWithWhatsapp(req.body);
-    res.status(200).json(result);
+    await sessions.respond(req,res,await authService.buildAuthResponse(result.user));
   } catch (error) {
     next(error);
   }
@@ -38,8 +40,11 @@ async function whatsappLogin(req, res, next) {
 
 async function refresh(req, res, next) {
   try {
-    const result = await authService.refreshAccessToken(req.body);
-    res.status(200).json(result);
+    sessions.requireCookieIntent(req);
+    const session=await sessions.rotate(sessions.cookieToken(req)||req.body?.refresh_token);
+    const user=await users.findUserById(session.userId);
+    if(!user)throw Object.assign(new Error('Session expired'),{statusCode:401});
+    await sessions.respond(req,res,await authService.buildAuthResponse(users.mapUser(user)),200,session);
   } catch (error) {
     next(error);
   }
@@ -110,6 +115,7 @@ async function unlinkWhatsapp(req, res, next) {
 }
 
 module.exports = {
+  logout: async(req,res,next)=>{try{sessions.requireCookieIntent(req);await sessions.revoke(sessions.cookieToken(req)||req.body?.refresh_token);sessions.setCookie(res,'');res.sendStatus(204);}catch(error){next(error);}},
   createTelegramLogin,
   createWhatsappLogin,
   linkTelegram,

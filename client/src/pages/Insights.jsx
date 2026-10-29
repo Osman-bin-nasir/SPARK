@@ -1,3 +1,4 @@
+import { deferEffect } from '../lib/defer-effect';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { get, patch } from '../services/http';
 import { endpoints } from '../services/endpoints';
@@ -11,15 +12,6 @@ function formatPercent(val) {
   if (val == null || Number.isNaN(Number(val))) return '0%';
   const prefix = val > 0 ? '+' : '';
   return `${prefix}${val.toFixed(1)}%`;
-}
-
-function formatDate(iso) {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch {
-    return '—';
-  }
 }
 
 export default function InsightsPage({ activeOrganizationId, token, user }) {
@@ -90,15 +82,15 @@ export default function InsightsPage({ activeOrganizationId, token, user }) {
     }
   }, [token, activeOrganizationId, activeTab, authHeaders]);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     fetchConfig();
     return () => configRequest.current?.abort();
-  }, [fetchConfig]);
+  }), [fetchConfig]);
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     fetchInsights();
     return () => insightsRequest.current?.abort();
-  }, [fetchInsights]);
+  }), [fetchInsights]);
 
   // Update insights frequency or recipients type
   async function handleUpdateSettings(frequency, recipients) {
@@ -188,7 +180,7 @@ export default function InsightsPage({ activeOrganizationId, token, user }) {
         ) : (
           <div style={{ padding: '24px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '32px' }}>
-              
+
               {/* Frequency Selector */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.78rem', textTransform: 'uppercase', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '12px', letterSpacing: '0.05em' }}>
@@ -378,7 +370,7 @@ export default function InsightsPage({ activeOrganizationId, token, user }) {
         <div>
           {/* Top Level Summary Row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-            
+
             {/* Outflow overview */}
             <div className="premium-card" style={{ padding: '24px' }}>
               <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px', letterSpacing: '0.05em' }}>
@@ -455,7 +447,7 @@ export default function InsightsPage({ activeOrganizationId, token, user }) {
 
           {/* Double Column Breakdown Layout */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
-            
+
             {/* Vendor Spikes */}
             <div className="premium-card" style={{ padding: '24px' }}>
               <div className="premium-card-header" style={{ padding: '0 0 16px 0', borderBottom: '1px solid var(--border)' }}>

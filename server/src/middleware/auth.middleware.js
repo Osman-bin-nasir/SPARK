@@ -1,7 +1,7 @@
 const { verifyAccessToken } = require('../utils/jwt');
 const { HttpError } = require('../utils/http-error');
 
-function requireAuth(req, _res, next) {
+async function requireAuth(req, _res, next) {
   const authorization = req.get('authorization');
 
   if (!authorization || !authorization.startsWith('Bearer ')) {
@@ -18,6 +18,7 @@ function requireAuth(req, _res, next) {
 
   try {
     const payload = verifyAccessToken(token);
+    if(payload.sid&&!await require('../services/session.service').active(payload.sid,payload.sub))throw new HttpError(401,'Session revoked');
     req.auth = {
       userId: payload.sub,
       email: payload.email,
@@ -30,7 +31,7 @@ function requireAuth(req, _res, next) {
   }
 }
 
-function optionalAuth(req, _res, next) {
+async function optionalAuth(req, _res, next) {
   const authorization = req.get('authorization');
 
   if (!authorization) {
@@ -52,6 +53,7 @@ function optionalAuth(req, _res, next) {
 
   try {
     const payload = verifyAccessToken(token);
+    if(payload.sid&&!await require('../services/session.service').active(payload.sid,payload.sub))throw new HttpError(401,'Session revoked');
     req.auth = {
       userId: payload.sub,
       email: payload.email,

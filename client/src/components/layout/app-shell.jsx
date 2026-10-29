@@ -3,9 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import Sidebar from './sidebar';
 import '../../styles/layout.css';
 
-export default function AppShell({ 
-  children, 
-  user,
+export default function AppShell({
+  children,
   activeOrganizationId,
   organizations,
   onSelectOrganization,
@@ -56,11 +55,11 @@ export default function AppShell({
           </div>
           <div className="topbar-right">
             {organizations && organizations.length > 0 && (
-              <select 
+              <select
                 aria-label="Active workspace"
                 className="workspace-switcher"
                 style={{ height: '40px', padding: '0 12px', borderRadius: '6px', backgroundColor: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
-                value={activeOrganizationId} 
+                value={activeOrganizationId}
                 onChange={(e) => onSelectOrganization && onSelectOrganization(e.target.value)}
               >
                 {organizations.map(org => (
@@ -68,7 +67,7 @@ export default function AppShell({
                 ))}
               </select>
             )}
-            
+
             <button className="icon-btn" onClick={toggleTheme} aria-label="Toggle theme">
               {isDarkMode ? (
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>

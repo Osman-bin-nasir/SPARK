@@ -111,19 +111,10 @@ async function resolveTransactionsSpreadsheet({
 async function shareSpreadsheetWithOrganization({
   drive,
   spreadsheetId,
-  emails
+  organizationId
 }) {
-  try {
-    await driveClient.ensureFileEditors({
-      drive,
-      fileId: spreadsheetId,
-      emails
-    });
-    return true;
-  } catch (error) {
-    console.warn('Failed to share Google Sheets file with all organization members:', error.message);
-    return false;
-  }
+  await require('./sheet-access.service').reconcile({drive,spreadsheetId,organizationId});
+  return true;
 }
 
 async function syncOrganizationTransactionsSheet({
@@ -156,6 +147,8 @@ async function syncOrganizationTransactionsSheet({
       spreadsheet
     });
 
+    // Do not publish fresh financial data until legacy/current sharing is safe.
+    await shareSpreadsheetWithOrganization({drive,spreadsheetId:spreadsheet.spreadsheet_id,organizationId});
     const today = new Date();
     const transactions = await transactionsRepository.listTransactionsForGoogleSheet({
       organizationId,
@@ -184,9 +177,7 @@ async function syncOrganizationTransactionsSheet({
     const members = await organizationsRepository.listOrganizationMembers({ organizationId });
     const emails = [...new Set(members.map(member => String(member.email || '').trim().toLowerCase()).filter(Boolean))].sort();
     const sharingKey = createHash('sha256').update(JSON.stringify([spreadsheet.spreadsheet_id, emails])).digest('hex');
-    if (metadata.sharing !== sharingKey && await shareSpreadsheetWithOrganization({ drive, spreadsheetId: spreadsheet.spreadsheet_id, emails })) {
-      metadata.sharing = sharingKey;
-    }
+    metadata.sharing = sharingKey;
     if (JSON.stringify(metadata) !== JSON.stringify(previousMetadata)) {
       await googleIntegrationsRepository.setTransactionsSheetMetadata({ organizationId, metadata });
     }

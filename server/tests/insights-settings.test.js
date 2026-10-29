@@ -57,14 +57,14 @@ test('updateOrganizationSettings throws error on invalid parameters', async () =
   );
 });
 
-test('updateMember updates the member role and receive_insights setting', async () => {
+test('updateMember updates receive_insights without changing the member role', async () => {
   const originalQuery = pool.query;
   try {
     pool.query = async (sql, params) => {
       assert.ok(sql.includes('UPDATE organization_members'));
       assert.equal(params[0], 'org-123');
       assert.equal(params[1], 'user-123');
-      assert.equal(params[2], 'co-founder');
+      assert.equal(params[2], undefined);
       assert.equal(params[3], true);
       return {
         rows: [{
@@ -80,7 +80,6 @@ test('updateMember updates the member role and receive_insights setting', async 
     const result = await organizationService.updateMember({
       organizationId: 'org-123',
       targetUserId: 'user-123',
-      role: 'co-founder',
       receiveInsights: true
     });
 

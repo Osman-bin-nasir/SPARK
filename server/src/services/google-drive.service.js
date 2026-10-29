@@ -32,8 +32,8 @@ async function assertOrganizationAdmin(userId, organizationId) {
     throw new HttpError(403, 'You do not have access to this organization');
   }
 
-  if (!['founder', 'admin'].includes(membership.role)) {
-    throw new HttpError(403, 'Only founders and admins can manage Google Drive');
+  if (!['founder', 'co-founder', 'admin'].includes(membership.role)) {
+    throw new HttpError(403, 'Only founders, co-founders and admins can manage Google Drive');
   }
 
   return membership;
@@ -64,7 +64,7 @@ async function createDevelopmentConnectUrl({ organizationId }) {
   const driveOwner = await organizationsRepository.findOrganizationDriveOwner(organizationId);
 
   if (!driveOwner) {
-    throw new HttpError(409, 'Organization does not have a founder or admin to own the Google Drive integration');
+    throw new HttpError(409, 'Organization does not have a founder, co-founder or admin to own the Google Drive integration');
   }
 
   const state = signGoogleOauthState({
@@ -147,8 +147,8 @@ async function getDriveStatus(organizationId) {
   };
 }
 
-async function getOrganizationDriveClient(organizationId) {
-  const integration = await googleIntegrationsRepository.findByOrganizationId(organizationId);
+async function getOrganizationDriveClient(organizationId, client) {
+  const integration = await googleIntegrationsRepository.findByOrganizationId(organizationId, client);
 
   if (!integration) {
     const error = new HttpError(409, 'Google Drive is not connected for this organization');

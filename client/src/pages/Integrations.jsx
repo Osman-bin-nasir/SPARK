@@ -1,3 +1,4 @@
+import { deferEffect } from '../lib/defer-effect';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { get, post } from '../services/http';
@@ -98,7 +99,7 @@ function IntegrationsPage({ activeOrganizationId, onOpenTeam, token, user, onUpd
     }
   }
 
-  useEffect(() => {
+  useEffect(() => deferEffect(() => {
     if (!token || !organizationId) {
       setLoading(false);
       return;
@@ -142,7 +143,7 @@ function IntegrationsPage({ activeOrganizationId, onOpenTeam, token, user, onUpd
     return () => {
       isActive = false;
     };
-  }, [organizationId, token]);
+  }), [organizationId, token]);
 
   async function connectDrive() {
     if (!organizationId) {

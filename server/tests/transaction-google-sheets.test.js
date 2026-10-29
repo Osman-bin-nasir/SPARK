@@ -13,6 +13,9 @@ const originalListTransactionsForGoogleSheet = transactionsRepository.listTransa
 const originalSetTransactionsSheetId = googleIntegrationsRepository.setTransactionsSheetId;
 const originalCreateSpreadsheetFile = driveClient.createSpreadsheetFile;
 const originalEnsureFileEditors = driveClient.ensureFileEditors;
+const access=require('../src/services/sheet-access.service');
+const originalReconcile=access.reconcile;
+test.beforeEach(()=>{access.reconcile=async()=>{};});
 const originalGetFileMetadata = driveClient.getFileMetadata;
 const originalBuildSpreadsheetTabUrl = sheetsClient.buildSpreadsheetTabUrl;
 const originalCreateSheetsClient = sheetsClient.createSheetsClient;
@@ -27,6 +30,7 @@ const originalListOrganizationMembers = organizationsRepository.listOrganization
 const originalGetOrganizationDriveClient = googleDriveService.getOrganizationDriveClient;
 
 test.afterEach(() => {
+  access.reconcile=originalReconcile;
   transactionsRepository.listTransactionsForGoogleSheet = originalListTransactionsForGoogleSheet;
   googleIntegrationsRepository.setTransactionsSheetId = originalSetTransactionsSheetId;
   driveClient.createSpreadsheetFile = originalCreateSpreadsheetFile;

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { env } = require('../src/config/env');
 env.webhookSecret = 'test-only-signing-secret';
+process.env.TRUST_PROXY_HOPS = '1';
 const app = require('../src/app');
 const auth = require('../src/services/auth.service');
 let server, base;
@@ -14,7 +15,9 @@ test.after(async()=>{await new Promise(resolve=>server.close(resolve));});
 
 test('legacy bot token endpoints reject unsigned, forged and tampered requests before issuing credentials',async t=>{
   const methods=['loginWithTelegram','loginWithWhatsapp','createTelegramLogin','createWhatsappLogin'];
-  for(const method of methods) t.mock.method(auth,method,async()=>({token:'test-only-issued-token'}));
+  for(const method of methods) t.mock.method(auth,method,async()=>({token:'test-only-issued-token',user:{id:'test-user'}}));
+  t.mock.method(auth,'buildAuthResponse',async user=>({user}));
+  t.mock.method(require('../src/services/session.service'),'respond',async(_req,res,result)=>res.status(200).json(result));
   const routes=['telegram','whatsapp','create-telegram-login','create-whatsapp-login'];
   const body=JSON.stringify({telegram_id:'123',whatsapp_id:'123'});
   for(const route of routes) {
@@ -57,6 +60,16 @@ test('authentication throttling returns 429 while health and provider webhooks r
   for(let i=0;i<32;i++) status=(await fetch(`${base}/api/auth/login`,{method:'POST',headers:{'content-type':'application/json'},body:'{}'})).status;
   assert.equal(status,429);assert.equal((await fetch(`${base}/health`)).status,200);
 });
+test('authentication limits use distinct forwarded client IPs behind the configured proxy',async()=>{
+  assert.equal(app.get('trust proxy'),1);
+  const statuses=[];
+  for(let i=0;i<31;i++) {
+    const clientIp=i%2?'198.51.100.11':'198.51.100.12';
+    const response=await fetch(`${base}/api/auth/login`,{method:'POST',headers:{'content-type':'application/json','x-forwarded-for':clientIp},body:'{}'});
+    statuses.push(response.status);
+  }
+  assert.ok(statuses.every(status=>status===400));
+});
 test('admins cannot promote themselves through the generic member-update endpoint',async t=>{
   env.jwtSecret='test-only-security-access-key';
   const organizations=require('../src/db/organizations.repository');
@@ -73,4 +86,25 @@ test('admins cannot promote themselves through the generic member-update endpoin
   assert.equal((await patch({receive_insights:true})).status,200);
   role='founder';assert.equal((await patch({role:'admin'})).status,200);
   assert.equal(update.mock.callCount(),2);
+});
+test('insights HMAC routes fail closed with empty or whitespace signing configuration',async t=>{
+  const previous=env.webhookSecret;t.after(()=>{env.webhookSecret=previous;});
+  const insights=require('../src/services/insights.service');
+  const organizations=require('../src/db/organizations.repository');
+  const weekly=t.mock.method(insights,'getWeeklyInsights',async()=>({ok:true}));
+  const schedules=t.mock.method(organizations,'listScheduledOrganizations',async()=>[{private:'recipient-data'}]);
+  for(const secret of ['', '  ']) {
+    env.webhookSecret=secret;
+    for(const [route,payload] of [['','org-1:weekly'],['/schedules','weekly']]) {
+      const signature='sha256='+crypto.createHmac('sha256',secret).update(payload).digest('hex');
+      const response=await fetch(`${base}/api/insights${route}`,{headers:{'x-spark-signature':signature,'x-organization-id':'org-1'}});
+      assert.equal(response.status,500);assert.doesNotMatch(await response.text(),/recipient-data/);
+    }
+  }
+  assert.equal(weekly.mock.callCount(),0);assert.equal(schedules.mock.callCount(),0);
+  env.webhookSecret='configured-test-secret';
+  for(const [route,payload] of [['','org-1:weekly'],['/schedules','weekly']]) {
+    const response=await fetch(`${base}/api/insights${route}`,{headers:{'x-spark-signature':'sha256='+crypto.createHmac('sha256',env.webhookSecret).update(payload).digest('hex'),'x-organization-id':'org-1'}});
+    assert.equal(response.status,200);
+  }
 });

@@ -56,6 +56,12 @@ const env = {
 };
 
 function validateEnv() {
+  for (const [name, value] of [['JWT_SECRET',env.jwtSecret],['REFRESH_JWT_SECRET',env.refreshJwtSecret],
+    ['TELEGRAM_JWT_SECRET',env.telegramJwtSecret],['GOOGLE_OAUTH_STATE_SECRET',env.googleOauthStateSecret],['WEBHOOK_SECRET',env.webhookSecret],
+    ...(env.telegramBotToken?[['TELEGRAM_WEBHOOK_SECRET',env.telegramWebhookSecret]]:[])]) {
+    if (value && (/replace[-_ ]?with|your[-_ ].*(secret|key)|generate[-_ ].*(key|secret)|change[-_ ].*production/i.test(value)
+      || value.trim().length < 32 || value.trim()!==value)) throw new Error(`${name} must be a generated secret of at least 32 characters, not an example value`);
+  }
   if (production) {
     for (const [name, value] of [['APP_BASE_URL', env.appBaseUrl], ['PUBLIC_API_BASE_URL', env.publicApiBaseUrl]]) {
       let url;
@@ -76,6 +82,8 @@ function validateEnv() {
   if (!env.jwtSecret) {
     missing.push('JWT_SECRET');
   }
+  if (!env.webhookSecret.trim()) missing.push('WEBHOOK_SECRET');
+  if(env.telegramBotToken&&!env.telegramWebhookSecret.trim())missing.push('TELEGRAM_WEBHOOK_SECRET');
 
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
@@ -144,7 +152,7 @@ function assertGoogleDriveEnv() {
 }
 
 function assertWebhookEnv() {
-  if (!env.webhookSecret) {
+  if (!env.webhookSecret.trim()) {
     throw new Error('Missing required environment variable: WEBHOOK_SECRET');
   }
 }
