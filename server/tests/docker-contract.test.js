@@ -7,11 +7,10 @@ test('Docker image builds a same-origin frontend and CI gates lint',()=>{
   const docker=fs.readFileSync(path.join(root,'Dockerfile'),'utf8');
   assert.match(docker,/AS client-build/);assert.match(docker,/ARG VITE_API_BASE_URL=\/api/);
   assert.match(docker,/RUN npm run build/);assert.match(docker,/COPY --from=client-build \/client\/dist .\/public/);
-  assert.match(fs.readFileSync(path.join(root,'.github/workflows/test.yml'),'utf8'),/run: npm run lint/);
+  const workflow=fs.readFileSync(path.join(root,'.github/workflows/test.yml'),'utf8');
+  assert.match(workflow,/run: npm run lint/);
+  assert.match(workflow,/scripts\/package-deployment\.sh/);
   const packaging=fs.readFileSync(path.join(root,'scripts/package-deployment.sh'),'utf8');
   assert.match(packaging,/Dockerfile server\/ client\//);
-  assert.match(packaging,/\.ebextensions\//);
-  assert.match(fs.readFileSync(path.join(root,'.ebextensions/01-proxy.config'),'utf8'),/TRUST_PROXY_HOPS:\s*"1"/);
   assert.match(packaging,/node_modules/);assert.match(packaging,/\.env/);
-  assert.match(fs.readFileSync(path.join(root,'.github/workflows/deploy.yml'),'utf8'),/scripts\/package-deployment.sh/);
 });

@@ -58,6 +58,9 @@ test('buildAuthUrl requests only the drive.file scope', () => {
 test('Drive client initialization reads integration through the supplied transaction connection', async t => {
   const { pool } = require('../src/db/pool');
   const { encryptText } = require('../src/utils/encryption');
+  env.googleClientId = 'test-client';
+  env.googleClientSecret = 'test-secret';
+  env.googleRedirectUri = 'https://example.test/api/google-drive/callback';
   env.googleTokenEncryptionKey = 'a'.repeat(64);
   const encrypted = encryptText('test-refresh-token');
   const client = { query: async (_sql, params) => {

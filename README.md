@@ -24,7 +24,7 @@ SPARK is a startup-focused financial operations platform designed to replace spr
     - [Vendor Normalization & Fuzzy Resolution](#3-vendor-normalization--fuzzy-resolution)
     - [Grounded RAG Search & Planner](#4-grounded-rag-search--planner)
     - [Dynamic Google Sheets Synchronization](#5-dynamic-google-sheets-synchronization)
-13. [Deployment Instructions (AWS Elastic Beanstalk & CI/CD)](#deployment-instructions)
+13. [Deployment Instructions (Render & Docker)](#deployment-instructions)
 14. [Troubleshooting Guide](#troubleshooting-guide)
 15. [Future Improvements](#future-improvements)
 16. [Contributors & Team](#contributors--team)
@@ -136,7 +136,7 @@ graph TD
 SPARK/
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml          # GitHub Actions CI/CD to AWS Elastic Beanstalk
+│       └── test.yml            # CI tests, lint, build, and Docker smoke checks
 ├── client/                     # Frontend Application
 │   ├── public/                 # Static Assets
 │   ├── src/
@@ -701,7 +701,9 @@ Natural Language Query ──> Generate Search Filters ──> SQL Match ──>
 
 ## Deployment Instructions
 
-SPARK is configured for automated CI/CD and deployment to **AWS Elastic Beanstalk (Docker Platform)**:
+SPARK is deployed as a Docker web service on **Render**. Render can deploy from
+the repository when connected to the project; the same Docker image can also be
+built and run directly for self-hosted deployments.
 
 ### 1. Production Dockerfile
 The project utilizes a simplified backend [Dockerfile](./Dockerfile) built on `node:24-alpine`:
@@ -713,17 +715,19 @@ The project utilizes a simplified backend [Dockerfile](./Dockerfile) built on `n
 * Embeds a container `HEALTHCHECK` pointing to `/health`.
 * Runs automatic migration scripts prior to starting the Express server.
 
-### 2. GitHub Actions Deployment
-The workflow [.github/workflows/deploy.yml](./.github/workflows/deploy.yml) triggers automated deployments on pushes to `main`:
-1. Zips project source code, Docker configs, and dependencies.
-2. Deploys using the `einaregilsson/beanstalk-deploy` action.
-3. Automatically maps AWS environment variables.
-4. Uses `use_existing_version_if_available: true` to handle workflow reruns safely.
+### 2. Render deployment
+Create a Render web service from this repository using the Docker runtime and
+the root [Dockerfile](./Dockerfile). Configure production environment variables
+from [`server/.env.production.example`](./server/.env.production.example) and
+follow the [deployment and security rollout guide](./server/DEPLOYMENT.md).
+Render supplies `PORT` and sets `RENDER=true`; the API trusts Render's single
+ingress for per-client-IP rate limiting. The Docker entrypoint applies database
+migrations before starting the API, and `/health` is the health-check endpoint.
 
-### 3. DNS and HTTPS Setup
-* **ACM SSL Certs**: SSL termination is handled by AWS Certificate Manager (ACM) by binding a public SSL certificate (for `api.sparkmetrics.online`) directly to an HTTPS listener on port 443 of the Elastic Beanstalk load balancer.
-* **CNAME records**: Custom subdomain `api.sparkmetrics.online` points via a CNAME record directly to the Elastic Beanstalk endpoint:
-  * Target: `spark-backend-env.eba-ggwipqh2.us-east-1.elasticbeanstalk.com`
+For local or self-hosted Docker, use the included Compose configuration and keep
+the signing keys unique. Directly exposed Docker containers should not enable
+proxy trust; configure `TRUST_PROXY_HOPS` only when the container is behind a
+known, fixed number of trusted reverse proxies.
 
 ---
 
