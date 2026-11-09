@@ -764,12 +764,11 @@ known, fixed number of trusted reverse proxies.
 
 ## Contributors & Team
 
-SPARK was built and developed as a collaborative mini-project under the guidance of our college faculty:
+SPARK was built and developed as a collaborative project:
 
 * **Osman Bin Nasir** — (Roll: 1604-23-733-080)
 * **Saif Ali Baig** — (Roll: 1604-23-733-082)
 * **Abdul Razzaq** — (Roll: 1604-23-733-108)
-
-#### Under the Guidance of:
-* **Mr. Mohammed Saleem Khan** (Assistant Professor, Dept of CSE)
-* **Dr. Syed Shabbeer Ahmad** (HOD, Dept of CSE)
+* **Mohammed Abdul Lateef** — (Roll: 1604-23-733-099)
+* **Mohd Abdul Hafeez** — (Roll: 1604-23-733-077)
+* **Syed Hameduddin** — (Roll: 1604-23-733-078)
