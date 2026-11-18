@@ -438,23 +438,28 @@ async function getDashboardSnapshot({ organization, query }) {
     nextMonthStart
   });
 
+  // The burn window starts before the selected trend window, so one monthly
+  // aggregate covers both series and saves a round trip on every dashboard load.
+  const monthlyTotalsStart = burnWindowStart < selectedRangeStart
+    ? burnWindowStart
+    : selectedRangeStart;
+
   const [
     financeSettings,
     budgets,
-    selectedRangeMonthlyTotals,
+    monthlyOutflowTotals,
     currentMonthSpendRows,
     categoryBreakdownRows,
     currentMonthRevenue,
     topVendors,
     historicalCategorySpend,
-    burnWindowTotals,
     earliestTransactionDate
   ] = await Promise.all([
     dashboardRepository.getFinanceSettings(organizationId),
     dashboardRepository.listCategoryBudgets({ organizationId }),
     dashboardRepository.listMonthlyOutflowTotals({
       organizationId,
-      startDate: toDateString(selectedRangeStart),
+      startDate: toDateString(monthlyTotalsStart),
       endDate: toDateString(nextMonthStart)
     }),
     dashboardRepository.listCurrentMonthCategorySpend({
@@ -482,11 +487,6 @@ async function getDashboardSnapshot({ organization, query }) {
       organizationId,
       historyStart: toDateString(burnWindowStart),
       historyEnd: toDateString(currentMonthStart)
-    }),
-    dashboardRepository.listMonthlyOutflowTotals({
-      organizationId,
-      startDate: toDateString(burnWindowStart),
-      endDate: toDateString(currentMonthStart)
     }),
     dashboardRepository.getEarliestTransactionDate({ organizationId })
   ]);
@@ -526,10 +526,12 @@ async function getDashboardSnapshot({ organization, query }) {
     .sort((left, right) => right.amount - left.amount);
 
   const selectedTotalsByMonth = new Map(
-    selectedRangeMonthlyTotals.map((item) => [item.month, item.total])
+    monthlyOutflowTotals.map((item) => [item.month, item.total])
   );
   const burnTotalsByMonth = new Map(
-    burnWindowTotals.map((item) => [item.month, item.total])
+    monthlyOutflowTotals
+      .filter((item) => burnMonths.includes(item.month))
+      .map((item) => [item.month, item.total])
   );
 
   const burnSeries = buildMonthlySeries(burnWindowStart, 3, burnTotalsByMonth);

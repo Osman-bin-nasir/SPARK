@@ -11,6 +11,7 @@ const efficientAutomationMigration = require('./010_efficient_automation');
 const workspaceInvitationsMigration = require('./011_workspace_invitations');
 const botConversationsMigration = require('./012_bot_conversations');
 const secureSessionsMigration = require('./013_secure_sessions');
+const transactionPerformanceIndexesMigration = require('./014_transaction_performance_indexes');
 
 const migrations = [
   initialSchemaMigration,
@@ -25,7 +26,8 @@ const migrations = [
   efficientAutomationMigration,
   workspaceInvitationsMigration,
   botConversationsMigration,
-  secureSessionsMigration
+  secureSessionsMigration,
+  transactionPerformanceIndexesMigration
 ];
 
 const latestMigrationName = migrations[migrations.length - 1]?.name || null;
@@ -34,5 +36,3 @@ module.exports = {
   latestMigrationName,
   migrations
 };
-
-

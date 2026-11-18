@@ -3,9 +3,15 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { get, patch } from '../services/http';
 import { endpoints } from '../services/endpoints';
 
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0
+});
+
 function formatCurrency(val) {
   if (val == null || Number.isNaN(Number(val))) return '—';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(val));
+  return currencyFormatter.format(Number(val));
 }
 
 function formatPercent(val) {

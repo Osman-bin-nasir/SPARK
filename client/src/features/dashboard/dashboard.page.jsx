@@ -3,16 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
   Cell,
   Pie,
   PieChart,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
-  YAxis
+  XAxis
 } from 'recharts';
 import { getDashboardSnapshot } from './dashboard.api';
 import { getDashboardInvalidationStamp } from './dashboard.cache';
@@ -57,16 +53,36 @@ function getCategoryBreakdownOption(value) {
   return CATEGORY_BREAKDOWN_OPTIONS.find((option) => option.value === value) || CATEGORY_BREAKDOWN_OPTIONS[0];
 }
 
+// Intl constructors are expensive; reuse formatters across renders.
+const currencyFormatters = new Map();
+
+function getCurrencyFormatter(maximumFractionDigits) {
+  let formatter = currencyFormatters.get(maximumFractionDigits);
+
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits
+    });
+    currencyFormatters.set(maximumFractionDigits, formatter);
+  }
+
+  return formatter;
+}
+
+const monthFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC'
+});
+
 function formatCurrency(value, options = {}) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return options.fallback || 'Not configured';
   }
 
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: options.maximumFractionDigits ?? 0
-  }).format(Number(value));
+  return getCurrencyFormatter(options.maximumFractionDigits ?? 0).format(Number(value));
 }
 
 function sumCategoryAmounts(items = []) {
@@ -78,11 +94,7 @@ function formatMonthKey(monthKey) {
     return 'Unknown';
   }
 
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC'
-  }).format(new Date(`${monthKey}-01T00:00:00.000Z`));
+  return monthFormatter.format(new Date(`${monthKey}-01T00:00:00.000Z`));
 }
 
 function renderChartTooltip(value, name) {

@@ -251,21 +251,25 @@ async function listTransactions(
     transactionType,
     vendorId,
     startDate,
-    endDate
+    endDate,
+    includeTotal = true
   },
   client = pool
 ) {
   const params = [organizationId];
   const filters = ['t.organization_id = $1'];
+  let countNeedsApprovals = false;
 
   if (status) {
     if (status === 'approved') {
+      countNeedsApprovals = true;
       filters.push('a.id IS NOT NULL');
     } else {
       params.push(status);
       filters.push(`t.status = $${params.length}`);
 
       if (status === 'auto_verified') {
+        countNeedsApprovals = true;
         filters.push('a.id IS NULL');
       }
     }
@@ -327,16 +331,22 @@ async function listTransactions(
   `;
 
   const countParams = params.slice(0, params.length - 2);
+  // Only join approvals when the filters actually reference them.
+  const countJoin = countNeedsApprovals
+    ? 'LEFT JOIN approvals a ON a.transaction_id = t.id'
+    : '';
   const countQuery = `
     SELECT COUNT(*)::int AS count
     FROM transactions t
-    LEFT JOIN approvals a ON a.transaction_id = t.id
+    ${countJoin}
     WHERE ${whereClause}
   `;
 
-  const [{ rows }, { rows: countRows }] = await Promise.all([
+  const [{ rows }, countResult] = await Promise.all([
     client.query(listQuery, params),
-    client.query(countQuery, countParams)
+    includeTotal
+      ? client.query(countQuery, countParams)
+      : Promise.resolve(null)
   ]);
 
   return {
@@ -357,7 +367,7 @@ async function listTransactions(
           }
         : null
     })),
-    total: countRows[0]?.count || 0
+    total: includeTotal ? countResult.rows[0]?.count || 0 : null
   };
 }
 

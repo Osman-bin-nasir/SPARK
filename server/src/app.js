@@ -77,13 +77,33 @@ const publicDirectory = path.join(__dirname, '..', 'public');
 const clientIndex = path.join(publicDirectory, 'index.html');
 
 if (fs.existsSync(clientIndex)) {
-  app.use(express.static(publicDirectory));
+  const assetsDirectory = `${path.sep}assets${path.sep}`;
+
+  app.use(express.static(publicDirectory, {
+    index: false,
+    setHeaders(res, filePath) {
+      if (filePath.includes(assetsDirectory)) {
+        // Vite emits content-hashed filenames, so these never change in place.
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return;
+      }
+
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+        return;
+      }
+
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+    }
+  }));
   app.get('/{*splat}', (req, res, next) => {
     if (req.path === '/api' || req.path.startsWith('/api/')) {
       next();
       return;
     }
 
+    // index.html references hashed bundles, so it must be revalidated.
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(clientIndex);
   });
 }
