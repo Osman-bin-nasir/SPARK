@@ -331,7 +331,8 @@ test('dashboard snapshot reuses one monthly outflow query for trends and burn', 
         return [
           { month: '2026-03', total: 100 },
           { month: '2026-04', total: 200 },
-          { month: '2026-05', total: 300 }
+          { month: '2026-05', total: 300 },
+          { month: '2026-06', total: 900 }
         ];
       }
     }), async () => {
@@ -344,7 +345,7 @@ test('dashboard snapshot reuses one monthly outflow query for trends and burn', 
       // A 3-month trend starts in April, but the burn window also needs March.
       assert.equal(monthlyTotalsRequests[0].startDate, '2026-03-01');
       assert.equal(monthlyTotalsRequests[0].endDate, '2026-07-01');
-      assert.deepEqual(snapshot.trends.map((item) => item.amount), [200, 300, 0]);
+      assert.deepEqual(snapshot.trends.map((item) => item.amount), [200, 300, 900]);
       assert.equal(snapshot.metrics.monthly_burn, 200);
     });
   });

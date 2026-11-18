@@ -325,7 +325,7 @@ async function listTransactions(
     LEFT JOIN documents d ON d.transaction_id = t.id
     LEFT JOIN approvals a ON a.transaction_id = t.id
     WHERE ${whereClause}
-    ORDER BY t.transaction_date DESC, t.created_at DESC
+    ORDER BY t.transaction_date DESC, t.created_at DESC, t.id DESC
     LIMIT $${params.length - 1}
     OFFSET $${params.length}
   `;

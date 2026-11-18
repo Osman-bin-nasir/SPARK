@@ -438,8 +438,7 @@ async function getDashboardSnapshot({ organization, query }) {
     nextMonthStart
   });
 
-  // The burn window starts before the selected trend window, so one monthly
-  // aggregate covers both series and saves a round trip on every dashboard load.
+  // Start at the earlier window so the same monthly totals cover both series.
   const monthlyTotalsStart = burnWindowStart < selectedRangeStart
     ? burnWindowStart
     : selectedRangeStart;
@@ -525,16 +524,11 @@ async function getDashboardSnapshot({ organization, query }) {
     }))
     .sort((left, right) => right.amount - left.amount);
 
-  const selectedTotalsByMonth = new Map(
+  const totalsByMonth = new Map(
     monthlyOutflowTotals.map((item) => [item.month, item.total])
   );
-  const burnTotalsByMonth = new Map(
-    monthlyOutflowTotals
-      .filter((item) => burnMonths.includes(item.month))
-      .map((item) => [item.month, item.total])
-  );
 
-  const burnSeries = buildMonthlySeries(burnWindowStart, 3, burnTotalsByMonth);
+  const burnSeries = buildMonthlySeries(burnWindowStart, 3, totalsByMonth);
   const availableBurnSeries = getAvailableBurnSeries({
     burnSeries,
     earliestTransactionDate: normalizedEarliestTransactionDate,
@@ -542,7 +536,7 @@ async function getDashboardSnapshot({ organization, query }) {
   });
   const burnMonthCount = availableBurnSeries.length;
   const historicalMonthlyBurn = averageMonthlySeries(availableBurnSeries);
-  const trends = buildMonthlySeries(selectedRangeStart, months, selectedTotalsByMonth);
+  const trends = buildMonthlySeries(selectedRangeStart, months, totalsByMonth);
 
   const budgetAlerts = buildBudgetAlerts(budgets, currentMonthSpend);
   const burnHistoryReadyForSpikes = Boolean(

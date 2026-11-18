@@ -1,6 +1,8 @@
 const { pool } = require('./pool');
 const { migrations } = require('./migrations');
 
+const MIGRATION_LOCK_ID = 1397768530;
+
 async function ensureSchemaMigrationsTable(client) {
   await client.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -19,6 +21,9 @@ async function runMigrations() {
   const client = await pool.connect();
 
   try {
+    // Hold the lock across commits so concurrent startup migrations cannot
+    // race with index builds that run outside a transaction.
+    await client.query('SELECT pg_advisory_lock($1::bigint)', [MIGRATION_LOCK_ID]);
     await ensureSchemaMigrationsTable(client);
     const appliedMigrationNames = await getAppliedMigrationNames(client);
     const executedMigrations = [];
@@ -28,7 +33,8 @@ async function runMigrations() {
         continue;
       }
 
-      await client.query('BEGIN');
+      const transactional = migration.transactional !== false;
+      if (transactional) await client.query('BEGIN');
 
       try {
         await migration.up(client);
@@ -36,10 +42,10 @@ async function runMigrations() {
           'INSERT INTO schema_migrations (name, applied_at) VALUES ($1, NOW())',
           [migration.name]
         );
-        await client.query('COMMIT');
+        if (transactional) await client.query('COMMIT');
         executedMigrations.push(migration.name);
       } catch (error) {
-        await client.query('ROLLBACK');
+        if (transactional) await client.query('ROLLBACK');
         throw error;
       }
     }
@@ -50,7 +56,8 @@ async function runMigrations() {
       total_migrations: migrations.length
     };
   } finally {
-    client.release();
+    // Close the dedicated migration connection to release its session lock.
+    client.release(true);
   }
 }
 

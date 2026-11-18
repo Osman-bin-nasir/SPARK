@@ -83,7 +83,9 @@ for its internal PostgreSQL service. Do not disable TLS to bypass certificate er
 ## 1. Deploy the PR
 
 Merge the conversational-bot PR and deploy `main` to the existing Docker web service.
-The Docker entrypoint runs `npm run migrate` before starting the API. Confirm
+The Docker entrypoint runs `npm run migrate` before starting the API. Use a direct
+PostgreSQL connection in `DATABASE_URL` so the migration lock stays on one session
+while indexes build concurrently. Confirm
 `012_bot_conversations` was applied and the new deployment is live. This migration
 adds conversation context and an index for sender-owned expense queries; existing
 transactions, accounts, links and credentials remain in the production database.
