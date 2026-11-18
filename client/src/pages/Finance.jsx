@@ -14,9 +14,15 @@ const TYPE_META = {
   salary: { label: 'Salary / Payroll', color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)' },
 };
 
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0
+});
+
 function formatCurrency(val) {
   if (val == null || Number.isNaN(Number(val))) return '—';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(val));
+  return currencyFormatter.format(Number(val));
 }
 
 function formatSignedCurrency(val) {

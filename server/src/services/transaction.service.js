@@ -470,7 +470,9 @@ async function listExpensesByVendor({ organizationId, vendor, vendorId }) {
     page: 1,
     pageSize: 10000,
     transactionType: 'expense',
-    vendorId: resolvedVendorId
+    vendorId: resolvedVendorId,
+    // This caller only needs the rows.
+    includeTotal: false
   });
 
   return result.items;

@@ -77,13 +77,31 @@ const publicDirectory = path.join(__dirname, '..', 'public');
 const clientIndex = path.join(publicDirectory, 'index.html');
 
 if (fs.existsSync(clientIndex)) {
-  app.use(express.static(publicDirectory));
+  app.use(express.static(publicDirectory, {
+    index: false,
+    setHeaders(res, filePath) {
+      if (path.extname(filePath).toLowerCase() === '.html') {
+        res.setHeader('Cache-Control', 'no-cache');
+        return;
+      }
+
+      const relativePath = path.relative(publicDirectory, filePath);
+      const isHashedAsset = relativePath.startsWith(`assets${path.sep}`)
+        && /-[\w-]{8}\.[^.]+$/.test(path.basename(relativePath));
+      res.setHeader('Cache-Control', isHashedAsset
+        ? 'public, max-age=31536000, immutable'
+        : 'public, max-age=3600');
+    }
+  }));
+  app.use('/assets', notFoundHandler);
   app.get('/{*splat}', (req, res, next) => {
     if (req.path === '/api' || req.path.startsWith('/api/')) {
       next();
       return;
     }
 
+    // index.html references hashed bundles, so it must be revalidated.
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(clientIndex);
   });
 }

@@ -438,23 +438,27 @@ async function getDashboardSnapshot({ organization, query }) {
     nextMonthStart
   });
 
+  // Start at the earlier window so the same monthly totals cover both series.
+  const monthlyTotalsStart = burnWindowStart < selectedRangeStart
+    ? burnWindowStart
+    : selectedRangeStart;
+
   const [
     financeSettings,
     budgets,
-    selectedRangeMonthlyTotals,
+    monthlyOutflowTotals,
     currentMonthSpendRows,
     categoryBreakdownRows,
     currentMonthRevenue,
     topVendors,
     historicalCategorySpend,
-    burnWindowTotals,
     earliestTransactionDate
   ] = await Promise.all([
     dashboardRepository.getFinanceSettings(organizationId),
     dashboardRepository.listCategoryBudgets({ organizationId }),
     dashboardRepository.listMonthlyOutflowTotals({
       organizationId,
-      startDate: toDateString(selectedRangeStart),
+      startDate: toDateString(monthlyTotalsStart),
       endDate: toDateString(nextMonthStart)
     }),
     dashboardRepository.listCurrentMonthCategorySpend({
@@ -482,11 +486,6 @@ async function getDashboardSnapshot({ organization, query }) {
       organizationId,
       historyStart: toDateString(burnWindowStart),
       historyEnd: toDateString(currentMonthStart)
-    }),
-    dashboardRepository.listMonthlyOutflowTotals({
-      organizationId,
-      startDate: toDateString(burnWindowStart),
-      endDate: toDateString(currentMonthStart)
     }),
     dashboardRepository.getEarliestTransactionDate({ organizationId })
   ]);
@@ -525,14 +524,11 @@ async function getDashboardSnapshot({ organization, query }) {
     }))
     .sort((left, right) => right.amount - left.amount);
 
-  const selectedTotalsByMonth = new Map(
-    selectedRangeMonthlyTotals.map((item) => [item.month, item.total])
-  );
-  const burnTotalsByMonth = new Map(
-    burnWindowTotals.map((item) => [item.month, item.total])
+  const totalsByMonth = new Map(
+    monthlyOutflowTotals.map((item) => [item.month, item.total])
   );
 
-  const burnSeries = buildMonthlySeries(burnWindowStart, 3, burnTotalsByMonth);
+  const burnSeries = buildMonthlySeries(burnWindowStart, 3, totalsByMonth);
   const availableBurnSeries = getAvailableBurnSeries({
     burnSeries,
     earliestTransactionDate: normalizedEarliestTransactionDate,
@@ -540,7 +536,7 @@ async function getDashboardSnapshot({ organization, query }) {
   });
   const burnMonthCount = availableBurnSeries.length;
   const historicalMonthlyBurn = averageMonthlySeries(availableBurnSeries);
-  const trends = buildMonthlySeries(selectedRangeStart, months, selectedTotalsByMonth);
+  const trends = buildMonthlySeries(selectedRangeStart, months, totalsByMonth);
 
   const budgetAlerts = buildBudgetAlerts(budgets, currentMonthSpend);
   const burnHistoryReadyForSpikes = Boolean(

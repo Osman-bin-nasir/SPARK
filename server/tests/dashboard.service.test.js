@@ -142,11 +142,9 @@ test('dashboard snapshot uses the available completed burn months when fewer tha
         income_total: 6000,
         outflow_total: 0
       }),
-      listMonthlyOutflowTotals: async ({ endDate }) => (
-        endDate === '2026-04-01'
-          ? [{ month: '2026-03', total: 1200 }]
-          : []
-      ),
+      listMonthlyOutflowTotals: async () => ([
+        { month: '2026-03', total: 1200 }
+      ]),
       listCurrentMonthCategorySpend: async () => ([
         { category: 'Payroll', amount: 1000 }
       ])
@@ -214,11 +212,9 @@ test('dashboard snapshot accepts earliest transaction dates returned as Date obj
         income_total: 9000,
         outflow_total: 0
       }),
-      listMonthlyOutflowTotals: async ({ endDate }) => (
-        endDate === '2026-06-01'
-          ? [{ month: '2026-04', total: 900 }]
-          : []
-      ),
+      listMonthlyOutflowTotals: async () => ([
+        { month: '2026-04', total: 900 }
+      ]),
       listCurrentMonthCategorySpend: async () => ([
         { category: 'Payroll', amount: 4000 }
       ])
@@ -274,11 +270,9 @@ test('dashboard snapshot includes zero-spend months in the available burn averag
         income_total: 9000,
         outflow_total: 0
       }),
-      listMonthlyOutflowTotals: async ({ endDate }) => (
-        endDate === '2026-06-01'
-          ? [{ month: '2026-04', total: 900 }]
-          : []
-      ),
+      listMonthlyOutflowTotals: async () => ([
+        { month: '2026-04', total: 900 }
+      ]),
       listCurrentMonthCategorySpend: async () => ([
         { category: 'Payroll', amount: 4000 }
       ])
@@ -322,6 +316,41 @@ test('dashboard snapshot leaves runway open-ended when historical burn averages 
   });
 });
 
+test('dashboard snapshot reuses one monthly outflow query for trends and burn', async () => {
+  await withMockedDate('2026-06-20T12:00:00.000Z', async () => {
+    const monthlyTotalsRequests = [];
+
+    await withRepositoryStub(createRepositoryStub({
+      getEarliestTransactionDate: async () => '2026-03-01',
+      getCashFlowTotalsSince: async () => ({
+        income_total: 5000,
+        outflow_total: 0
+      }),
+      listMonthlyOutflowTotals: async (params) => {
+        monthlyTotalsRequests.push(params);
+        return [
+          { month: '2026-03', total: 100 },
+          { month: '2026-04', total: 200 },
+          { month: '2026-05', total: 300 },
+          { month: '2026-06', total: 900 }
+        ];
+      }
+    }), async () => {
+      const snapshot = await dashboardService.getDashboardSnapshot({
+        organization: { id: 'org-single-query' },
+        query: { months: 3 }
+      });
+
+      assert.equal(monthlyTotalsRequests.length, 1);
+      // A 3-month trend starts in April, but the burn window also needs March.
+      assert.equal(monthlyTotalsRequests[0].startDate, '2026-03-01');
+      assert.equal(monthlyTotalsRequests[0].endDate, '2026-07-01');
+      assert.deepEqual(snapshot.trends.map((item) => item.amount), [200, 300, 900]);
+      assert.equal(snapshot.metrics.monthly_burn, 200);
+    });
+  });
+});
+
 test('dashboard snapshot clamps runway to zero when cash on hand is depleted', async () => {
   await withMockedDate('2026-06-20T12:00:00.000Z', async () => {
     await withRepositoryStub(createRepositoryStub({
@@ -330,15 +359,11 @@ test('dashboard snapshot clamps runway to zero when cash on hand is depleted', a
         income_total: 0,
         outflow_total: 500
       }),
-      listMonthlyOutflowTotals: async ({ endDate }) => (
-        endDate === '2026-06-01'
-          ? [
-              { month: '2026-03', total: 1000 },
-              { month: '2026-04', total: 1000 },
-              { month: '2026-05', total: 1000 }
-            ]
-          : []
-      )
+      listMonthlyOutflowTotals: async () => ([
+        { month: '2026-03', total: 1000 },
+        { month: '2026-04', total: 1000 },
+        { month: '2026-05', total: 1000 }
+      ])
     }), async () => {
       const snapshot = await dashboardService.getDashboardSnapshot({
         organization: { id: 'org-7' },
